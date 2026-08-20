@@ -9,8 +9,6 @@ bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "protobuf", version = "35.1")
 bazel_dep(name = "grpc", version = "1.83.0")
 bazel_dep(name = "opencv", version = "5.0.0.bcr.3")
-bazel_dep(name = "llama_cpp", version = "0.0.1")
 
-
-# Flutter / Dart rules integration
-bazel_dep(name = "rules_dart", version = "1.0.0")
+bazel_dep(name = "rules_dart", version = "0.4.10")
+bazel_dep(name = "rules_dart_proto", version = "0.4.9")
