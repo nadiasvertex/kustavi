@@ -3,3 +3,4 @@ bazel-bin
 bazel-kustavi
 bazel-out
 bazel-testlogs
+frontend/lib/src/generated/
