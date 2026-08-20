@@ -460,10 +460,10 @@ Preconditions: active session; no pass running.
   and the gRPC service code), wired in `proto/BUILD.bazel`.
 - **Dart (front end):** `protoc` with `protoc_plugin`
   (`dart pub global activate protoc_plugin`; `~/.pub-cache/bin` on `PATH`),
-  output checked in under `frontend/lib/src/generated/kustavi/`. A single
-  `--dart_out="grpc:..."` invocation generates both the message and the
-  gRPC client code. The proto file is compiled from a `kustavi/` root so the
-  generated paths carry the package name:
+  output under `frontend/lib/src/generated/kustavi/` (gitignored; regenerate
+  with `just proto`). A single `--dart_out="grpc:..."` invocation generates
+  both the message and the gRPC client code. The proto file is compiled from
+  a `kustavi/` root so the generated paths carry the package name:
 
   ```sh
   mkdir -p frontend/lib/src/generated && \
@@ -479,7 +479,8 @@ Preconditions: active session; no pass running.
   `package:kustavi/src/generated/kustavi/service.pb.dart` /
   `service.pbgrpc.dart`. A `just proto` recipe runs this.
 - The proto file is the contract: any change must be accompanied by
-  updates to both `spec/proto.md` and the generated code on both sides.
+  updates to `spec/proto.md` and regeneration of the generated code on
+  both sides (Bazel for C++, `just proto` for Dart).
 - Field numbers are stable for the lifetime of the project; if a field
   is ever removed, its number must be `reserved`.
 

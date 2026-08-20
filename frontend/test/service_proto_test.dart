@@ -1,7 +1,6 @@
 import 'package:fixnum/fixnum.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:grpc/grpc.dart';
-import 'package:kustavi/src/generated/kustavi/service.pb.dart';
 import 'package:kustavi/src/generated/kustavi/service.pbgrpc.dart';
 
 class FakeKustavi extends KustaviServiceBase {
@@ -102,7 +101,7 @@ void main() {
       final decoded = ImageMeta.fromBuffer(withMeta.writeToBuffer());
       expect(decoded.id, '2024/paris/IMG_0001.jpg');
       expect(decoded.hasTakenUnixMs(), isTrue);
-      expect(decoded.takenUnixMs, 1700000000000);
+      expect(decoded.takenUnixMs, Int64(1700000000000));
       expect(decoded.hasGps(), isTrue);
       expect(decoded.gps.latitude, closeTo(48.85, 1e-9));
 
@@ -148,7 +147,7 @@ void main() {
         ..imageIds.addAll(['a.jpg', 'b.jpg']);
       final decodedNoGps = Trip.fromBuffer(noGps.writeToBuffer());
       expect(decodedNoGps.hasCentroid(), isFalse);
-      expect(decodedNoGps.startUnixMs, 1000);
+      expect(decodedNoGps.startUnixMs, Int64(1000));
       expect(decodedNoGps.imageIds, ['a.jpg', 'b.jpg']);
 
       final withGps = noGps.clone()
