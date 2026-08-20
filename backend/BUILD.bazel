@@ -1,0 +1,17 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
+cc_binary(
+    name = "server",
+    srcs = glob([
+        "src/**/*.cpp",
+        "include/**/*.hpp",
+    ]),
+    includes = ["include"],
+    copts = ["-std=c++23"],
+    deps = [
+        "//proto:service_cc_grpc",
+        "@opencv//:opencv",
+#      "@llama_cpp//:llama_cpp",
+    ],
+    visibility = ["//visibility:public"],
+)

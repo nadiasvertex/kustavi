@@ -1,0 +1,16 @@
+module(
+    name = "kustavi",
+    version = "1.0.0",
+)
+
+# Core Bazel utility rules
+bazel_dep(name = "rules_cc", version = "0.2.22")
+bazel_dep(name = "rules_proto", version = "7.1.0")
+bazel_dep(name = "protobuf", version = "35.1")
+bazel_dep(name = "grpc", version = "1.83.0")
+bazel_dep(name = "opencv", version = "5.0.0.bcr.3")
+bazel_dep(name = "llama_cpp", version = "0.0.1")
+
+
+# Flutter / Dart rules integration
+bazel_dep(name = "rules_dart", version = "1.0.0")

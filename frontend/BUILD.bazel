@@ -1,0 +1,14 @@
+# We use a standard genrule to bridge Bazel with Flutter's CLI
+genrule(
+    name = "kustavi",
+    srcs = glob(["lib/**", "pubspec.yaml", "assets/**"]),
+    outs = ["build/app_bundle"], # Adjust output path depending on desktop platform OS
+    cmd = """
+        export PATH=$$PATH:/path/to/flutter/bin
+        cd frontend
+        flutter pub get
+        flutter build macos # Or windows / linux depending on host target
+        cp -r build/macos/Build/Products/Release/ $(RULEDIR)/build/app_bundle
+    """,
+    local = 1, # Allows network access for pub get fetching if needed
+)
