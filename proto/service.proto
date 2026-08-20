@@ -1,20 +1,259 @@
-// 1. Specify the syntax version
 syntax = "proto3";
 
-// 2. Define the namespace to prevent naming conflicts
 package kustavi;
 
-option go_package = "://github.com";
+service Kustavi {
+  // --- lifecycle -------------------------------------------------------
+  rpc GetInfo(GetInfoRequest) returns (GetInfoResponse);
+  rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
 
-import "google/protobuf/timestamp.proto";
+  // --- pass 1: scan & thumbnails ---------------------------------------
+  rpc ScanFolder(ScanFolderRequest) returns (stream ScanEvent);
 
-service image_service {
-  rpc get_version(get_version_request) returns (get_version_response);
+  // --- pass 2: blur / exposure -----------------------------------------
+  rpc RunQualityPass(RunQualityPassRequest) returns (stream QualityEvent);
+
+  // --- pass 3: junk (vision LLM) ----------------------------------------
+  rpc EnsureModel(EnsureModelRequest) returns (stream ModelEvent);
+  rpc RunJunkPass(RunJunkPassRequest) returns (stream JunkEvent);
+
+  // --- pass 4: similar images -------------------------------------------
+  rpc RunSimilarPass(RunSimilarPassRequest) returns (stream SimilarEvent);
+
+  // --- pass 5: trips -----------------------------------------------------
+  rpc RunTripsPass(RunTripsPassRequest) returns (stream TripsEvent);
+
+  // --- pass 6: commit ----------------------------------------------------
+  rpc Commit(CommitRequest) returns (stream CommitEvent);
 }
 
-message get_version_request{
+// --- lifecycle ---------------------------------------------------------
+
+message GetInfoRequest {}
+
+message GetInfoResponse {
+  string version = 1;              // back end version
+  repeated string supported_formats = 2;  // lowercase extensions, e.g. "jpg"
+  string model_name = 3;           // vision model used by the junk pass
 }
 
-message get_version_response {
-  string version = 1;
+message ShutdownRequest {}
+message ShutdownResponse {}
+
+// --- shared -------------------------------------------------------------
+
+message GpsPoint {
+  double latitude = 1;
+  double longitude = 2;
+}
+
+message ImageMeta {
+  string id = 1;               // relative path from the session folder
+  string path = 2;             // absolute path to the original file
+  string name = 3;             // file name
+  uint32 width = 4;
+  uint32 height = 5;
+  uint64 size_bytes = 6;
+  optional int64 taken_unix_ms = 7;
+  optional GpsPoint gps = 8;
+  string thumbnail_path = 9;   // absolute path, written before emit
+}
+
+// --- pass 1: scan --------------------------------------------------------
+
+message ScanFolderRequest {
+  string folder = 1;           // absolute path to the source folder
+  bool recursive = 2;          // include subfolders
+}
+
+message ScanEvent {
+  oneof event {
+    ScanProgress progress = 1;
+    ImageMeta image = 2;
+    ScanComplete complete = 3;
+  }
+}
+
+message ScanProgress {
+  uint32 files_seen = 1;
+  uint32 images_found = 2;
+  string current_path = 3;
+}
+
+message ScanComplete {
+  uint32 images = 1;
+  uint32 skipped_files = 2;    // non-image files
+  repeated string errors = 3;  // unreadable image files: "<id>: <reason>"
+}
+
+// --- pass 2: quality -------------------------------------------------------
+
+message RunQualityPassRequest {}
+
+message QualityEvent {
+  oneof event {
+    QualityProgress progress = 1;
+    QualityFlag flag = 2;      // emitted for flagged images only
+    QualityComplete complete = 3;
+  }
+}
+
+message QualityProgress {
+  uint32 done = 1;
+  uint32 total = 2;
+}
+
+enum QualityReason {
+  QUALITY_REASON_UNSPECIFIED = 0;
+  BLURRY = 1;
+  UNDER_EXPOSED = 2;
+  OVER_EXPOSED = 3;
+}
+
+message QualityFlag {
+  string image_id = 1;
+  repeated QualityReason reasons = 2;  // one or more
+  double sharpness = 3;      // Laplacian variance; higher = sharper
+  double exposure_score = 4; // 0..1; 0.5 = ideal, lower = worse balance
+}
+
+message QualityComplete {
+  uint32 flagged = 1;
+  uint32 total = 2;
+}
+
+// --- pass 3: model + junk ---------------------------------------------------
+
+message EnsureModelRequest {}
+
+message ModelEvent {
+  oneof event {
+    ModelReady ready = 1;
+    ModelDownloadProgress progress = 2;
+  }
+}
+
+message ModelReady {
+  string model_name = 1;
+  uint64 size_bytes = 2;
+}
+
+message ModelDownloadProgress {
+  uint64 done_bytes = 1;
+  uint64 total_bytes = 2;
+  double speed_bps = 3;
+}
+
+message RunJunkPassRequest {}
+
+message JunkEvent {
+  oneof event {
+    JunkProgress progress = 1;
+    JunkFlag flag = 2;         // emitted for junk images only
+    JunkComplete complete = 3;
+  }
+}
+
+message JunkProgress {
+  uint32 done = 1;
+  uint32 total = 2;
+}
+
+message JunkFlag {
+  string image_id = 1;
+  string reason = 2;    // short classification, e.g. "screenshot", "scan"
+  double confidence = 3;  // 0..1
+}
+
+message JunkComplete {
+  uint32 flagged = 1;
+  uint32 total = 2;
+}
+
+// --- pass 4: similar -----------------------------------------------------------
+
+message RunSimilarPassRequest {}
+
+message SimilarEvent {
+  oneof event {
+    SimilarProgress progress = 1;
+    SimilarGroup group = 2;
+    SimilarComplete complete = 3;
+  }
+}
+
+message SimilarProgress {
+  uint32 done = 1;
+  uint32 total = 2;
+}
+
+message SimilarGroup {
+  uint32 id = 1;                       // stable index within the run
+  repeated string image_ids = 2;       // members, best-first
+  string recommended_keep_id = 3;
+  repeated double member_scores = 4;   // "bestness", parallel to image_ids
+}
+
+message SimilarComplete {
+  uint32 groups = 1;
+  uint32 total_images = 2;
+}
+
+// --- pass 5: trips ----------------------------------------------------------------
+
+message RunTripsPassRequest {
+  int32 max_gap_hours = 1;    // max time gap between consecutive photos (default 48)
+  int32 max_distance_km = 2;  // max distance between consecutive photos (default 300)
+}
+
+message TripsEvent {
+  oneof event {
+    TripsProgress progress = 1;
+    Trip trip = 2;
+    TripsComplete complete = 3;
+  }
+}
+
+message TripsProgress {
+  uint32 done = 1;
+  uint32 total = 2;
+}
+
+message Trip {
+  uint32 id = 1;
+  int64 start_unix_ms = 2;
+  int64 end_unix_ms = 3;
+  repeated string image_ids = 4;  // chronological order
+  optional GpsPoint centroid = 5; // mean of members with GPS; unset if none
+}
+
+message TripsComplete {
+  uint32 trips = 1;
+  uint32 unassigned = 2;  // images without a usable timestamp
+}
+
+// --- pass 6: commit ------------------------------------------------------------------
+
+message CommitRequest {
+  string destination = 1;     // absolute path; created if missing
+  repeated string keep_ids = 2;  // image ids to copy
+}
+
+message CommitEvent {
+  oneof event {
+    CommitProgress progress = 1;
+    CommitComplete complete = 2;
+  }
+}
+
+message CommitProgress {
+  uint32 done = 1;
+  uint32 total = 2;
+  string current_name = 3;
+}
+
+message CommitComplete {
+  uint32 copied = 1;
+  uint32 skipped = 2;        // name collisions (different content)
+  repeated string errors = 3;  // "<id>: <reason>"
 }

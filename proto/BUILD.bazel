@@ -6,9 +6,6 @@ package(default_visibility = ["//visibility:public"])
 proto_library(
     name = "service_proto",
     srcs = ["service.proto"],
-    deps = [
-            "@protobuf//:timestamp_proto",
-        ],
 )
 
 cpp_grpc_library(

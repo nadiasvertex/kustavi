@@ -11,6 +11,14 @@ build-server:
 build-gui:
   bazel build //frontend:kustavi
 
+proto:
+  mkdir -p frontend/lib/src/generated && \
+  tmp="$(mktemp -d)" && \
+  mkdir "$tmp/kustavi" && \
+  cp proto/service.proto "$tmp/kustavi/" && \
+  PATH="$HOME/.pub-cache/bin:$PATH" protoc -I "$tmp" --dart_out="grpc:frontend/lib/src/generated" kustavi/service.proto && \
+  rm -rf "$tmp"
+
 run:
   cd frontend && flutter build {{flutter_target}}
   cd frontend && ./{{ui_binary_path}}

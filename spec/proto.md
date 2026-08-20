@@ -455,17 +455,24 @@ Preconditions: active session; no pass running.
 
 ## 6. Code Generation
 
-- **C++ (back end):** Bazel `proto_library` + `cc_proto_library` +
-  `cc_grpc_library` (already wired in `proto/BUILD.bazel`).
+- **C++ (back end):** Bazel `proto_library` + `cpp_grpc_library` from
+  `rules_proto_grpc_cpp` (one rule generates both the protobuf message code
+  and the gRPC service code), wired in `proto/BUILD.bazel`.
 - **Dart (front end):** `protoc` with `protoc_plugin`
-  (`dart pub global activate protoc_plugin`), output checked in under
-  `frontend/lib/src/generated/kustavi/`:
+  (`dart pub global activate protoc_plugin`; `~/.pub-cache/bin` on `PATH`),
+  output checked in under `frontend/lib/src/generated/kustavi/`. A single
+  `--dart_out="grpc:..."` invocation generates both the message and the
+  gRPC client code. The proto file is compiled from a `kustavi/` root so the
+  generated paths carry the package name:
 
   ```sh
-  protoc -I proto \
-    --dart_out=frontend/lib/src/generated \
-    --grpc_out=frontend/lib/src/generated \
-    proto/service.proto
+  mkdir -p frontend/lib/src/generated && \
+  tmp="$(mktemp -d)" && \
+  mkdir "$tmp/kustavi" && \
+  cp proto/service.proto "$tmp/kustavi/" && \
+  protoc -I "$tmp" --dart_out="grpc:frontend/lib/src/generated" \
+    kustavi/service.proto && \
+  rm -rf "$tmp"
   ```
 
   Imported in Dart as
