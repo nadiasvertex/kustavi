@@ -7,11 +7,9 @@ cc_binary(
         "include/**/*.h",
     ]),
     includes = ["include"],
-    copts = ["-std=c++23"],
     deps = [
         "//proto:service_cc_grpc",
         "@opencv//:opencv",
-#      "@llama_cpp//:llama_cpp",
     ],
     visibility = ["//visibility:public"],
 )

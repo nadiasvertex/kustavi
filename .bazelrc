@@ -1,0 +1,25 @@
+common --enable_bzlmod
+
+# Disable strict header checking to fix external gRPC compilation on macOS
+build --features=-layering_check
+build --features=-parse_headers
+
+build --per_file_copt=external@-Wno-nullability-extension,-Wno-gcc-compat,-Wno-deprecated,-Wno-unused-function
+
+# Allow OpenCV to compile
+build --copt="-Wno-enum-enum-conversion"
+build --objccopt="-Wno-enum-enum-conversion"
+
+# Use C++26 standard
+build --cxxopt=-std=c++26
+build --host_cxxopt=-std=c++26
+
+# Optimize for local development (faster builds)
+build:debug --compilation_mode=dbg
+build:debug --cxxopt=-O0
+build:debug --cxxopt=-g
+
+# Release configuration
+build:release --compilation_mode=opt
+build:release --cxxopt=-O3
+build:release --cxxopt=-DNDEBUG
