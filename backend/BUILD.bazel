@@ -9,7 +9,10 @@ cc_binary(
     includes = ["include"],
     deps = [
         "//proto:service_cc_grpc",
-        "@opencv//:opencv",
+        "@opencv//:core",
+        "@opencv//:imgproc",
+        "@opencv//:imgcodecs",
+        "@opencv//:objdetect",
     ],
     visibility = ["//visibility:public"],
 )

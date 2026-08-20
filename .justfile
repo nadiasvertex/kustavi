@@ -5,6 +5,9 @@ ui_binary_path := if os_name == "macos" { "build/macos/Build/Products/Release/fr
 build:
   bazel build //...
 
+build-release:
+  bazel build //...--config=release
+
 build-server:
   bazel build //backend:server
 

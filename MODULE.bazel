@@ -14,5 +14,11 @@ bazel_dep(name = "protobuf", version = "35.1")
 bazel_dep(name = "grpc", version = "1.83.0")
 bazel_dep(name = "opencv", version = "5.0.0.bcr.3")
 
+single_version_override(
+    module_name = "opencv",
+    version = "5.0.0.bcr.3",
+    patches = ["//patches:opencv-wstring-convert.patch"],
+)
+
 bazel_dep(name = "rules_dart", version = "0.4.10")
 bazel_dep(name = "rules_dart_proto", version = "0.4.9")

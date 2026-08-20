@@ -1,0 +1,49 @@
+--- modules/dnn/src/tokenizer/unicode.cpp
++++ modules/dnn/src/tokenizer/unicode.cpp
+@@ -7,7 +7,6 @@
+ 
+ #include <algorithm>
+ #include <cassert>
+-#include <codecvt>
+ #include <cstddef>
+ #include <cstdint>
+ #include <locale>
+@@ -139,24 +138,20 @@
+ }
+ 
+ static inline std::wstring unicode_wstring_from_utf8(const std::string & s) {
+-#if defined(__clang__)
+-    // disable C++17 deprecation warning for std::codecvt_utf8
+-#    pragma clang diagnostic push
+-#    pragma clang diagnostic ignored "-Wdeprecated-declarations"
+-#elif defined(__GNUC__)
+-#    pragma GCC diagnostic push
+-#    pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+-#endif
+-
+-    std::wstring_convert<std::codecvt_utf8<wchar_t>> conv;
+-
+-#if defined(__clang__)
+-#    pragma clang diagnostic pop
+-#elif defined(__GNUC__)
+-#    pragma GCC diagnostic pop
+-#endif
+-
+-    return conv.from_bytes(s);
++    std::wstring result;
++    result.reserve(s.size());
++    size_t offset = 0;
++    while (offset < s.size()) {
++        auto cp = unicode_cpt_from_utf8(s, offset);
++        if (sizeof(wchar_t) == 4 || cp < 0x10000u) {
++            result.push_back(static_cast<wchar_t>(cp));
++        } else {
++            cp -= 0x10000u;
++            result.push_back(static_cast<wchar_t>(0xD800u + (cp >> 10)));
++            result.push_back(static_cast<wchar_t>(0xDC00u + (cp & 0x3FFu)));
++        }
++    }
++    return result;
+ }
+ 
+ static std::vector<std::string> unicode_byte_encoding_process(const std::vector<std::string> & bpe_words) {

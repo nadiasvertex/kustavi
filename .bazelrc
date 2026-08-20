@@ -27,3 +27,12 @@ build:debug --cxxopt=-g
 build:release --compilation_mode=opt
 build:release --cxxopt=-O3
 build:release --cxxopt=-DNDEBUG
+
+# macos optimizations
+build:release-macos --copt=-march=armv8-a+simd+crypto
+build:release-macos --copt=-mcpu=apple-m1
+build:release-macos --copt=-ffast-math
+build:release-macos --copt=-fvectorize
+build:release-macos --copt=-funroll-loops
+build:release-macos --linkopt=-Wl,-dead_strip
+build:release-macos --features=thin_lto
