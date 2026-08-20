@@ -1,0 +1,20 @@
+// 1. Specify the syntax version
+syntax = "proto3";
+
+// 2. Define the namespace to prevent naming conflicts
+package kustavi;
+
+option go_package = "://github.com";
+
+import "google/protobuf/timestamp.proto";
+
+service image_service {
+  rpc get_version(get_version_request) returns (get_version_response);
+}
+
+message get_version_request{
+}
+
+message get_version_response {
+  string version = 1;
+}

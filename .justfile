@@ -11,7 +11,6 @@ build-server:
 build-gui:
   bazel build //frontend:kustavi
 
-
 run:
   cd frontend && flutter build {{flutter_target}}
   cd frontend && ./{{ui_binary_path}}
