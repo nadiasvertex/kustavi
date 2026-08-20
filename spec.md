@@ -41,7 +41,14 @@ It needs to be able to run on a computer with only 16GB of RAM.
 
 * Blur Detection: Compute the Laplacian variance of the image.
 
-cv::Mat gray, laplacian;cv::cvtColor(img, gray, cv::COLOR_BGR2GRAY);cv::Laplacian(gray, laplacian, CV_64F);cv::Scalar mean, stddev;cv::meanStdDev(laplacian, mean, stddev);double variance = stddev_val * stddev_val; // Low variance = blurry
+```C++
+cv::Mat gray, laplacian;
+cv::cvtColor(img, gray, cv::COLOR_BGR2GRAY);
+cv::Laplacian(gray, laplacian, CV_64F);
+cv::Scalar mean, stddev;
+cv::meanStdDev(laplacian, mean, stddev);
+double variance = stddev_val * stddev_val; // Low variance = blurry
+```
 
 * Exposure Detection: Calculate a histogram of the grayscale image. If the pixels skew heavily toward 0 (underexposed) or 255 (overexposed), flag them. 
 
