@@ -4,11 +4,15 @@ common --enable_bzlmod
 build --features=-layering_check
 build --features=-parse_headers
 
-build --per_file_copt=external@-Wno-nullability-extension,-Wno-gcc-compat,-Wno-deprecated,-Wno-unused-function
+# Ignore several warnings from packages we depend on
+build --per_file_copt=external@-Wno-nullability-extension,-Wno-gcc-compat,-Wno-deprecated-declarations,-Wno-unused-function
 
 # Allow OpenCV to compile
-build --copt="-Wno-enum-enum-conversion"
-build --objccopt="-Wno-enum-enum-conversion"
+build --per_file_copt=external/.*@-Wno-error=ambiguous-reversed-operator
+build --per_file_copt=external/.*@-Wno-error=enum-compare
+
+# Apply the CoreGraphics bitwise flag ONLY to external files
+build --per_file_copt=external/.*@-Wno-error=enum-enum-conversion
 
 # Use C++26 standard
 build --cxxopt=-std=c++26
