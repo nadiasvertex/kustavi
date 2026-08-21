@@ -34,6 +34,9 @@ run:
 compile-commands:
   bazel run :refresh_compile_commands
 
+compile-commands-all:
+  bazel run @hedron_compile_commands//:refresh_all
+
 format:
     find ./backend -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) -print0 \
       | xargs -0 -P1 {{ CLANG_FORMAT }} -i

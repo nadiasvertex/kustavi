@@ -13,6 +13,7 @@ bazel_dep(name = "rules_proto_grpc_cpp", version = "5.8.0")
 bazel_dep(name = "protobuf", version = "35.1")
 bazel_dep(name = "grpc", version = "1.83.0")
 bazel_dep(name = "cli11", version = "2.6.2")
+bazel_dep(name = "spdlog", version = "1.17.0")
 
 bazel_dep(name = "hedron_compile_commands", version = "0.0.0", dev_dependency = True)
 git_override(
