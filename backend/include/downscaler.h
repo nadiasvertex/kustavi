@@ -49,6 +49,7 @@ auto generate_working_image(const std::filesystem::path &src_path,
  */
 void execute_folder_ingestion_pass(
     database &db, const std::string &source_folder,
-    const std::function<void(int files_seen, int images_found)>& progress_callback);
+    const std::function<void(int files_seen, int images_found)>
+        &progress_callback);
 
 } // namespace kustavi::image
