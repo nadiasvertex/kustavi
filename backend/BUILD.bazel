@@ -13,6 +13,7 @@ cc_binary(
         "@opencv//:imgproc",
         "@opencv//:imgcodecs",
         "@opencv//:objdetect",
+        "@sqlite3//:sqlite3",
     ],
     visibility = ["//visibility:public"],
 )
