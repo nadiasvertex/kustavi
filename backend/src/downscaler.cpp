@@ -134,13 +134,11 @@ void insert_ingested_images(database &db,
 
 void execute_folder_ingestion_pass(
     database &db, const std::filesystem::path &source_folder,
-    const std::function<void(int files_seen, int images_found)>
+    const std::function<void(std::size_t files_seen, std::size_t images_found)>
         &progress_callback) {
 
   auto cache_dir = config::cache_path(source_folder);
-  int files_seen = 0;
-  int images_found = 0;
-
+  std::size_t files_seen = 0;
   std::vector<ingestion_result> results;
 
   spdlog::debug("scanning '{}'", source_folder.string());
@@ -154,16 +152,15 @@ void execute_folder_ingestion_pass(
       continue;
     }
 
-    images_found++;
     results.emplace_back(
         generate_working_image(source_folder, abs_path, cache_dir));
 
     if (files_seen % 20 == 0) {
-      progress_callback(files_seen, images_found);
+      progress_callback(files_seen, results.size());
     }
   }
 
-  progress_callback(files_seen, images_found);
+  progress_callback(files_seen, results.size());
 
   // Save all the of the images we located.
   insert_ingested_images(db, results);
