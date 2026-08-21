@@ -1,4 +1,6 @@
 #include "database.h"
+#include "paths.h"
+
 #include <filesystem>
 
 namespace fs = std::filesystem;
@@ -9,15 +11,15 @@ database::database() = default;
 
 database::~database() { close(); }
 
-void database::open(const std::string &folder_path) {
+void database::open(const std::filesystem::path &folder_path) {
   close();
 
   // Construct the hidden operational directory structure dynamically
-  fs::path cache_dir = fs::path(folder_path) / ".kustavi-cache";
+  fs::path cache_dir = config::cache_path(folder_path);
   fs::create_directories(cache_dir);
-  fs::create_directories(cache_dir / "res768");
+  fs::create_directories(config::image_cache_path(cache_dir));
 
-  std::string db_path = (cache_dir / "session.db").string();
+  std::string db_path = config::session_db_path(cache_dir).string();
 
   int rc = sqlite3_open_v2(db_path.c_str(), &db_,
                            SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE |

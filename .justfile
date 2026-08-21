@@ -32,13 +32,13 @@ run:
   bazel run //frontend:kustavi
 
 compile-commands:
-  bazel run @hedron_compile_commands//:refresh_all -- --compilation_mode=dbg
+  bazel run :refresh_compile_commands
 
 format:
     find ./backend -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) -print0 \
       | xargs -0 -P1 {{ CLANG_FORMAT }} -i
 
-lint:
+lint: compile-commands
     # Run clang-tidy
     # Auto-detect macOS SDK, then run clang-tidy with extra args.
     # clang-tidy resolves its own matching libc++ headers automatically; forcing

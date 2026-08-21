@@ -1,11 +1,9 @@
 #pragma once
 
-#include <memory>
-#include <optional>
+#include <filesystem>
 #include <sqlite3.h>
 #include <stdexcept>
 #include <string>
-#include <vector>
 
 namespace kustavi {
 
@@ -60,7 +58,7 @@ public:
   database();
   ~database();
 
-  void open(const std::string &folder_path);
+  void open(const std::filesystem::path &folder_path);
   void close();
 
   void execute(const std::string &sql);
