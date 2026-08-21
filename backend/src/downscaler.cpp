@@ -2,13 +2,13 @@
 #include "database.h"
 #include "paths.h"
 
-#include <algorithm>
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
+#include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <filesystem>
-#include <print>
 #include <string>
 #include <unordered_set>
 
@@ -16,11 +16,15 @@ namespace fs = std::filesystem;
 
 namespace kustavi::image {
 
-auto generate_working_image(const std::filesystem::path &src_path,
+auto generate_working_image(const std::filesystem::path &base_path,
+                            const std::filesystem::path &src_path,
                             const std::filesystem::path &cache_path)
     -> ingestion_result {
   ingestion_result result;
   const int target_max_dimension = 768;
+
+  spdlog::debug("resizing '{}' -> '{}'", src_path.string(),
+                cache_path.string());
 
   try {
     std::string cached_filename = src_path.stem().string() + "_" +
@@ -28,7 +32,8 @@ auto generate_working_image(const std::filesystem::path &src_path,
                                   ".jpg";
     fs::path dest_path = config::image_cache_path(cache_path) / cached_filename;
 
-    result.working_image_path = dest_path.string();
+    result.relative_id = fs::relative(src_path, base_path).string();
+    result.working_path = dest_path.string();
 
     if (fs::exists(dest_path)) {
       cv::Mat header = cv::imread(src_path, cv::IMREAD_UNCHANGED);
@@ -87,18 +92,22 @@ auto generate_working_image(const std::filesystem::path &src_path,
   return result;
 }
 
-void execute_folder_ingestion_pass(
-    database &db, const std::string &source_folder,
-    const std::function<void(int files_seen, int images_found)>
-        &progress_callback) {
+bool is_valid_image_file(const std::filesystem::path &path) {
+  if (path.string().contains(".kustavi-cache")) {
+    return false;
+  }
 
-  std::string cache_dir = (fs::path(source_folder) / ".kustavi-cache").string();
-  int files_seen = 0;
-  int images_found = 0;
+  static const std::unordered_set<std::string> valid_extensions = {
+      ".jpg", ".jpeg", ".png", ".webp"};
 
-  const std::unordered_set<std::string> valid_extensions = {".jpg", ".jpeg",
-                                                            ".png", ".webp"};
+  auto ext = path.extension().string();
+  std::ranges::transform(ext, ext.begin(), ::tolower);
 
+  return valid_extensions.contains(ext);
+}
+
+void insert_ingested_images(database &db,
+                            const std::vector<ingestion_result> &images) {
   db.begin_transaction();
   try {
     auto insert_stmt = db.prepare(R"(
@@ -106,54 +115,58 @@ void execute_folder_ingestion_pass(
             VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%s','now'));
         )");
 
-    for (const auto &entry : fs::recursive_directory_iterator(source_folder)) {
-      files_seen++;
-
-      if (entry.path().string().contains(".kustavi-cache")) {
-        continue;
-      }
-
-      auto ext = entry.path().extension().string();
-      std::ranges::transform(ext, ext.begin(), ::tolower);
-
-      if (valid_extensions.count(ext) == 0) {
-        continue;
-      }
-
-      images_found++;
-      const auto &abs_path = entry.path();
-      auto relative_id = fs::relative(entry.path(), source_folder).string();
-
-      ingestion_result resize_result =
-          generate_working_image(abs_path, cache_dir);
-
-      if (resize_result.success) {
-        insert_stmt.bind_text(1, relative_id);
-        insert_stmt.bind_text(2, abs_path);
-        insert_stmt.bind_path(3, entry.path().filename());
-        insert_stmt.bind_int(4, resize_result.original_width);
-        insert_stmt.bind_int(5, resize_result.original_height);
-        insert_stmt.bind_int64(6, fs::file_size(abs_path));
-        insert_stmt.bind_text(7, resize_result.working_image_path);
-
-        insert_stmt.step();
-      } else {
-        std::print("Skipping file '{}' because: '{}'\n", relative_id,
-                   resize_result.error_message);
-      }
-
-      if (files_seen % 20 == 0) {
-        progress_callback(files_seen, images_found);
-      }
+    for (const auto &img : images) {
+      insert_stmt.bind_text(1, img.relative_id);
+      insert_stmt.bind_text(2, img.absolute_path.string());
+      insert_stmt.bind_path(3, img.absolute_path.filename());
+      insert_stmt.bind_int(4, img.original_width);
+      insert_stmt.bind_int(5, img.original_height);
+      insert_stmt.bind_int64(6, img.size_bytes);
+      insert_stmt.bind_text(7, img.working_path);
+      insert_stmt.step();
     }
-
     db.commit_transaction();
   } catch (...) {
     db.rollback_transaction();
     throw;
   }
+}
+
+void execute_folder_ingestion_pass(
+    database &db, const std::filesystem::path &source_folder,
+    const std::function<void(int files_seen, int images_found)>
+        &progress_callback) {
+
+  auto cache_dir = config::cache_path(source_folder);
+  int files_seen = 0;
+  int images_found = 0;
+
+  std::vector<ingestion_result> results;
+
+  spdlog::debug("scanning '{}'", source_folder.string());
+  for (const auto &entry : fs::recursive_directory_iterator(source_folder)) {
+    files_seen++;
+
+    const auto &abs_path = entry.path();
+    spdlog::debug("evaluating '{}'", abs_path.string());
+
+    if (!is_valid_image_file(abs_path)) {
+      continue;
+    }
+
+    images_found++;
+    results.emplace_back(
+        generate_working_image(source_folder, abs_path, cache_dir));
+
+    if (files_seen % 20 == 0) {
+      progress_callback(files_seen, images_found);
+    }
+  }
 
   progress_callback(files_seen, images_found);
+
+  // Save all the of the images we located.
+  insert_ingested_images(db, results);
 }
 
 } // namespace kustavi::image

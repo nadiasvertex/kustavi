@@ -2,6 +2,7 @@
 
 #include "database.h"
 
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <string>
@@ -12,13 +13,16 @@ namespace kustavi::image {
  * @brief Represents the result of an image ingestion operation.
  */
 struct ingestion_result {
-  bool success = false;    //! Indicates whether the ingestion was successful.
-  int original_width = 0;  //! The original width of the source image.
-  int original_height = 0; //! The original height of the source image.
-  std::string working_image_path; //! The path to the generated working image in
-                                  //! the cache.
-  std::string error_message;      //! An error message describing the reason for
-                                  //! failure, if any.
+  bool success = false; //! Indicates whether the ingestion was successful.
+  std::string relative_id;
+  std::filesystem::path absolute_path;
+  std::int32_t original_width = 0;  //! The original width of the source image.
+  std::int32_t original_height = 0; //! The original height of the source image.
+  std::int64_t size_bytes = 0;
+  std::string working_path;  //! The path to the generated working image in
+                             //! the cache.
+  std::string error_message; //! An error message describing the reason for
+                             //! failure, if any.
 };
 
 /**
@@ -48,7 +52,7 @@ auto generate_working_image(const std::filesystem::path &src_path,
  *
  */
 void execute_folder_ingestion_pass(
-    database &db, const std::string &source_folder,
+    database &db, const std::filesystem::path &source_folder,
     const std::function<void(int files_seen, int images_found)>
         &progress_callback);
 

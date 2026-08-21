@@ -1,5 +1,6 @@
 #include "init.h"
 #include "database.h"
+#include "downscaler.h"
 
 #include <spdlog/spdlog.h>
 
@@ -12,5 +13,11 @@ void initialize(const std::filesystem::path &folder_path) {
   // Open the database and initialize the schema
   kustavi::database db;
   db.open(folder_path);
+
+  image::execute_folder_ingestion_pass(
+      db, folder_path, [](int files_seen, int images_found) -> void {
+        spdlog::info("Ingestion progress: {} files seen, {} images found",
+                     files_seen, images_found);
+      });
 }
 } // namespace kustavi::cmd

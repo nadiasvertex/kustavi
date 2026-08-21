@@ -1,5 +1,6 @@
 #include "analyze.h"
 #include "database.h"
+#include "downscaler.h"
 
 #include <spdlog/spdlog.h>
 
