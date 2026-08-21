@@ -22,6 +22,6 @@ proto:
   PATH="$HOME/.pub-cache/bin:$PATH" protoc -I "$tmp" --dart_out="grpc:frontend/lib/src/generated" kustavi/service.proto && \
   rm -rf "$tmp"
 
-run:
+run: build-server
   cd frontend && flutter build {{flutter_target}}
   cd frontend && ./{{ui_binary_path}}

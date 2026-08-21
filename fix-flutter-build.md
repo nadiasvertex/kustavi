@@ -55,12 +55,13 @@ desktop; routes to the macOS / Linux / Windows bundle based on host OS).
   ```starlark
   bazel_dep(name = "rules_dart", version = "0.4.9")
 
-  bazel_dep(name = "rules_flutter", version = "0.0.0")
-  git_override(
-      module_name = "rules_flutter",
-      remote = "https://github.com/aran/rules_flutter.git",
-      commit = "<PIN>",  # pin a recent main commit at implementation time
-  )
+   bazel_dep(name = "rules_flutter", version = "0.0.0")
+   git_override(
+       module_name = "rules_flutter",
+       remote = "https://github.com/aran/rules_flutter.git",
+       commit = "cfb2921cb2129d0658ba195396ecd3f1c97aa997",  # main @ 2026-08-21
+       patches = ["//patches:rules_flutter-subdir-app.patch"],
+   )
 
   flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
   flutter.toolchain(flutter_version = "3.44.1")
@@ -148,6 +149,36 @@ refresh with the hermetic toolchain: `bazel run @rules_flutter//flutter:pub
    didn't regress the C++ side.
 5. `bazel test //frontend:widget_test` (if added).
 6. `bazel build //... -c opt` end-to-end.
+
+## Implementation results (2026-08-21)
+
+- Pinned commit: `cfb2921cb2129d0658ba195396ecd3f1c97aa997` (main @ 2026-08-21).
+- `rules_dart`: the root had `0.4.10` (not `1.0.0`), but both are the
+  `aran/rules_dart` fork on the BCR; `0.4.10` removed
+  `DartInfo.transitive_resources`, which rules_flutter's generated pub spokes
+  use, so it was downgraded to `0.4.9` (matches `rules_dart_proto`'s
+  requirement too).
+- `bazel_dep(name = "platforms", ...)` added to the root module: `@platforms`
+  is not visible to the main module's BUILD files without a direct dep.
+- `use_repo` keeps only the desktop subset actually consumed here:
+  `deps`, `flutter_dev_root`, `flutter_macos_engine`, `flutter_toolchains`.
+  Add `flutter_linux_engine` / `flutter_windows_engine` on their host OSes.
+- New patch `patches/rules_flutter-subdir-app.patch`: at this commit the
+  ruleset synthesizes the app's own Dart package with `lib_root=""`
+  (workspace root), so a Flutter app in a subdirectory (our `frontend/`)
+  gets a `package_config.json` pointing at the wrong root. The patch adds an
+  optional `lib_root` to `synthesize_app_package` (default `""`, so
+  root-directory apps and the ruleset's unit tests are unaffected) and passes
+  `derive_lib_root(ctx.label.workspace_root, ctx.label.package)` at the
+  `flutter_application` / `flutter_test` / `flutter_web_application` call
+  sites. Verified against the ruleset's own `//flutter/tests:common_test`
+  (8/8 pass) and our `frontend/` build in `-c dbg`, fastbuild, and `-c opt`.
+- Lock refresh was NOT needed: Flutter 3.44.1's Dart satisfies the checked-in
+  `pubspec.lock` floors (dart `>=3.13.1`, flutter `>=3.18.0`).
+- Verified: `bazel build //frontend:kustavi` (alias → `kustavi_macos`),
+  `//frontend:all -c opt`, `//backend:server`, `//...` all build; the bundle
+  is `bazel-bin/frontend/kustavi_macos.zip` containing `Kustavi.app`
+  (signed, `Contents/MacOS/Kustavi` runs).
 
 ## Risks / caveats
 
