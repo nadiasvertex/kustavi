@@ -1,3 +1,4 @@
 exports_files([
     "opencv-wstring-convert.patch",
+    "rules_flutter-subdir-app.patch",
 ])

@@ -1,5 +1,10 @@
 common --enable_bzlmod
 
+# rules_flutter pulls rules_jvm_external, which needs a newer toolchain JDK
+common --tool_java_language_version=25
+common --tool_java_runtime_version=remotejdk_25
+startup:windows --windows_enable_symlinks
+
 # Disable strict header checking to fix external gRPC compilation on macOS
 build --features=-layering_check
 build --features=-parse_headers

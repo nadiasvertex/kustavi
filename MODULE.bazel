@@ -3,9 +3,9 @@ module(
     version = "1.0.0",
 )
 
-
 # Core Bazel utility rules
 bazel_dep(name = "apple_support", version = "2.8.0")
+bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "rules_cc", version = "0.2.22")
 bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "rules_proto_grpc", version = "5.8.0")
@@ -13,12 +13,38 @@ bazel_dep(name = "rules_proto_grpc_cpp", version = "5.8.0")
 bazel_dep(name = "protobuf", version = "35.1")
 bazel_dep(name = "grpc", version = "1.83.0")
 bazel_dep(name = "opencv", version = "5.0.0.bcr.3")
-
 single_version_override(
     module_name = "opencv",
-    version = "5.0.0.bcr.3",
     patches = ["//patches:opencv-wstring-convert.patch"],
+    version = "5.0.0.bcr.3",
 )
 
-bazel_dep(name = "rules_dart", version = "0.4.10")
+# rules_flutter is built against this fork version; 0.4.10 has API changes
+# (DartInfo.transitive_resources removed) that break its generated pub spokes.
+bazel_dep(name = "rules_dart", version = "0.4.9")
 bazel_dep(name = "rules_dart_proto", version = "0.4.9")
+
+# Flutter, built with a hermetic pinned SDK (no host Flutter install required).
+bazel_dep(name = "rules_flutter", version = "0.0.0")
+git_override(
+    module_name = "rules_flutter",
+    remote = "https://github.com/aran/rules_flutter.git",
+    commit = "cfb2921cb2129d0658ba195396ecd3f1c97aa997",
+    patches = ["//patches:rules_flutter-subdir-app.patch"],
+)
+
+flutter = use_extension("@rules_flutter//flutter:extensions.bzl", "flutter")
+flutter.toolchain(flutter_version = "3.44.1")
+flutter.pub(
+    name = "deps",
+    lock = "//frontend:pubspec.lock",
+)
+use_repo(
+    flutter,
+    "deps",
+    "flutter_dev_root",
+    "flutter_macos_engine",
+    "flutter_toolchains",
+)
+
+register_toolchains("@flutter_toolchains//:all")

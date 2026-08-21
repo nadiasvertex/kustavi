@@ -1,14 +1,55 @@
-# We use a standard genrule to bridge Bazel with Flutter's CLI
-genrule(
+load("@rules_flutter//flutter:defs.bzl", "flutter_application")
+load("@rules_flutter//flutter:linux.bzl", "flutter_linux_app")
+load("@rules_flutter//flutter:macos.bzl", "flutter_macos_app")
+load("@rules_flutter//flutter:windows.bzl", "flutter_windows_app")
+
+exports_files(["pubspec.lock"])
+
+flutter_application(
+    name = "kustavi_app",
+    package_name = "kustavi",  # must match pubspec.yaml name:
+    main = "lib/main.dart",
+    srcs = glob(["lib/**/*.dart"]),
+    deps = [
+        "@deps//:cupertino_icons",
+        "@deps//:fixnum",
+        "@deps//:flutter",
+        "@deps//:flutter_riverpod",
+        "@deps//:grpc",
+        "@deps//:protobuf",
+        "@deps//:riverpod_annotation",
+        "@rules_flutter//flutter:material_icons",
+    ],
+)
+
+flutter_macos_app(
+    name = "kustavi_macos",
+    application = ":kustavi_app",
+    app_name = "Kustavi",
+    bundle_id = "dev.kustavi.app",
+    target_compatible_with = ["@platforms//os:macos"],
+)
+
+flutter_linux_app(
+    name = "kustavi_linux",
+    application = ":kustavi_app",
+    gtk_app_id = "com.kustavi.desktop",
+    # On non-Linux hosts: -c dbg --platforms=@rules_flutter//flutter/platforms:linux_x64
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+flutter_windows_app(
+    name = "kustavi_windows",
+    application = ":kustavi_app",
+    target_compatible_with = ["@platforms//os:windows"],
+)
+
+# Host router: builds the bundle for whatever desktop OS Bazel is running on.
+alias(
     name = "kustavi",
-    srcs = glob(["lib/**", "pubspec.yaml", "assets/**"]),
-    outs = ["build/app_bundle"], # Adjust output path depending on desktop platform OS
-    cmd = """
-        export PATH=$$PATH:/path/to/flutter/bin
-        cd frontend
-        flutter pub get
-        flutter build macos # Or windows / linux depending on host target
-        cp -r build/macos/Build/Products/Release/ $(RULEDIR)/build/app_bundle
-    """,
-    local = 1, # Allows network access for pub get fetching if needed
+    actual = select({
+        "@platforms//os:macos": ":kustavi_macos",
+        "@platforms//os:linux": ":kustavi_linux",
+        "@platforms//os:windows": ":kustavi_windows",
+    }),
 )

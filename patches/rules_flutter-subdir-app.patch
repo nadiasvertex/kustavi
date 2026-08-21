@@ -1,0 +1,125 @@
+diff --git flutter/private/app_entrypoint.bzl flutter/private/app_entrypoint.bzl
+index cfa41b9..333b8fe 100644
+--- flutter/private/app_entrypoint.bzl
++++ flutter/private/app_entrypoint.bzl
+@@ -17,31 +17,33 @@ alive across hot restart.
+ 
+ load("@rules_dart//dart:utils.bzl", "colocate_packages", "generate_package_config")
+ 
+-def synthesize_app_package(packages, package_name):
+-    """Replace transitive same-package entries with the app's synthesized package.
++def synthesize_app_package(packages, package_name, lib_root = ""):
++    """Replace colliding same-root entries with the app's synthesized package.
+ 
+     A `flutter_application` / `flutter_test` / `flutter_web_application` whose
+     own sources live under `lib/` is conceptually the *root* of its Dart
+-    package — but any `dart_library` it depends on with the same
+-    `package_name` exposes a `DartPackageInfo` with `lib_root=""` too, which
+-    would collide with the root mapping (two packages can't share a
++    package — but any `dart_library` it depends on with the same `lib_root`
++    would collide with that root mapping (two packages can't share a
+     `rootUri`). Drop those colliding transitive entries and append one fresh
+-    `lib_root=""` entry for the app itself.
++    entry for the app itself.
+ 
+     Args:
+       packages: List of `DartPackageInfo` (from `collect_packages`).
+       package_name: The app's `package_name`. Always non-empty — every
+         Flutter consumer rule declares it as a mandatory attribute.
++      lib_root: The app's Dart package root, exec-root-relative ("" for an
++        app at the workspace root, the Bazel package directory for an app
++        in a subdirectory; derive with rules_dart `derive_lib_root`).
+ 
+     Returns:
+-      The packages list with same-`lib_root==""` entries replaced by one
++      The packages list with same-`lib_root` entries replaced by one
+       synthesized app entry. `language_version` is left blank — the app's
+       language version comes from the analyzer/compiler defaults, matching
+       what `flutter build` does.
+     """
+-    return [p for p in packages if p.lib_root != ""] + [struct(
++    return [p for p in packages if p.lib_root != lib_root] + [struct(
+         package_name = package_name,
+-        lib_root = "",
++        lib_root = lib_root,
+         language_version = "",
+     )]
+ 
+diff --git flutter/private/common.bzl flutter/private/common.bzl
+index 898c16a..9a7188f 100644
+--- flutter/private/common.bzl
++++ flutter/private/common.bzl
+@@ -7,7 +7,7 @@ flutter_application, flutter_android_bundle, and flutter_ios_application.
+ 
+ load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
+ load("@rules_dart//dart:providers.bzl", "DartInfo")
+-load("@rules_dart//dart:utils.bzl", "collect_packages", "collect_transitive_srcs", "generate_dev_package_config")
++load("@rules_dart//dart:utils.bzl", "collect_packages", "collect_transitive_srcs", "derive_lib_root", "generate_dev_package_config")
+ load("//flutter:providers.bzl", "FlutterInfo")
+ load("//flutter/private:app_entrypoint.bzl", "app_main_package_uri", "compile_package_config", "resolve_kernel_entrypoint", "synthesize_app_package")
+ load("//flutter/private:flutter_asset_bundle.bzl", "flutter_asset_bundle_action")
+@@ -196,7 +196,11 @@ def flutter_compile_kernel(ctx, flutter_sdk_info, aot = None, platform_dill = No
+     # incremental compiler uses (without this, hot-reload deltas keyed via
+     # sandbox `file://` URIs can't be matched against the kernel's libraries).
+     app_pkg_name = ctx.attr.package_name
+-    packages = synthesize_app_package(packages, app_pkg_name)
++    packages = synthesize_app_package(
++        packages,
++        app_pkg_name,
++        derive_lib_root(ctx.label.workspace_root, ctx.label.package),
++    )
+ 
+     # Include the app's own `main` so the synthesized package keyed as
+     # `package:<name>/main.dart` (hot-reload URI parity) is co-located with
+diff --git flutter/private/flutter_test.bzl flutter/private/flutter_test.bzl
+index 8f311a2..4aadd25 100644
+--- flutter/private/flutter_test.bzl
++++ flutter/private/flutter_test.bzl
+@@ -37,7 +37,7 @@ therefore `package:test_api`) so the generated bootstrap compiles.
+ """
+ 
+ load("@rules_dart//dart:providers.bzl", "DartInfo")
+-load("@rules_dart//dart:utils.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS", "collect_packages", "collect_transitive_srcs", "runfiles_path")
++load("@rules_dart//dart:utils.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS", "collect_packages", "collect_transitive_srcs", "derive_lib_root", "runfiles_path")
+ load(
+     "//flutter/private:app_entrypoint.bzl",
+     "compile_package_config",
+@@ -179,7 +179,11 @@ def _flutter_test_impl(ctx):
+     # so `part` directives and the package's single rootUri resolve. Without
+     # the colocation, a test that imports `package:<self>/foo.dart` fails to
+     # find foo.dart's generated `.g.dart` / `.freezed.dart` siblings.
+-    packages = synthesize_app_package(packages, ctx.attr.package_name)
++    packages = synthesize_app_package(
++        packages,
++        ctx.attr.package_name,
++        derive_lib_root(ctx.label.workspace_root, ctx.label.package),
++    )
+     pc = compile_package_config(ctx, packages, all_srcs)
+     package_config = pc.config_file
+     all_srcs = pc.srcs
+diff --git flutter/private/flutter_web_application.bzl flutter/private/flutter_web_application.bzl
+index 6479eb7..883c2c5 100644
+--- flutter/private/flutter_web_application.bzl
++++ flutter/private/flutter_web_application.bzl
+@@ -18,7 +18,7 @@ Both dart2wasm and dart2js take .dart source directly (not kernel .dill),
+ so we skip the frontend_server kernel compilation step used by desktop/mobile.
+ """
+ 
+-load("@rules_dart//dart:utils.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS", "collect_packages", "collect_transitive_srcs", "generate_dev_package_config")
++load("@rules_dart//dart:utils.bzl", "COPY_TO_DIRECTORY_TOOLCHAINS", "collect_packages", "collect_transitive_srcs", "derive_lib_root", "generate_dev_package_config")
+ load("//flutter:providers.bzl", "FlutterInfo")
+ load(
+     "//flutter/private:app_entrypoint.bzl",
+@@ -189,7 +189,11 @@ def _flutter_web_bundle_impl(ctx):
+     # inputs so it ends up inside the same assembled directory as its lib/
+     # siblings — that's what lets `main.dart`'s relative imports resolve to
+     # the assembled (codegen-co-located) copies of its package siblings.
+-    packages = synthesize_app_package(packages, ctx.attr.package_name)
++    packages = synthesize_app_package(
++        packages,
++        ctx.attr.package_name,
++        derive_lib_root(ctx.label.workspace_root, ctx.label.package),
++    )
+ 
+     # Hot-reload dev metadata (debug only): a multi-root dev package_config so a
+     # source-assembled (codegen) app resolves package: URIs across the live
