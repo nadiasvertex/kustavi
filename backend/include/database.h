@@ -40,6 +40,7 @@ public:
 
   // Explicit binding helpers
   void bind_text(int index, const std::string &value);
+  void bind_path(int index, const std::filesystem::path &value);
   void bind_int64(int index, int64_t value);
   void bind_int(int index, int value);
   void bind_double(int index, double value);

@@ -80,6 +80,11 @@ void sqlite_statement::bind_text(int index, const std::string &value) {
   sqlite3_bind_text(stmt_, index, value.c_str(), -1, SQLITE_TRANSIENT);
 }
 
+void sqlite_statement::bind_path(int index,
+                                 const std::filesystem::path &value) {
+  sqlite3_bind_text(stmt_, index, value.c_str(), -1, SQLITE_TRANSIENT);
+}
+
 void sqlite_statement::bind_int64(int index, int64_t value) {
   sqlite3_bind_int64(stmt_, index, value);
 }

@@ -109,11 +109,11 @@ void execute_folder_ingestion_pass(
     for (const auto &entry : fs::recursive_directory_iterator(source_folder)) {
       files_seen++;
 
-      if (entry.path().string().find(".kustavi-cache") != std::string::npos) {
+      if (entry.path().string().contains(".kustavi-cache")) {
         continue;
       }
 
-      std::string ext = entry.path().extension().string();
+      auto ext = entry.path().extension().string();
       std::ranges::transform(ext, ext.begin(), ::tolower);
 
       if (valid_extensions.count(ext) == 0) {
@@ -121,9 +121,8 @@ void execute_folder_ingestion_pass(
       }
 
       images_found++;
-      std::string abs_path = entry.path().string();
-      std::string relative_id =
-          fs::relative(entry.path(), source_folder).string();
+      const auto &abs_path = entry.path();
+      auto relative_id = fs::relative(entry.path(), source_folder).string();
 
       ingestion_result resize_result =
           generate_working_image(abs_path, cache_dir);
@@ -131,10 +130,10 @@ void execute_folder_ingestion_pass(
       if (resize_result.success) {
         insert_stmt.bind_text(1, relative_id);
         insert_stmt.bind_text(2, abs_path);
-        insert_stmt.bind_text(3, entry.path().filename().string());
+        insert_stmt.bind_path(3, entry.path().filename());
         insert_stmt.bind_int(4, resize_result.original_width);
         insert_stmt.bind_int(5, resize_result.original_height);
-        insert_stmt.bind_int64(6, fs::file_size(entry.path()));
+        insert_stmt.bind_int64(6, fs::file_size(abs_path));
         insert_stmt.bind_text(7, resize_result.working_image_path);
 
         insert_stmt.step();
