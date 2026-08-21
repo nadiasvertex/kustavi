@@ -60,11 +60,11 @@ public:
     sqlite_statement prepare(const std::string& sql);
 
     // Transaction Management Controls
-    void BeginTransaction();
-    void CommitTransaction();
-    void RollbackTransaction();
+    void begin_transaction();
+    void commit_transaction();
+    void rollback_transaction();
 
-    sqlite3* RawHandle() { return db_; }
+    sqlite3* raw_handle() { return db_; }
 
 private:
     sqlite3* db_ = nullptr;

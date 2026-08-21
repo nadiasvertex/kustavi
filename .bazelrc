@@ -10,7 +10,7 @@ build --features=-layering_check
 build --features=-parse_headers
 
 # Ignore several warnings from packages we depend on
-build --per_file_copt=external@-Wno-nullability-extension,-Wno-gcc-compat,-Wno-deprecated-declarations,-Wno-unused-function
+build --per_file_copt=external/.*@-Wno-nullability-extension,-Wno-gcc-compat,-Wno-deprecated-declarations,-Wno-unused-function
 
 # Allow OpenCV to compile
 build --per_file_copt=external/.*@-Wno-error=ambiguous-reversed-operator

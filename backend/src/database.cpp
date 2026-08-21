@@ -27,7 +27,7 @@ void database::open(const std::string& folder_path) {
     if (rc != SQLITE_OK) {
         std::string err = sqlite3_errmsg(db_);
         db_ = nullptr;
-        throw SQLiteException("Failed to open Kustavi database session: " + err);
+        throw sqlite_exception("Failed to open Kustavi database session: " + err);
     }
 
     // Optimize engine parameters for fast write loops (Safe for local application context)
@@ -52,22 +52,22 @@ void database::execute(const std::string& sql) {
         std::string err = (err_msg != nullptr) ? err_msg : "Unknown error";
         if (err_msg != nullptr) { sqlite3_free(err_msg);
 }
-        throw SQLiteException("SQL Execution failure: " + err);
+        throw sqlite_exception("SQL Execution failure: " + err);
     }
 }
 
-SQLiteStatement database::prepare(const std::string& sql) {
+auto database::prepare(const std::string& sql) -> sqlite_statement {
     sqlite3_stmt* stmt = nullptr;
     int rc = sqlite3_prepare_v2(db_, sql.c_str(), static_cast<int>(sql.length()), &stmt, nullptr);
     if (rc != SQLITE_OK) {
-        throw SQLiteException("SQL Preparation statement failed: " + std::string(sqlite3_errmsg(db_)));
+        throw sqlite_exception("SQL Preparation statement failed: " + std::string(sqlite3_errmsg(db_)));
     }
-    return SQLiteStatement(stmt);
+    return sqlite_statement(stmt);
 }
 
-void database::BeginTransaction() { execute("BEGIN TRANSACTION;"); }
-void database::CommitTransaction() { execute("COMMIT;"); }
-void database::RollbackTransaction() { execute("ROLLBACK;"); }
+void database::begin_transaction() { execute("BEGIN TRANSACTION;"); }
+void database::commit_transaction() { execute("COMMIT;"); }
+void database::rollback_transaction() { execute("ROLLBACK;"); }
 
 // --- Statement Binding Definitions ---
 
@@ -91,10 +91,10 @@ void sqlite_statement::bind_null(int index) {
     sqlite3_bind_null(stmt_, index);
 }
 
-int SQLiteStatement::Step() {
+auto sqlite_statement::step() -> int {
     int rc = sqlite3_step(stmt_);
     if (rc != SQLITE_ROW && rc != SQLITE_DONE) {
-        throw SQLiteException("Database evaluation step failure: " + std::string(sqlite3_errstr(rc)));
+        throw sqlite_exception("Database evaluation step failure: " + std::string(sqlite3_errstr(rc)));
     }
     return rc;
 }
