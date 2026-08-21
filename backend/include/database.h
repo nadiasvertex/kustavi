@@ -7,22 +7,24 @@
 #include <stdexcept>
 #include <optional>
 
-class SQLiteException : public std::runtime_error {
+namespace kustavi {
+
+class sqlite_exception : public std::runtime_error {
 public:
-    explicit SQLiteException(const std::string& message) : std::runtime_error(message) {}
+    explicit sqlite_exception(const std::string& message) : std::runtime_error(message) {}
 };
 
-class SQLiteStatement {
+class sqlite_statement {
 public:
-    explicit SQLiteStatement(sqlite3_stmt* stmt) : stmt_(stmt) {}
-    ~SQLiteStatement() { if (stmt_) sqlite3_finalize(stmt_); }
+    explicit sqlite_statement(sqlite3_stmt* stmt) : stmt_(stmt) {}
+    ~sqlite_statement() { if (stmt_) sqlite3_finalize(stmt_); }
 
     // Disable copying to enforce strict single-ownership RAII rules
-    SQLiteStatement(const SQLiteStatement&) = delete;
-    SQLiteStatement& operator=(const SQLiteStatement&) = delete;
+    sqlite_statement(const sqlite_statement&) = delete;
+    sqlite_statement& operator=(const sqlite_statement&) = delete;
 
-    SQLiteStatement(SQLiteStatement&& other) noexcept : stmt_(other.stmt_) { other.stmt_ = nullptr; }
-    SQLiteStatement& operator=(SQLiteStatement&& other) noexcept {
+    sqlite_statement(sqlite_statement&& other) noexcept : stmt_(other.stmt_) { other.stmt_ = nullptr; }
+    sqlite_statement& operator=(sqlite_statement&& other) noexcept {
         if (this != &other) {
             if (stmt_) sqlite3_finalize(stmt_);
             stmt_ = other.stmt_;
@@ -32,30 +34,30 @@ public:
     }
 
     // Explicit binding helpers
-    void BindText(int index, const std::string& value);
-    void BindInt64(int index, int64_t value);
-    void BindInt(int index, int value);
-    void BindDouble(int index, double value);
-    void BindNull(int index);
+    void bind_text(int index, const std::string& value);
+    void bind_int64(int index, int64_t value);
+    void bind_int(int index, int value);
+    void bind_double(int index, double value);
+    void bind_null(int index);
 
     // Execution steps
-    int Step();
-    sqlite3_stmt* Raw() { return stmt_; }
+    int step();
+    sqlite3_stmt* raw() { return stmt_; }
 
 private:
     sqlite3_stmt* stmt_ = nullptr;
 };
 
-class KustaviDatabase {
+class database {
 public:
-    KustaviDatabase();
-    ~KustaviDatabase();
+    database();
+    ~database();
 
-    void Open(const std::string& folder_path);
-    void Close();
+    void open(const std::string& folder_path);
+    void close();
 
-    void Execute(const std::string& sql);
-    SQLiteStatement Prepare(const std::string& sql);
+    void execute(const std::string& sql);
+    sqlite_statement prepare(const std::string& sql);
 
     // Transaction Management Controls
     void BeginTransaction();
@@ -66,5 +68,6 @@ public:
 
 private:
     sqlite3* db_ = nullptr;
-    void InitializeSchema();
+    void initialize_schema();
 };
+}

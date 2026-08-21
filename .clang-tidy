@@ -1,0 +1,83 @@
+# clang-tidy configuration enforcing safety → readability → performance
+# Place this file at the repository root.
+
+Checks: >
+  -*,
+  clang-analyzer-*,
+  bugprone-*,
+  cppcoreguidelines-avoid-do-while,
+  cppcoreguidelines-interfaces-global-init,
+  cppcoreguidelines-narrowing-conversions,
+  cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  cppcoreguidelines-pro-bounds-constant-array-index,
+  cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  cppcoreguidelines-pro-type-const-cast,
+  cppcoreguidelines-pro-type-cstyle-cast,
+  cppcoreguidelines-pro-type-reinterpret-cast,
+  cppcoreguidelines-pro-type-static-cast-downcast,
+  cppcoreguidelines-slicing,
+  modernize-*,
+  performance-*,
+  readability-identifier-naming,
+  readability-braces-around-statements,
+  readability-implicit-bool-conversion,
+  readability-inconsistent-declaration-parameter-name,
+  readability-make-unique,
+  readability-use-anyofallof
+
+  -bugprone-easily-swappable-parameters
+#   flags nearly every multi-arg
+#   numeric/pointer function in this codebase (bit-packing helpers, codegen
+#   builders); too noisy relative to the bugs it catches here.
+# -bugprone-throwing-static-initialization
+# -bugprone-exception-escape
+#   both really mean "a std::string/std::vector/std::unordered_map
+#   allocation could throw bad_alloc," which is true of nearly every static
+#   table and closure in this codebase and isn't a failure mode CLAUDE.md's
+#   "reserve exceptions for truly exceptional, non-local failures" asks us
+#   to harden against. Left enabled (not disabled outright) so they still
+#   surface as warnings — e.g. a `main()` that's missing this repo's
+#   standard top-level try/catch is still worth flagging — just not
+#   build-blocking.
+WarningsAsErrors: >
+  clang-diagnostic-*,
+  clang-analyzer-*,
+  bugprone-*,
+  -bugprone-throwing-static-initialization,
+  -bugprone-exception-escape,
+  cppcoreguidelines-narrowing-conversions,
+  readability-identifier-naming
+
+# Only run clang-tidy on project sources (exclude third_party)
+HeaderFilterRegex: '^src/.*'
+
+CheckOptions:
+  - key: readability-identifier-naming.DefaultCase
+    value: lower_case
+  - key: readability-identifier-naming.MacroDefinitionCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.TemplateParameterCase
+    value: CamelCase
+  - key: readability-identifier-naming.TypeTemplateParameterCase
+    value: CamelCase
+  - key: readability-identifier-naming.TemplateTemplateParameterCase
+    value: CamelCase
+
+  # Private member variables
+  - key: readability-identifier-naming.PrivateMemberCase
+    value: lower_case
+  - key: readability-identifier-naming.PrivateMemberSuffix
+    value: '_'
+  - key: readability-identifier-naming.PrivateMemberIgnoredRegexp
+    value: '^[a-z0-9_]+_$'
+
+  # Protected member variables
+  - key: readability-identifier-naming.ProtectedMemberCase
+    value: lower_case
+  - key: readability-identifier-naming.ProtectedMemberSuffix
+    value: '_'
+  - key: readability-identifier-naming.ProtectedMemberIgnoredRegexp
+    value: '^[a-z0-9_]+_$'
+
+  - key: readability-identifier-naming.IgnoreMainLikeFunctions
+    value: '1'

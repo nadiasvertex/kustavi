@@ -1,3 +1,8 @@
+#!/usr/bin/env just --justfile
+
+CLANG_TIDY := "/opt/homebrew/opt/llvm/bin/clang-tidy"
+CLANG_FORMAT := "/opt/homebrew/opt/llvm/bin/clang-format"
+
 os_name := os()
 flutter_target := if os_name == "macos" { "macos" } else if os_name == "windows" { "windows" } else { "linux" }
 ui_binary_path := if os_name == "macos" { "build/macos/Build/Products/Release/frontend.app/Contents/MacOS/frontend" } else if os_name == "windows" { "build/windows/x64/runner/Release/frontend.exe" } else { "build/linux/x64/release/bundle/frontend" }
@@ -25,3 +30,21 @@ proto:
 run:
   bazel build //...
   bazel run //frontend:kustavi
+
+compile-commands:
+  bazel run @hedron_compile_commands//:refresh_all -- --compilation_mode=dbg
+
+format:
+    find ./backend -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) -print0 \
+      | xargs -0 -P1 {{ CLANG_FORMAT }} -i
+
+lint:
+    # Run clang-tidy
+    # Auto-detect macOS SDK, then run clang-tidy with extra args.
+    # clang-tidy resolves its own matching libc++ headers automatically; forcing
+    # an extra -I for Homebrew LLVM's libc++ conflicts with the macOS SDK headers
+    # (Apple clang vs. Homebrew clang) and corrupts parsing for every file.
+    SDK="$(xcrun --show-sdk-path)"; \
+    find ./backend -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) -print0 \
+      | xargs -0 -P1 {{ CLANG_TIDY }} -p=. --fix --fix-errors \
+          --extra-arg=-isysroot --extra-arg="$SDK"

@@ -3,14 +3,16 @@
 
 namespace fs = std::filesystem;
 
-KustaviDatabase::KustaviDatabase() = default;
+namespace kustavi {
 
-KustaviDatabase::~KustaviDatabase() {
-    Close();
+database::database() = default;
+
+database::~database() {
+    close();
 }
 
-void KustaviDatabase::Open(const std::string& folder_path) {
-    Close();
+void database::open(const std::string& folder_path) {
+    close();
 
     // Construct the hidden operational directory structure dynamically
     fs::path cache_dir = fs::path(folder_path) / ".kustavi-cache";
@@ -29,31 +31,32 @@ void KustaviDatabase::Open(const std::string& folder_path) {
     }
 
     // Optimize engine parameters for fast write loops (Safe for local application context)
-    Execute("PRAGMA journal_mode = WAL;");
-    Execute("PRAGMA synchronous = NORMAL;");
-    Execute("PRAGMA foreign_keys = ON;");
+    execute("PRAGMA journal_mode = WAL;");
+    execute("PRAGMA synchronous = NORMAL;");
+    execute("PRAGMA foreign_keys = ON;");
 
-    InitializeSchema();
+    initialize_schema();
 }
 
-void KustaviDatabase::Close() {
-    if (db_) {
+void database::close() {
+    if (db_ != nullptr) {
         sqlite3_close_v2(db_);
         db_ = nullptr;
     }
 }
 
-void KustaviDatabase::Execute(const std::string& sql) {
+void database::execute(const std::string& sql) {
     char* err_msg = nullptr;
     int rc = sqlite3_exec(db_, sql.c_str(), nullptr, nullptr, &err_msg);
     if (rc != SQLITE_OK) {
-        std::string err = err_msg ? err_msg : "Unknown error";
-        if (err_msg) sqlite3_free(err_msg);
+        std::string err = (err_msg != nullptr) ? err_msg : "Unknown error";
+        if (err_msg != nullptr) { sqlite3_free(err_msg);
+}
         throw SQLiteException("SQL Execution failure: " + err);
     }
 }
 
-SQLiteStatement KustaviDatabase::Prepare(const std::string& sql) {
+SQLiteStatement database::prepare(const std::string& sql) {
     sqlite3_stmt* stmt = nullptr;
     int rc = sqlite3_prepare_v2(db_, sql.c_str(), static_cast<int>(sql.length()), &stmt, nullptr);
     if (rc != SQLITE_OK) {
@@ -62,29 +65,29 @@ SQLiteStatement KustaviDatabase::Prepare(const std::string& sql) {
     return SQLiteStatement(stmt);
 }
 
-void KustaviDatabase::BeginTransaction() { Execute("BEGIN TRANSACTION;"); }
-void KustaviDatabase::CommitTransaction() { Execute("COMMIT;"); }
-void KustaviDatabase::RollbackTransaction() { Execute("ROLLBACK;"); }
+void database::BeginTransaction() { execute("BEGIN TRANSACTION;"); }
+void database::CommitTransaction() { execute("COMMIT;"); }
+void database::RollbackTransaction() { execute("ROLLBACK;"); }
 
 // --- Statement Binding Definitions ---
 
-void SQLiteStatement::BindText(int index, const std::string& value) {
+void sqlite_statement::bind_text(int index, const std::string& value) {
     sqlite3_bind_text(stmt_, index, value.c_str(), -1, SQLITE_TRANSIENT);
 }
 
-void SQLiteStatement::BindInt64(int index, int64_t value) {
+void sqlite_statement::bind_int64(int index, int64_t value) {
     sqlite3_bind_int64(stmt_, index, value);
 }
 
-void SQLiteStatement::BindInt(int index, int value) {
+void sqlite_statement::bind_int(int index, int value) {
     sqlite3_bind_int(stmt_, index, value);
 }
 
-void SQLiteStatement::BindDouble(int index, double value) {
+void sqlite_statement::bind_double(int index, double value) {
     sqlite3_bind_double(stmt_, index, value);
 }
 
-void SQLiteStatement::BindNull(int index) {
+void sqlite_statement::bind_null(int index) {
     sqlite3_bind_null(stmt_, index);
 }
 
@@ -96,9 +99,9 @@ int SQLiteStatement::Step() {
     return rc;
 }
 
-void KustaviDatabase::InitializeSchema() {
+void database::initialize_schema() {
     // Structural layout mirrors the agreed database design
-    Execute(R"(
+    execute(R"(
         CREATE TABLE IF NOT EXISTS session_state (
             key TEXT PRIMARY KEY,
             value TEXT
@@ -131,4 +134,6 @@ void KustaviDatabase::InitializeSchema() {
             FOREIGN KEY(image_id) REFERENCES images(id) ON DELETE CASCADE
         );
     )");
+}
+
 }

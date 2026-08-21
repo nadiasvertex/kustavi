@@ -12,6 +12,14 @@ bazel_dep(name = "rules_proto_grpc", version = "5.8.0")
 bazel_dep(name = "rules_proto_grpc_cpp", version = "5.8.0")
 bazel_dep(name = "protobuf", version = "35.1")
 bazel_dep(name = "grpc", version = "1.83.0")
+
+bazel_dep(name = "hedron_compile_commands", version = "0.0.0", dev_dependency = True)
+git_override(
+    module_name = "hedron_compile_commands",
+    remote = "https://github.com/helly25/bazel-compile-commands-extractor.git",
+    commit = "868c433f823d2d4eb7ce68198cd9d38bf75d61ae",
+)
+
 bazel_dep(name = "opencv", version = "5.0.0.bcr.3")
 single_version_override(
     module_name = "opencv",

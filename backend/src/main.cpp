@@ -1,6 +1,6 @@
 #include <print>
 
-int main(int argc, char**argv) {
+auto main(int argc, char**argv) -> int {
   std::print("kustavi server version 0.1\n");
   return 0;
 }
