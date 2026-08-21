@@ -4,3 +4,5 @@ bazel-kustavi
 bazel-out
 bazel-testlogs
 frontend/lib/src/generated/
+frontend/.dart_tool/
+frontend/.idea/

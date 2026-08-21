@@ -18,6 +18,7 @@ single_version_override(
     patches = ["//patches:opencv-wstring-convert.patch"],
     version = "5.0.0.bcr.3",
 )
+bazel_dep(name = "sqlite3", version = "3.53.3")
 
 # rules_flutter is built against this fork version; 0.4.10 has API changes
 # (DartInfo.transitive_resources removed) that break its generated pub spokes.
