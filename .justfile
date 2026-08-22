@@ -35,7 +35,7 @@ compile-commands:
   bazel run :refresh_compile_commands
 
 compile-commands-all:
-  bazel run @hedron_compile_commands//:refresh_all
+  bazel run @hedron_compile_commands//:refresh_all > /dev/null 2>&1
 
 format:
     find ./backend -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) -print0 \

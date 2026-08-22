@@ -1,6 +1,8 @@
 #include "analyze.h"
 #include "database.h"
 #include "downscaler.h"
+#include "quality.h"
+#include "store.h"
 
 #include <spdlog/spdlog.h>
 
@@ -14,5 +16,14 @@ void analyze(const std::filesystem::path &folder_path) {
   // Open the database and initialize the schema
   kustavi::database db;
   db.open(folder_path);
+
+  auto cached_paths = store::get_cached_image_paths(db);
+  auto low_quality_paths = image::find_low_quality_images(
+      image::quality_thresholds{}, cached_paths,
+      [](std::size_t images_analyzed) {
+        spdlog::info("Analyzed {} images", images_analyzed);
+      });
+
+  spdlog::info("Found {} low quality images", low_quality_paths.size());
 }
 } // namespace kustavi::cmd
