@@ -20,7 +20,7 @@ namespace ex = stdexec;
 auto load_image_stage(const std::filesystem::path &path) -> cv::Mat {
   // Read as grayscale since both blur and exposure analysis only require
   // intensity
-  spdlog::info("Loading image: {}", path.string());
+  spdlog::debug("loading image: {}", path.string());
   return cv::imread(path.string(), cv::IMREAD_GRAYSCALE);
 }
 
@@ -28,8 +28,9 @@ auto load_image_stage(const std::filesystem::path &path) -> cv::Mat {
  *  Compute Laplacian Variance (Sharpness)
  */
 auto analyze_blur(const cv::Mat &gray) -> double {
-  if (gray.empty())
+  if (gray.empty()) {
     return 0.0;
+}
   cv::Mat laplacian;
   cv::Laplacian(gray, laplacian, CV_64F);
   cv::Scalar mean, stddev;
@@ -42,22 +43,23 @@ auto analyze_blur(const cv::Mat &gray) -> double {
  */
 auto analyze_exposure(const cv::Mat &gray, const quality_thresholds &thresholds)
     -> std::pair<double, double> {
-  if (gray.empty())
+  if (gray.empty()) {
     return {0.0, 0.0};
+}
 
-  int histSize = 256;
+  int hist_size = 256;
   float range[] = {0, 256};
-  const float *histRange[] = {range};
+  const float *hist_range[] = {range};
   cv::Mat hist;
 
-  cv::calcHist(&gray, 1, 0, cv::Mat(), hist, 1, &histSize, histRange, true,
+  cv::calcHist(&gray, 1, nullptr, cv::Mat(), hist, 1, &hist_size, hist_range, true,
                false);
 
   double total_pixels = gray.total();
   double low_pixels = 0.0;
   double high_pixels = 0.0;
 
-  for (int i = 0; i < histSize; ++i) {
+  for (int i = 0; i < hist_size; ++i) {
     float bin_val = hist.at<float>(i);
     if (i <= thresholds.low_bin_index) {
       low_pixels += bin_val;
@@ -84,36 +86,20 @@ auto find_low_quality_images(
   // Process the entire batch in bulk parallel chunks
   auto work_pipeline =
       ex::schedule(scheduler) |
-      ex::bulk(ex::par, paths.size(), [&](std::size_t index) {
+      ex::bulk(ex::par, paths.size(), [&](std::size_t index) -> void {
         const auto &path = paths[index];
 
-        // Step 1: Load Image
+        // Step 1: Load image
         cv::Mat img = load_image_stage(path);
         local_image_metrics metrics{.path = path};
 
+        // Step 2: Analyze image
         if (!img.empty()) {
           metrics.valid = true;
-
-          // 🎯 Parallel Fork-Join Analysis using C++26 standard senders.
-          // We use ex::on to run the independent branches asynchronously on the
-          // pool.
-          auto blur_branch = ex::on(scheduler, ex::just()) |
-                             ex::then([&img]() { return analyze_blur(img); });
-
-          auto exposure_branch =
-              ex::on(scheduler, ex::just()) | ex::then([&img, thresholds]() {
-                return analyze_exposure(img, thresholds);
-              });
-
-          // Join both parallel pipeline operations using when_all
-          auto [blur_val, exposure_vals] =
-              stdexec::sync_wait(ex::when_all(std::move(blur_branch),
-                                              std::move(exposure_branch)))
-                  .value();
-
-          metrics.laplacian_variance = blur_val;
-          metrics.underexposed_ratio = exposure_vals.first;
-          metrics.overexposed_ratio = exposure_vals.second;
+          auto [under, over] = analyze_exposure(img, thresholds);
+          metrics.laplacian_variance = analyze_blur(img);
+          metrics.underexposed_ratio = under;
+          metrics.overexposed_ratio = over;
         }
 
         // Step 3: Evaluate criteria & update results thread-safely
@@ -126,7 +112,7 @@ auto find_low_quality_images(
               metrics.overexposed_ratio > thresholds.overexposed_threshold;
 
           if (is_blurry || is_underexposed || is_overexposed) {
-            std::lock_guard<std::mutex> lock(results_mutex);
+            std::scoped_lock lock(results_mutex);
             low_quality_paths.push_back(metrics.path);
           }
         }
@@ -139,7 +125,7 @@ auto find_low_quality_images(
 
   // Synchronously wait for the bulk pipeline to run to completion across
   // threads
-  stdexec::sync_wait(std::move(work_pipeline));
+  stdexec::sync_wait(work_pipeline);
 
   return low_quality_paths;
 }

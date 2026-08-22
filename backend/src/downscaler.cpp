@@ -96,7 +96,7 @@ auto generate_working_image(const std::filesystem::path &base_path,
   return result;
 }
 
-bool is_valid_image_file(const std::filesystem::path &path) {
+auto is_valid_image_file(const std::filesystem::path &path) -> bool {
   if (path.string().contains(".kustavi-cache")) {
     return false;
   }
@@ -204,7 +204,7 @@ void execute_folder_ingestion_pass(
       });
 
   // Wait for everything to finish before proceeding to the next step
-  ex::sync_wait(std::move(work));
+  ex::sync_wait(work);
 
   // Update final totals
   progress_callback(files_seen, results.size(), successful_images.load());

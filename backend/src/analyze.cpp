@@ -20,7 +20,7 @@ void analyze(const std::filesystem::path &folder_path) {
   auto cached_paths = store::get_cached_image_paths(db);
   auto low_quality_paths = image::find_low_quality_images(
       image::quality_thresholds{}, cached_paths,
-      [](std::size_t images_analyzed) {
+      [](std::size_t images_analyzed) -> void {
         spdlog::info("Analyzed {} images", images_analyzed);
       });
 
