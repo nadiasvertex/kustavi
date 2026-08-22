@@ -73,6 +73,9 @@ auto analyze_exposure(const cv::Mat &gray, const quality_thresholds &thresholds)
   return {low_pixels / total_pixels, high_pixels / total_pixels};
 }
 
+/**
+ * Determine if an image is low quality based on blur and exposure metrics.
+ */
 auto is_low_quality(quality_thresholds thresholds,
                     const std::filesystem::path &path) -> bool {
   // Step 1: Load image
@@ -104,6 +107,9 @@ auto is_low_quality(quality_thresholds thresholds,
   return is_blurry || is_underexposed || is_overexposed;
 }
 
+/**
+ * Find low quality images in a batch of image paths.
+ */
 auto find_low_quality_images(
     quality_thresholds thresholds,
     const std::vector<std::filesystem::path> &paths,
