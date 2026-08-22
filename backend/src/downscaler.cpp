@@ -1,5 +1,6 @@
 #include "downscaler.h"
 #include "database.h"
+#include "exec/gcd.h"
 #include "paths.h"
 
 #include <opencv2/core.hpp>
@@ -171,7 +172,7 @@ void execute_folder_ingestion_pass(
   std::atomic<std::size_t> successful_images{0};
   std::atomic<std::size_t> tasks_completed{0};
 
-  auto sched = ex::get_parallel_scheduler();
+  auto sched = exec::gcd::gcd_scheduler();
   auto work =
       ex::just()                // Start pipeline
       | ex::continues_on(sched) // Move off the main thread onto the pool
