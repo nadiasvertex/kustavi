@@ -8,7 +8,8 @@
 #include <stdexec/execution.hpp>
 
 #include <atomic>
-#include <mutex>
+#include <algorithm>
+#include <ranges>
 
 namespace kustavi::image {
 
@@ -77,8 +78,8 @@ auto find_low_quality_images(
     const std::vector<std::filesystem::path> &paths,
     const std::function<void(std::size_t images_analyzed)> &progress_callback)
     -> std::vector<std::filesystem::path> {
+      std::vector<bool> low_quality(paths.size());
   std::vector<std::filesystem::path> low_quality_paths;
-  std::mutex results_mutex;
   std::atomic<std::size_t> analyzed_count{0};
 
   auto scheduler = exec::make_scheduler();
@@ -112,8 +113,7 @@ auto find_low_quality_images(
               metrics.overexposed_ratio > thresholds.overexposed_threshold;
 
           if (is_blurry || is_underexposed || is_overexposed) {
-            std::scoped_lock lock(results_mutex);
-            low_quality_paths.push_back(metrics.path);
+            low_quality[index] = true;
           }
         }
 
@@ -127,6 +127,11 @@ auto find_low_quality_images(
   // threads
   stdexec::sync_wait(work_pipeline);
 
+  auto low_quality_views = std::views::zip(paths, low_quality)
+      | std::views::filter([](const auto& pair) { return std::get<1>(pair); })
+      | std::views::elements<0>;
+
+  std::ranges::copy(low_quality_views, std::back_inserter(low_quality_paths));
   return low_quality_paths;
 }
 } // namespace kustavi::image
