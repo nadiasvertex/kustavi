@@ -61,7 +61,8 @@ class gcd_scheduler {
 
 public:
   gcd_scheduler()
-      : queue_(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0)) {} // Default to main queue
+      : queue_(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0)) {
+  } // Default to main queue
 
   /**
    * Construct using any GCD queue (e.g., main queue, global concurrent queue,
