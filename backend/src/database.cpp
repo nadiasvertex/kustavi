@@ -108,6 +108,14 @@ auto sqlite_statement::step() -> int {
   return rc;
 }
 
+void sqlite_statement::reset() {
+  int rc = sqlite3_reset(stmt_);
+  if (rc != SQLITE_OK) {
+    throw sqlite_exception("Database reset failure: " +
+                           std::string(sqlite3_errstr(rc)));
+  }
+}
+
 void database::initialize_schema() {
   // Structural layout mirrors the agreed database design
   execute(R"(

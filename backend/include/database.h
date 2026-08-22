@@ -48,6 +48,7 @@ public:
 
   // Execution steps
   int step();
+  void reset();
   sqlite3_stmt *raw() { return stmt_; }
 
 private:

@@ -4,8 +4,8 @@
 #include <opencv2/core.hpp>      // For cv::Mat, cv::Scalar, cv::meanStdDev
 #include <opencv2/imgcodecs.hpp> // For cv::imread
 #include <opencv2/imgproc.hpp>   // For cv::Laplacian, cv::calcHist
-#include <stdexec/execution.hpp>
 #include <spdlog/spdlog.h>
+#include <stdexec/execution.hpp>
 
 #include <atomic>
 #include <mutex>

@@ -112,6 +112,9 @@ bool is_valid_image_file(const std::filesystem::path &path) {
 
 void insert_ingested_images(database &db,
                             const std::vector<ingestion_result> &images) {
+
+  spdlog::debug("inserting {} images into database", images.size());
+
   db.begin_transaction();
   try {
     auto insert_stmt = db.prepare(R"(
@@ -120,14 +123,17 @@ void insert_ingested_images(database &db,
         )");
 
     for (const auto &img : images) {
+      spdlog::debug("inserting image '{}' into database", img.relative_id);
+
       insert_stmt.bind_text(1, img.relative_id);
-      insert_stmt.bind_text(2, img.absolute_path.string());
+      insert_stmt.bind_path(2, img.absolute_path);
       insert_stmt.bind_path(3, img.absolute_path.filename());
       insert_stmt.bind_int(4, img.original_width);
       insert_stmt.bind_int(5, img.original_height);
       insert_stmt.bind_int64(6, img.size_bytes);
       insert_stmt.bind_text(7, img.working_path);
       insert_stmt.step();
+      insert_stmt.reset();
     }
     db.commit_transaction();
   } catch (...) {
