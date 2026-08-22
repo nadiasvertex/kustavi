@@ -11,11 +11,15 @@ struct quality_thresholds {
   double blur_threshold = 100.0; //! Lower means blurrier
 
   // Exposure (Histogram)
+  int low_bin_index = 15;   //! Bins below this are considered shadow region
+  int high_bin_index = 240; //! Bins above this are considered highlight region
+  double cell_passing_score =
+      0.70;                  //! A cell passes if less than 70% is clipped
+  int min_passing_cells = 2; //! Minimum number of cells that must look ok
   double underexposed_threshold =
-      0.05;                            //! Max % of pixels allowed in bottom bin
-  double overexposed_threshold = 0.05; //! Max % of pixels allowed in top bin
-  int low_bin_index = 5;    //! Index defining "dark" pixels (out of 256)
-  int high_bin_index = 250; //! Index defining "bright" pixels (out of 256)
+      0.30; //! If more than 30% of the image is clipped, it's underexposed
+  double overexposed_threshold =
+      0.30; //! If more than 30% of the image is clipped, it's overexposed
 };
 
 struct local_image_metrics {

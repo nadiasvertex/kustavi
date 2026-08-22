@@ -24,6 +24,47 @@ auto load_image_stage(const std::filesystem::path &path) -> cv::Mat {
   return cv::imread(path.string(), cv::IMREAD_GRAYSCALE);
 }
 
+// Helper to calculate weighted clipping for a specific image region
+auto calculate_clipping_weights(const cv::Mat &region,
+                                const quality_thresholds &thresholds)
+    -> std::pair<double, double> {
+
+  int hist_size = 256;
+  float range[] = {0, 256};
+  const float *hist_range[] = {range};
+  cv::Mat hist;
+  cv::calcHist(&region, 1, nullptr, cv::Mat(), hist, 1, &hist_size, hist_range,
+               true, false);
+
+  double total_pixels = region.total();
+  double under_exposed_weight = 0.0;
+  double over_exposed_weight = 0.0;
+
+  for (int i = 0; i < hist_size; ++i) {
+    float bin_val = hist.at<float>(i);
+
+    if (i <= thresholds.low_bin_index) {
+      // Quadratic penalty: highest at 0, tapering off toward the threshold
+      // index
+      double severity =
+          std::pow((thresholds.low_bin_index - i) /
+                       static_cast<double>(thresholds.low_bin_index),
+                   2);
+      under_exposed_weight += bin_val * severity;
+    }
+    if (i >= thresholds.high_bin_index) {
+      // Quadratic penalty: highest at 255
+      double severity = std::pow((i - thresholds.high_bin_index) /
+                                     (255.0 - thresholds.high_bin_index),
+                                 2);
+      over_exposed_weight += bin_val * severity;
+    }
+  }
+
+  return {under_exposed_weight / total_pixels,
+          over_exposed_weight / total_pixels};
+}
+
 /**
  *  Compute Laplacian Variance (Sharpness)
  */
@@ -43,33 +84,47 @@ auto analyze_blur(const cv::Mat &gray) -> double {
  */
 auto analyze_exposure(const cv::Mat &gray, const quality_thresholds &thresholds)
     -> std::pair<double, double> {
-  if (gray.empty()) {
-    return {0.0, 0.0};
+  // 1. Calculate global weighted score (gives precise gravity of overall
+  // clipping)
+  auto [global_under, global_over] =
+      calculate_clipping_weights(gray, thresholds);
+
+  // 2. Spatial Grid Analysis (to prevent large backgrounds from drowning out
+  // the subject)
+  int grid_rows = 3;
+  int grid_cols = 3;
+  int cell_w = gray.cols / grid_cols;
+  int cell_h = gray.rows / grid_rows;
+
+  int well_exposed_cells = 0;
+
+  for (int r = 0; r < grid_rows; ++r) {
+    for (int c = 0; c < grid_cols; ++c) {
+      // Define local window bounding box
+      cv::Rect cell_roi(c * cell_w, r * cell_h, cell_w, cell_h);
+      cv::Mat cell = gray(cell_roi);
+
+      auto [cell_under, cell_over] =
+          calculate_clipping_weights(cell, thresholds);
+
+      // If this specific region isn't heavily clipped, it has good exposure
+      // data
+      if (cell_under < thresholds.cell_passing_score &&
+          cell_over < thresholds.cell_passing_score) {
+        well_exposed_cells++;
+      }
+    }
   }
 
-  int hist_size = 256;
-  float range[] = {0, 256};
-  const float *hist_range[] = {range};
-  cv::Mat hist;
-
-  cv::calcHist(&gray, 1, nullptr, cv::Mat(), hist, 1, &hist_size, hist_range,
-               true, false);
-
-  double total_pixels = gray.total();
-  double low_pixels = 0.0;
-  double high_pixels = 0.0;
-
-  for (int i = 0; i < hist_size; ++i) {
-    float bin_val = hist.at<float>(i);
-    if (i <= thresholds.low_bin_index) {
-      low_pixels += bin_val;
-    }
-    if (i >= thresholds.high_bin_index) {
-      high_pixels += bin_val;
-    }
+  // 3. Contextual Override
+  // If enough local zones are well-exposed, ignore a high global underexposure
+  // score (This saves your low-key and dark background photos from getting
+  // flagged)
+  if (well_exposed_cells >= thresholds.min_passing_cells) {
+    return {0.0, global_over};
   }
 
-  return {low_pixels / total_pixels, high_pixels / total_pixels};
+  return {global_under, global_over};
 }
 
 /**
@@ -136,9 +191,9 @@ auto find_low_quality_images(
   // threads
   stdexec::sync_wait(work_pipeline);
 
-  return std::views::zip(paths, low_quality)
-      | std::views::filter([](const auto& pair) { return std::get<1>(pair); })
-      | std::views::elements<0>
-      | std::ranges::to<std::vector>();
+  return std::views::zip(paths, low_quality) |
+         std::views::filter(
+             [](const auto &pair) { return std::get<1>(pair); }) |
+         std::views::elements<0> | std::ranges::to<std::vector>();
 }
 } // namespace kustavi::image
