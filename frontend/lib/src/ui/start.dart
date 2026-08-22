@@ -41,7 +41,9 @@ class StartScreen extends ConsumerWidget {
             icon: const Icon(Icons.folder_open),
             label: const Text('Select folder…'),
           ),
-          if (model is ModelPrepUnknown || model is ModelPrepDownloading) ...[
+          // The card appears only while a download is actually in progress;
+          // `unknown` (no event received yet) and `ready` show nothing.
+          if (model is ModelPrepDownloading) ...[
             const SizedBox(height: 24),
             _ModelPrepCard(state: model),
           ],

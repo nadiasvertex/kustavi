@@ -447,8 +447,6 @@ class Wizard extends _$Wizard {
     _passSubscription = stream.listen(
       onEvent,
       onError: (Object error, StackTrace stackTrace) {
-        // ignore: avoid_print
-        print('WIZ onError: $error');
         if (_cancelRequested) {
           return;
         }
@@ -458,9 +456,13 @@ class Wizard extends _$Wizard {
         );
       },
       onDone: () {
-        // ignore: avoid_print
-        print('WIZ onDone: ${state.value.runtimeType}');
         _passSubscription = null;
+        // Riverpod 3 keeps the previous value inside an AsyncError, so a
+        // phase-completion handler would see the stale phase and clobber the
+        // error state. Skip it when the pass already failed.
+        if (state.hasError) {
+          return;
+        }
         onDone();
       },
     );

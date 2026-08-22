@@ -1,3 +1,5 @@
+import 'dart:collection';
+
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'domain.dart';
@@ -38,36 +40,58 @@ class DeletionIntent {
       : withMarked(id);
 
   DeletionIntent withKept(String id) {
-    final kept = Set<String>.of(explicitKept)..add(id);
-    final deleted = Set<String>.of(explicitDeleted)..remove(id);
-    return DeletionIntent(explicitKept: kept, explicitDeleted: deleted, groupKeepers: groupKeepers);
+    final kept = UnmodifiableSetView(Set<String>.of(explicitKept)..add(id));
+    final deleted =
+        UnmodifiableSetView(Set<String>.of(explicitDeleted)..remove(id));
+    return DeletionIntent(
+      explicitKept: kept,
+      explicitDeleted: deleted,
+      groupKeepers: groupKeepers,
+    );
   }
 
   DeletionIntent withMarked(String id) {
-    final deleted = Set<String>.of(explicitDeleted)..add(id);
-    final kept = Set<String>.of(explicitKept)..remove(id);
-    return DeletionIntent(explicitKept: kept, explicitDeleted: deleted, groupKeepers: groupKeepers);
+    final deleted = UnmodifiableSetView(Set<String>.of(explicitDeleted)..add(id));
+    final kept = UnmodifiableSetView(Set<String>.of(explicitKept)..remove(id));
+    return DeletionIntent(
+      explicitKept: kept,
+      explicitDeleted: deleted,
+      groupKeepers: groupKeepers,
+    );
   }
 
   DeletionIntent withKeepAll(Iterable<String> ids) {
-    final kept = Set<String>.of(explicitKept)..addAll(ids);
-    final deleted = Set<String>.of(explicitDeleted)
-      ..removeWhere(kept.contains);
-    return DeletionIntent(explicitKept: kept, explicitDeleted: deleted, groupKeepers: groupKeepers);
+    final kept = UnmodifiableSetView(Set<String>.of(explicitKept)..addAll(ids));
+    final deleted = UnmodifiableSetView(
+      (Set<String>.of(explicitDeleted)..removeWhere(kept.contains)),
+    );
+    return DeletionIntent(
+      explicitKept: kept,
+      explicitDeleted: deleted,
+      groupKeepers: groupKeepers,
+    );
   }
 
   DeletionIntent withMarkAll(Iterable<String> ids) {
-    final deleted = Set<String>.of(explicitDeleted)..addAll(ids);
-    final kept = Set<String>.of(explicitKept)
-      ..removeWhere(deleted.contains);
-    return DeletionIntent(explicitKept: kept, explicitDeleted: deleted, groupKeepers: groupKeepers);
+    final deleted =
+        UnmodifiableSetView(Set<String>.of(explicitDeleted)..addAll(ids));
+    final kept = UnmodifiableSetView(
+      (Set<String>.of(explicitKept)..removeWhere(deleted.contains)),
+    );
+    return DeletionIntent(
+      explicitKept: kept,
+      explicitDeleted: deleted,
+      groupKeepers: groupKeepers,
+    );
   }
 
   DeletionIntent withKeeper(int groupId, String keeperId) {
     return DeletionIntent(
       explicitKept: explicitKept,
       explicitDeleted: explicitDeleted,
-      groupKeepers: Map<int, String>.of(groupKeepers)..[groupId] = keeperId,
+      groupKeepers:
+          UnmodifiableMapView(Map<int, String>.of(groupKeepers)
+            ..[groupId] = keeperId),
     );
   }
 

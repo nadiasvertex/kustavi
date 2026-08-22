@@ -42,6 +42,7 @@ class FakeKustaviClient implements KustaviClient {
     this.similarError,
     this.ensureModelError,
     this.modelStreamStaysOpen = false,
+    this.scanStreamStaysOpen = false,
   }) : info = info ?? _defaultInfo();
 
   static GetInfoResponse _defaultInfo() {
@@ -71,18 +72,40 @@ class FakeKustaviClient implements KustaviClient {
   /// Keep the [ensureModel] stream open until [closeModelStream].
   final bool modelStreamStaysOpen;
 
+  /// Keep the [scanFolder] stream open until [closeScanStream] so tests can
+  /// observe the in-progress scan screen.
+  final bool scanStreamStaysOpen;
+
   ScanFolderRequest? lastScanRequest;
   CommitRequest? lastCommitRequest;
   RunTripsPassRequest? lastTripsRequest;
   int shutdownCount = 0;
 
   final Completer<void> _modelDone = Completer<void>();
+  StreamController<ScanEvent>? _scanController;
 
   /// Closes a [ensureModel] stream that was left open.
   void closeModelStream() {
     if (!_modelDone.isCompleted) {
       _modelDone.complete();
     }
+  }
+
+  /// Pushes an event into the open scan stream.
+  void pushScanEvent(ScanEvent event) {
+    final controller = _scanController;
+    if (controller != null && !controller.isClosed) {
+      controller.add(event);
+    }
+  }
+
+  /// Closes the open scan stream.
+  void closeScanStream() {
+    final controller = _scanController;
+    if (controller != null && !controller.isClosed) {
+      unawaited(controller.close());
+    }
+    _scanController = null;
   }
 
   @override
@@ -96,7 +119,17 @@ class FakeKustaviClient implements KustaviClient {
   @override
   Stream<ScanEvent> scanFolder(ScanFolderRequest request) {
     lastScanRequest = request;
-    return _script(scanEvents, scanError);
+    if (!scanStreamStaysOpen) {
+      return _script(scanEvents, scanError);
+    }
+    // Closed later via closeScanStream (deliberately left open).
+    // ignore: close_sinks
+    final controller = StreamController<ScanEvent>();
+    _scanController = controller;
+    for (final event in scanEvents) {
+      controller.add(event);
+    }
+    return controller.stream;
   }
 
   @override

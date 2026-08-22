@@ -33,7 +33,8 @@ void main() {
       id: 'a.jpg',
       path: master.path,
       name: 'a.jpg',
-      sizeBytes: 8000000,
+      // 8 MiB so formatBytes renders a clean "8.0 MB" (KiB-based units).
+      sizeBytes: 8 * 1024 * 1024,
       width: 1,
       height: 1,
       workingImagePath: working.path,
@@ -62,7 +63,14 @@ void main() {
       expect(find.byKey(const ValueKey('working')), findsOneWidget);
       expect(find.byKey(const ValueKey('master')), findsNothing);
 
-      // …and is replaced by the full-resolution master once decoded.
+      // …and is replaced by the full-resolution master once decoded. The
+      // read/decode is real async, so let it run outside the fake clock.
+      await tester.runAsync(() async {
+        while (find.byKey(const ValueKey('master')).evaluate().isEmpty) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+          await tester.pump();
+        }
+      });
       await tester.pumpAndSettle();
       expect(find.byKey(const ValueKey('master')), findsOneWidget);
       expect(find.byKey(const ValueKey('working')), findsNothing);

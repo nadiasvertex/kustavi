@@ -22,11 +22,12 @@ void main() {
       expect(buffer.text, isNot(contains('line-0')));
     });
 
-    test('a single oversized line is truncated', () {
+    test('a single oversized line is truncated to the tail', () {
       final buffer = RingBuffer(maxBytes: 16);
       buffer.addLine('x' * 100);
       expect(buffer.sizeBytes, lessThanOrEqualTo(16));
-      expect(buffer.text, 'x' * 16);
+      // addLine appends the newline, so the 16-byte tail is 15 x's plus it.
+      expect(buffer.text, '${'x' * 15}\n');
     });
   });
 }

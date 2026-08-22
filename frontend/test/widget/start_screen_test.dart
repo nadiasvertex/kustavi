@@ -103,6 +103,10 @@ void main() {
         ),
       );
       await tester.pump();
+      // The wizard's async build must settle before selectFolder accepts
+      // input (its guard no-ops while the provider is still loading).
+      await container.read(wizardProvider.future);
+      await tester.pump();
 
       await tester.tap(find.text('Select folder…'));
       await tester.pump();
@@ -126,6 +130,8 @@ void main() {
           ),
         ),
       );
+      await tester.pump();
+      await container.read(wizardProvider.future);
       await tester.pump();
 
       await tester.tap(find.text('Select folder…'));

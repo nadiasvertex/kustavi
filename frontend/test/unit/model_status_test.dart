@@ -30,13 +30,31 @@ void main() {
       );
       addTearDown(container.dispose);
 
-      expect(
-        container.read(modelStatusProvider).value,
-        isA<ModelPrepUnknown>(),
+      // The async build starts in loading; capture the full transition
+      // (states flush within one microtask batch, so only a listener sees
+      // the transient unknown and downloading values).
+      final seen = <ModelPrepState>[];
+      final subscription = container.listen(
+        modelStatusProvider,
+        (_, next) {
+          final value = next.value;
+          if (value != null) {
+            seen.add(value);
+          }
+        },
       );
+      addTearDown(subscription.close);
       await pumpUntil(
         container,
         () => container.read(modelStatusProvider).value is ModelPrepReady,
+      );
+      expect(
+        seen,
+        [
+          isA<ModelPrepUnknown>(),
+          isA<ModelPrepDownloading>(),
+          isA<ModelPrepReady>(),
+        ],
       );
       final state = container.read(modelStatusProvider).value
           as ModelPrepReady;

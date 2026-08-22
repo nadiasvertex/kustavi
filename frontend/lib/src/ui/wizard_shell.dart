@@ -62,6 +62,12 @@ class _WizardShellState extends ConsumerState<WizardShell> {
     super.initState();
     // Start the vision-model pipeline on app start (§6.3).
     ref.read(modelStatusProvider);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // ref.listen is only legal inside build (riverpod 3); it re-registers on
+    // every rebuild with the same key.
     ref.listen<AsyncValue<BackendEndpoint>>(
       backendProcessProvider,
       (previous, next) {
@@ -72,10 +78,6 @@ class _WizardShellState extends ConsumerState<WizardShell> {
         }
       },
     );
-  }
-
-  @override
-  Widget build(BuildContext context) {
     final phaseAsync = ref.watch(wizardProvider);
     final phase = phaseAsync.value;
     return Scaffold(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kustavi/src/backend/client_provider.dart';
+import 'package:kustavi/src/backend/process.dart';
 import 'package:kustavi/src/state/phases.dart';
 import 'package:kustavi/src/state/wizard.dart';
 import 'package:kustavi/src/ui/wizard_shell.dart';
@@ -10,7 +11,11 @@ import '../helpers.dart';
 
 ProviderContainer makeContainer(FakeKustaviClient client) {
   return ProviderContainer(
-    overrides: [kustaviClientProvider.overrideWith((ref) => client)],
+    overrides: [
+      kustaviClientProvider.overrideWith((ref) => client),
+      // Never launch the real back end from a widget test.
+      backendProcessProvider.overrideWith(() => InactiveBackendProcess()),
+    ],
   );
 }
 
@@ -44,11 +49,10 @@ void main() {
 
     testWidgets('S0 → S1 → S2 flow with the action bar', (tester) async {
       final client = FakeKustaviClient(
-        scanEvents: [
-          scanImage('a.jpg'),
-          scanImage('b.jpg'),
-          scanComplete(images: 2),
-        ],
+        // The scan stream stays open so S1 is observable; the test pushes
+        // the completion event once the scanning screen is asserted.
+        scanEvents: [scanImage('a.jpg'), scanImage('b.jpg')],
+        scanStreamStaysOpen: true,
         qualityEvents: [qualityFlag('a.jpg')],
       );
       final container = makeContainer(client);
@@ -73,6 +77,8 @@ void main() {
       expect(find.text('Cancel'), findsOneWidget);
 
       // The scan completes into S2.
+      client.pushScanEvent(scanComplete(images: 2));
+      client.closeScanStream();
       await tester.pump();
       expect(find.text('2 images in /photos'), findsOneWidget);
       expect(find.text('Back'), findsOneWidget);

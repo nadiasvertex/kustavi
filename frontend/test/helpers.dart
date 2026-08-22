@@ -1,8 +1,23 @@
+import 'dart:async';
+
 import 'package:fixnum/fixnum.dart';
 import 'package:grpc/grpc.dart';
+import 'package:kustavi/src/backend/process.dart';
 import 'package:kustavi/src/generated/kustavi/service.pb.dart' as pb;
 
 /// Shared proto-event builders for tests.
+
+/// Test stand-in for `backendProcessProvider`: never spawns a process and
+/// never fails (a failing build schedules riverpod's 200 ms retry timer,
+/// which widget tests cannot let dangle).
+class InactiveBackendProcess extends BackendProcess {
+  @override
+  FutureOr<BackendEndpoint> build() => BackendEndpoint(
+        handle: ProcessHandle.inactive(token: 'test', port: 0),
+        token: 'test',
+        port: 0,
+      );
+}
 
 pb.ScanEvent scanImage(
   String id, {

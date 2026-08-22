@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:isolate';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart' hide ImageInfo;
@@ -100,13 +99,12 @@ class _DetailViewState extends ConsumerState<DetailView>
     unawaited(_loadMaster());
   }
 
-  /// Reads and decodes the full-resolution master off the UI thread, then
-  /// swaps it into the viewport (§7.2 progressive loading).
+  /// Reads the full-resolution master and decodes it (the decode runs in the
+  /// engine's thread pool via [ui.instantiateImageCodec]), then swaps it into
+  /// the viewport (§7.2 progressive loading).
   Future<void> _loadMaster() async {
     try {
-      final bytes = await Isolate.run(
-        () => File(widget.image.path).readAsBytes(),
-      );
+      final bytes = await File(widget.image.path).readAsBytes();
       final codec = await ui.instantiateImageCodec(bytes);
       if (!mounted) {
         return;
