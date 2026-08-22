@@ -7,7 +7,6 @@
 #include <spdlog/spdlog.h>
 #include <stdexec/execution.hpp>
 
-#include <algorithm>
 #include <atomic>
 #include <ranges>
 
@@ -116,7 +115,6 @@ auto find_low_quality_images(
     const std::function<void(std::size_t images_analyzed)> &progress_callback)
     -> std::vector<std::filesystem::path> {
   std::vector<bool> low_quality(paths.size());
-  std::vector<std::filesystem::path> low_quality_paths;
   std::atomic<std::size_t> analyzed_count{0};
 
   auto scheduler = exec::make_scheduler();
@@ -138,12 +136,9 @@ auto find_low_quality_images(
   // threads
   stdexec::sync_wait(work_pipeline);
 
-  auto low_quality_views =
-      std::views::zip(paths, low_quality) |
-      std::views::filter([](const auto &pair) { return std::get<1>(pair); }) |
-      std::views::elements<0>;
-
-  std::ranges::copy(low_quality_views, std::back_inserter(low_quality_paths));
-  return low_quality_paths;
+  return std::views::zip(paths, low_quality)
+      | std::views::filter([](const auto& pair) { return std::get<1>(pair); })
+      | std::views::elements<0>
+      | std::ranges::to<std::vector>();
 }
 } // namespace kustavi::image

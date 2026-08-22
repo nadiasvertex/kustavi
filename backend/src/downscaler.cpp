@@ -30,6 +30,8 @@ auto generate_working_image(const std::filesystem::path &base_path,
   spdlog::debug("resizing '{}' -> '{}'", src_path.string(),
                 cache_path.string());
 
+  result.absolute_path = src_path;
+
   try {
     std::string cached_filename = src_path.stem().string() + "_" +
                                   std::to_string(fs::file_size(src_path)) +
@@ -178,11 +180,9 @@ void execute_folder_ingestion_pass(
   std::atomic<std::size_t> successful_images{0};
   std::atomic<std::size_t> tasks_completed{0};
 
-  auto sched = exec::make_scheduler();
+  auto scheduler = exec::make_scheduler();
   auto work =
-      ex::just()                // Start pipeline
-      | ex::continues_on(sched) // Move off the main thread onto the pool
-      |
+      ex::schedule(scheduler) |
       ex::bulk(ex::par, paths_to_process.size(), [&](std::size_t idx) -> void {
         const auto &path = paths_to_process[idx];
 

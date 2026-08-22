@@ -1,6 +1,5 @@
 #include "analyze.h"
 #include "database.h"
-#include "downscaler.h"
 #include "quality.h"
 #include "store.h"
 
@@ -17,7 +16,7 @@ void analyze(const std::filesystem::path &folder_path) {
   kustavi::database db;
   db.open(folder_path);
 
-  auto cached_paths = store::get_cached_image_paths(db);
+  auto cached_paths = store::get_original_image_paths(db);
   auto low_quality_paths = image::find_low_quality_images(
       image::quality_thresholds{}, cached_paths,
       [](std::size_t images_analyzed) -> void {
@@ -25,5 +24,8 @@ void analyze(const std::filesystem::path &folder_path) {
       });
 
   spdlog::info("Found {} low quality images", low_quality_paths.size());
+  for (const auto &path : low_quality_paths) {
+    spdlog::info("Low quality image: {}", path.string());
+  }
 }
 } // namespace kustavi::cmd
