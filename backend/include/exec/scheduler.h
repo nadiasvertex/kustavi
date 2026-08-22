@@ -5,7 +5,7 @@
 #if defined(__APPLE__)
 #include "gcd_scheduler.h"
 namespace kustavi::exec {
-using default_scheduler = exec::gcd::gcd_scheduler;
+using default_scheduler = gcd::gcd_scheduler;
 }
 #elif defined(_WIN32)
 #include <exec/parallel_scheduler.hpp>
@@ -27,7 +27,7 @@ using default_scheduler = exec::static_thread_pool::scheduler_type;
 namespace kustavi::exec {
 inline default_scheduler make_scheduler() {
 #if defined(__APPLE__)
-  return exec::gcd::gcd_scheduler();
+  return gcd::gcd_scheduler();
 #elif defined(_WIN32)
   return exec::parallel_scheduler();
 #elif defined(__linux__)
