@@ -5,47 +5,50 @@ import 'package:kustavi/src/generated/kustavi/service.pbgrpc.dart';
 
 class FakeKustavi extends KustaviServiceBase {
   @override
-  Future<GetInfoResponse> getInfo(
-          ServiceCall call, GetInfoRequest request) =>
+  Future<GetInfoResponse> getInfo(ServiceCall call, GetInfoRequest request) =>
       Future.value(GetInfoResponse()..version = 'test');
 
   @override
   Future<ShutdownResponse> shutdown(
-          ServiceCall call, ShutdownRequest request) =>
-      Future.value(ShutdownResponse());
+    ServiceCall call,
+    ShutdownRequest request,
+  ) => Future.value(ShutdownResponse());
 
   @override
-  Stream<ScanEvent> scanFolder(
-          ServiceCall call, ScanFolderRequest request) =>
-      Stream.empty();
+  Stream<ScanEvent> scanFolder(ServiceCall call, ScanFolderRequest request) =>
+      const Stream.empty();
 
   @override
   Stream<QualityEvent> runQualityPass(
-          ServiceCall call, RunQualityPassRequest request) =>
-      Stream.empty();
+    ServiceCall call,
+    RunQualityPassRequest request,
+  ) => const Stream.empty();
 
   @override
   Stream<ModelEvent> ensureModel(
-          ServiceCall call, EnsureModelRequest request) =>
-      Stream.empty();
+    ServiceCall call,
+    EnsureModelRequest request,
+  ) => const Stream.empty();
 
   @override
   Stream<JunkEvent> runJunkPass(ServiceCall call, RunJunkPassRequest request) =>
-      Stream.empty();
+      const Stream.empty();
 
   @override
   Stream<SimilarEvent> runSimilarPass(
-          ServiceCall call, RunSimilarPassRequest request) =>
-      Stream.empty();
+    ServiceCall call,
+    RunSimilarPassRequest request,
+  ) => const Stream.empty();
 
   @override
   Stream<TripsEvent> runTripsPass(
-          ServiceCall call, RunTripsPassRequest request) =>
-      Stream.empty();
+    ServiceCall call,
+    RunTripsPassRequest request,
+  ) => const Stream.empty();
 
   @override
   Stream<CommitEvent> commit(ServiceCall call, CommitRequest request) =>
-      Stream.empty();
+      const Stream.empty();
 }
 
 void main() {
@@ -119,10 +122,10 @@ void main() {
         ..exposureScore = 0.9;
       final decoded = QualityFlag.fromBuffer(flag.writeToBuffer());
       expect(decoded.imageId, 'x.jpg');
-      expect(
-        decoded.reasons,
-        [QualityReason.BLURRY, QualityReason.OVER_EXPOSED],
-      );
+      expect(decoded.reasons, [
+        QualityReason.BLURRY,
+        QualityReason.OVER_EXPOSED,
+      ]);
       expect(decoded.sharpness, closeTo(12.5, 1e-9));
       expect(decoded.exposureScore, closeTo(0.9, 1e-9));
     });

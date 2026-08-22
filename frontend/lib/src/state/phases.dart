@@ -1,5 +1,17 @@
 /// The wizard's six steps, in order (spec/frontend.md §6.1).
-enum WizardStep { select, quality, junk, duplicates, trips, copy }
+enum WizardStep {
+  select('Select'),
+  quality('Quality'),
+  junk('Junk'),
+  duplicates('Duplicates'),
+  trips('Trips'),
+  copy('Copy');
+
+  const WizardStep(this.label);
+
+  /// Display name in the step indicator.
+  final String label;
+}
 
 /// Sealed wizard state machine. Each variant carries the data its screen
 /// renders; transitions are owned by the wizard controller.

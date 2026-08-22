@@ -22,7 +22,7 @@ final wizardProvider = WizardProvider._();
 /// Owns the incremental image index (the GUI's single source of truth for
 /// image metadata, §5) and the linear phase machine. One pass stream is in
 /// flight at a time; `EnsureModel` is exempt (it runs in [ModelStatus]).
-final class WizardProvider extends $NotifierProvider<Wizard, WizardPhase> {
+final class WizardProvider extends $AsyncNotifierProvider<Wizard, WizardPhase> {
   /// The wizard controller (spec/frontend.md §6, §9).
   ///
   /// Owns the incremental image index (the GUI's single source of truth for
@@ -45,17 +45,9 @@ final class WizardProvider extends $NotifierProvider<Wizard, WizardPhase> {
   @$internal
   @override
   Wizard create() => Wizard();
-
-  /// {@macro riverpod.override_with_value}
-  Override overrideWithValue(WizardPhase value) {
-    return $ProviderOverride(
-      origin: this,
-      providerOverride: $SyncValueProvider<WizardPhase>(value),
-    );
-  }
 }
 
-String _$wizardHash() => r'02b632ec728b6e17d054b30c11ba12cc96125db6';
+String _$wizardHash() => r'6bedede0f97ac2212a47d551c2171955026cd5a9';
 
 /// The wizard controller (spec/frontend.md §6, §9).
 ///
@@ -63,17 +55,17 @@ String _$wizardHash() => r'02b632ec728b6e17d054b30c11ba12cc96125db6';
 /// image metadata, §5) and the linear phase machine. One pass stream is in
 /// flight at a time; `EnsureModel` is exempt (it runs in [ModelStatus]).
 
-abstract class _$Wizard extends $Notifier<WizardPhase> {
-  WizardPhase build();
+abstract class _$Wizard extends $AsyncNotifier<WizardPhase> {
+  FutureOr<WizardPhase> build();
   @$mustCallSuper
   @override
   WhenComplete runBuild() {
-    final ref = this.ref as $Ref<WizardPhase, WizardPhase>;
+    final ref = this.ref as $Ref<AsyncValue<WizardPhase>, WizardPhase>;
     final element =
         ref.element
             as $ClassProviderElement<
-              AnyNotifier<WizardPhase, WizardPhase>,
-              WizardPhase,
+              AnyNotifier<AsyncValue<WizardPhase>, WizardPhase>,
+              AsyncValue<WizardPhase>,
               Object?,
               Object?
             >;

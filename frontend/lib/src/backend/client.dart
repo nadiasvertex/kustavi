@@ -49,6 +49,7 @@ class GrpcKustaviClient implements KustaviClient {
   final stub.KustaviClient _client;
   final CallOptions _options;
 
+  @override
   Future<GetInfoResponse> getInfo() {
     return _client
         .getInfo(GetInfoRequest(), options: _options)
@@ -58,6 +59,7 @@ class GrpcKustaviClient implements KustaviClient {
         );
   }
 
+  @override
   Future<void> shutdown() {
     return _client
         .shutdown(ShutdownRequest(), options: _options)
@@ -67,32 +69,41 @@ class GrpcKustaviClient implements KustaviClient {
         );
   }
 
+  @override
   Stream<ScanEvent> scanFolder(ScanFolderRequest request) {
     return _pass(_client.scanFolder(request, options: _options));
   }
 
+  @override
   Stream<QualityEvent> runQualityPass() {
-    return _pass(_client.runQualityPass(RunQualityPassRequest(), options: _options));
+    return _pass(
+      _client.runQualityPass(RunQualityPassRequest(), options: _options),
+    );
   }
 
+  @override
   Stream<ModelEvent> ensureModel() {
     return _pass(_client.ensureModel(EnsureModelRequest(), options: _options));
   }
 
+  @override
   Stream<JunkEvent> runJunkPass() {
     return _pass(_client.runJunkPass(RunJunkPassRequest(), options: _options));
   }
 
+  @override
   Stream<SimilarEvent> runSimilarPass() {
     return _pass(
       _client.runSimilarPass(RunSimilarPassRequest(), options: _options),
     );
   }
 
+  @override
   Stream<TripsEvent> runTripsPass(RunTripsPassRequest request) {
     return _pass(_client.runTripsPass(request, options: _options));
   }
 
+  @override
   Stream<CommitEvent> commit(CommitRequest request) {
     return _pass(_client.commit(request, options: _options));
   }

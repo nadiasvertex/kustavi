@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart' show WidgetRef;
 import 'package:grpc/grpc.dart';
 import 'package:path/path.dart' as p;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
@@ -11,7 +12,7 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../generated/kustavi/service.pb.dart' as pb;
 import '../generated/kustavi/service.pbgrpc.dart' as stub;
 import '../state/domain.dart';
-import 'client.dart' show authMetadata, kAuthTokenHeader;
+import 'client.dart' show authMetadata;
 import 'client_provider.dart' show kustaviClientProvider;
 
 part 'process.g.dart';
@@ -21,9 +22,9 @@ const int kBackendLogMaxBytes = 256 * 1024;
 
 /// Back end stdout/stderr lines are captured here (spec/frontend.md §3.1).
 class RingBuffer {
-  RingBuffer({required int maxBytes}) : _maxBytes = maxBytes;
+  RingBuffer({required this.maxBytes});
 
-  final int _maxBytes;
+  final int maxBytes;
   final List<Uint8List> _chunks = [];
   int _size = 0;
 
@@ -38,17 +39,17 @@ class RingBuffer {
   void addLine(String line) => addBytes(utf8.encode('$line\n'));
 
   void _trim() {
-    while (_size > _maxBytes && _chunks.length > 1) {
+    while (_size > maxBytes && _chunks.length > 1) {
       _size -= _chunks.first.length;
       _chunks.removeAt(0);
     }
-    if (_size > _maxBytes && _chunks.isNotEmpty) {
+    if (_size > maxBytes && _chunks.isNotEmpty) {
       final first = _chunks.first;
-      if (first.length <= _size - _maxBytes) {
+      if (first.length <= _size - maxBytes) {
         _size -= first.length;
         _chunks.removeAt(0);
       } else {
-        final dropped = _size - _maxBytes;
+        final dropped = _size - maxBytes;
         final sliced = Uint8List.fromList(first.sublist(dropped));
         _chunks[0] = sliced;
         _size = sliced.length;
@@ -74,19 +75,16 @@ class ProcessHandle {
 
   /// A handle for a process that was never launched (tests, pre-launch
   /// endpoints). Its [exitCode] never completes and [kill] is a no-op.
-  ProcessHandle.inactive({required this.token, required int port})
-      : _process = null,
-        _port = port;
+  ProcessHandle.inactive({required this.token, required this.port})
+      : _process = null;
 
   final Process? _process;
 
   /// Secure random string exchanged with the back end at launch.
   final String token;
 
-  int? _port;
-
   /// OS-assigned loopback port parsed from the ready line.
-  int get port => _port ?? 0;
+  int port = 0;
 
   final RingBuffer log = RingBuffer(maxBytes: kBackendLogMaxBytes);
 
@@ -148,8 +146,8 @@ class ProcessHandle {
         );
         return;
       }
-      _port = int.parse(match.group(1)!);
-      _completeReady(_port);
+      port = int.parse(match.group(1)!);
+      _completeReady(port);
     } else {
       log.addLine(line);
     }
@@ -184,9 +182,10 @@ class ProcessHandle {
     try {
       return await completer.future.timeout(
         timeout,
-        onTimeout: () => throw BackendStartupFailed(
-          'Back end did not signal readiness in time.',
-        ),
+        onTimeout: () =>
+            throw const BackendStartupFailed(
+              'Back end did not signal readiness in time.',
+            ),
       );
     } finally {
       _readyCompleter = null;
@@ -340,4 +339,10 @@ class BackendProcess extends _$BackendProcess {
       handle.kill();
     }
   }
+}
+
+/// Shuts the back end down cleanly and quits the app (§3.2, §10.4, S13).
+Future<void> exitApp(WidgetRef ref) async {
+  await ref.read(backendProcessProvider.notifier).quit();
+  exit(0);
 }

@@ -58,7 +58,7 @@ class Wizard extends _$Wizard {
       );
 
   @override
-  WizardPhase build() {
+  FutureOr<WizardPhase> build() async {
     // S5: the moment the model becomes ready while the user waits on the
     // junk preparation screen, start the junk pass automatically.
     ref.listen(modelStatusProvider, (previous, next) {
@@ -92,7 +92,7 @@ class Wizard extends _$Wizard {
       return;
     }
     _cancelPass();
-    state = AsyncValue.data(const WizardStart());
+    state = const AsyncValue.data(WizardStart());
   }
 
   void _onScanEvent(pb.ScanEvent event) {
@@ -161,7 +161,7 @@ class Wizard extends _$Wizard {
       return;
     }
     _clearPassResults();
-    state = AsyncValue.data(const WizardStart());
+    state = const AsyncValue.data(WizardStart());
   }
 
   void continueFromConfirm() {
@@ -170,7 +170,7 @@ class Wizard extends _$Wizard {
     }
     _returnPhase = state.value;
     _qualityFlags.clear();
-    state = AsyncValue.data(const WizardQualityRunning());
+    state = const AsyncValue.data(WizardQualityRunning());
     final client = ref.read(kustaviClientProvider).requireValue;
     _subscribe(client.runQualityPass(), _onQualityEvent, _onQualityDone);
   }
@@ -249,13 +249,13 @@ class Wizard extends _$Wizard {
     if (_modelReady) {
       _startJunkPass();
     } else {
-      state = AsyncValue.data(const WizardJunkPrep());
+      state = const AsyncValue.data(WizardJunkPrep());
     }
   }
 
   void _startJunkPass() {
     _returnPhase = _qualityReviewPhase;
-    state = AsyncValue.data(const WizardJunkRunning());
+    state = const AsyncValue.data(WizardJunkRunning());
     final client = ref.read(kustaviClientProvider).requireValue;
     _subscribe(client.runJunkPass(), _onJunkEvent, _onJunkDone);
   }
@@ -338,7 +338,7 @@ class Wizard extends _$Wizard {
     }
     _similarGroups.clear();
     _returnPhase = state.value;
-    state = AsyncValue.data(const WizardSimilarRunning());
+    state = const AsyncValue.data(WizardSimilarRunning());
     final client = ref.read(kustaviClientProvider).requireValue;
     _subscribe(
       client.runSimilarPass(),
@@ -409,6 +409,15 @@ class Wizard extends _$Wizard {
     state = AsyncValue.data(_junkReviewPhase);
   }
 
+  // --- S9 ----------------------------------------------------------------
+
+  void backFromSimilar() {
+    if (state.value is! WizardSimilarReview) {
+      return;
+    }
+    state = AsyncValue.data(_junkReviewPhase);
+  }
+
   // --- step error (§10.2) -------------------------------------------------
 
   /// [Back] on the step error screen: return to the phase the failed pass
@@ -423,7 +432,7 @@ class Wizard extends _$Wizard {
   void resetToStart() {
     _clearPassResults();
     ref.read(deletionPlanProvider.notifier).reset();
-    state = AsyncValue.data(const WizardStart());
+    state = const AsyncValue.data(WizardStart());
   }
 
   // --- plumbing -----------------------------------------------------------
@@ -438,6 +447,8 @@ class Wizard extends _$Wizard {
     _passSubscription = stream.listen(
       onEvent,
       onError: (Object error, StackTrace stackTrace) {
+        // ignore: avoid_print
+        print('WIZ onError: $error');
         if (_cancelRequested) {
           return;
         }
@@ -447,6 +458,8 @@ class Wizard extends _$Wizard {
         );
       },
       onDone: () {
+        // ignore: avoid_print
+        print('WIZ onDone: ${state.value.runtimeType}');
         _passSubscription = null;
         onDone();
       },

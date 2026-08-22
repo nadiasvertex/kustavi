@@ -19,6 +19,9 @@ build-server:
 build-gui:
   bazel build //frontend:kustavi
 
+test-gui:
+  cd frontend && flutter test
+
 proto:
   mkdir -p frontend/lib/src/generated && \
   tmp="$(mktemp -d)" && \

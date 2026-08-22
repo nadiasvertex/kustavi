@@ -42,7 +42,7 @@ class FakeKustaviClient implements KustaviClient {
     this.similarError,
     this.ensureModelError,
     this.modelStreamStaysOpen = false,
-  }) : _info = info;
+  }) : info = info ?? _defaultInfo();
 
   static GetInfoResponse _defaultInfo() {
     return GetInfoResponse()
@@ -50,10 +50,8 @@ class FakeKustaviClient implements KustaviClient {
       ..modelName = 'moondream-3.1';
   }
 
-  final GetInfoResponse? _info;
-
   /// Back end version/model metadata returned by `GetInfo`.
-  late final GetInfoResponse info = _info ?? _defaultInfo();
+  final GetInfoResponse info;
 
   final List<ScanEvent> scanEvents;
   final List<QualityEvent> qualityEvents;

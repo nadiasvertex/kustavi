@@ -12,10 +12,12 @@ flutter_application(
     srcs = glob(["lib/**/*.dart"]),
     deps = [
         "@deps//:cupertino_icons",
+        "@deps//:file_picker",
         "@deps//:fixnum",
         "@deps//:flutter",
         "@deps//:flutter_riverpod",
         "@deps//:grpc",
+        "@deps//:path",
         "@deps//:protobuf",
         "@deps//:riverpod_annotation",
         "@rules_flutter//flutter:material_icons",
