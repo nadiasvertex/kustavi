@@ -6,12 +6,15 @@
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
 #include <spdlog/spdlog.h>
+#include <stdexec/execution.hpp> // Include stdexec
 
 #include <algorithm>
+#include <atomic>
 #include <filesystem>
 #include <string>
 #include <unordered_set>
 
+namespace ex = stdexec;
 namespace fs = std::filesystem;
 
 namespace kustavi::image {
@@ -134,12 +137,12 @@ void insert_ingested_images(database &db,
 
 void execute_folder_ingestion_pass(
     database &db, const std::filesystem::path &source_folder,
-    const std::function<void(std::size_t files_seen, std::size_t images_found)>
-        &progress_callback) {
+    const std::function<void(std::size_t files_seen, std::size_t images_found,
+                             std::size_t images_prepared)> &progress_callback) {
 
   auto cache_dir = config::cache_path(source_folder);
   std::size_t files_seen = 0;
-  std::vector<ingestion_result> results;
+  std::vector<fs::path> paths_to_process;
 
   spdlog::debug("scanning '{}'", source_folder.string());
   for (const auto &entry : fs::recursive_directory_iterator(source_folder)) {
@@ -148,21 +151,58 @@ void execute_folder_ingestion_pass(
     const auto &abs_path = entry.path();
     spdlog::debug("evaluating '{}'", abs_path.string());
 
-    if (!is_valid_image_file(abs_path)) {
-      continue;
+    if (is_valid_image_file(abs_path)) {
+      paths_to_process.push_back(abs_path);
     }
 
-    results.emplace_back(
-        generate_working_image(source_folder, abs_path, cache_dir));
-
     if (files_seen % 20 == 0) {
-      progress_callback(files_seen, results.size());
+      progress_callback(files_seen, paths_to_process.size(), 0);
     }
   }
 
-  progress_callback(files_seen, results.size());
+  progress_callback(files_seen, paths_to_process.size(), 0);
 
-  // Save all the of the images we located.
+  // If there's nothing to do, return.
+  if (paths_to_process.empty()) {
+    return;
+  }
+
+  std::vector<ingestion_result> results(paths_to_process.size());
+  std::atomic<std::size_t> successful_images{0};
+  std::atomic<std::size_t> tasks_completed{0};
+
+  auto sched = ex::get_parallel_scheduler();
+  auto work =
+      ex::just()                // Start pipeline
+      | ex::continues_on(sched) // Move off the main thread onto the pool
+      |
+      ex::bulk(ex::par, paths_to_process.size(), [&](std::size_t idx) -> void {
+        const auto &path = paths_to_process[idx];
+
+        // Generate the image result and save directly to its distinct index
+        results[idx] = generate_working_image(source_folder, path, cache_dir);
+
+        // Track overall workflow progress
+        if (results[idx].success) {
+          successful_images.fetch_add(1, std::memory_order_relaxed);
+        }
+
+        // Trigger progress callback periodically
+        auto current_completed =
+            tasks_completed.fetch_add(1, std::memory_order_relaxed) + 1;
+        if (current_completed % 20 == 0) {
+          progress_callback(files_seen, results.size(),
+                            successful_images.load(std::memory_order_relaxed));
+        }
+      });
+
+  // Wait for everything to finish before proceeding to the next step
+  ex::sync_wait(std::move(work));
+
+  // Update final totals
+  progress_callback(files_seen, results.size(), successful_images.load());
+
+  // Save all the of the images we processed.
   insert_ingested_images(db, results);
 }
 

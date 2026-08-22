@@ -1,0 +1,19 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "stdexec",
+    hdrs = glob([
+        "include/**/*.hpp",
+    ]),
+    srcs = glob([
+            "src/parallel_scheduler/**/*.cpp",
+    ]),
+    includes = [
+        "include",
+    ],
+    defines = [
+        "STDEXEC_HAS_STD_CONCURRENCY=1",
+        "STDEXEC_BUILD_PARALLEL_SCHEDULER=1",
+    ],
+    visibility = ["//visibility:public"],
+)

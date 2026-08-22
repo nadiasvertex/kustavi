@@ -3,6 +3,17 @@ module(
     version = "1.0.0",
 )
 
+# Tooling support rules
+bazel_dep(name = "bazel_skylib", version = "1.9.2")
+bazel_dep(name = "hedron_compile_commands", version = "0.0.0", dev_dependency = True)
+git_override(
+    module_name = "hedron_compile_commands",
+    commit = "868c433f823d2d4eb7ce68198cd9d38bf75d61ae",
+    remote = "https://github.com/helly25/bazel-compile-commands-extractor.git",
+)
+
+git_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
+
 # Core Bazel utility rules
 bazel_dep(name = "apple_support", version = "2.8.0")
 bazel_dep(name = "platforms", version = "1.1.0")
@@ -14,13 +25,7 @@ bazel_dep(name = "protobuf", version = "35.1")
 bazel_dep(name = "grpc", version = "1.83.0")
 bazel_dep(name = "cli11", version = "2.6.2")
 bazel_dep(name = "spdlog", version = "1.17.0")
-
-bazel_dep(name = "hedron_compile_commands", version = "0.0.0", dev_dependency = True)
-git_override(
-    module_name = "hedron_compile_commands",
-    commit = "868c433f823d2d4eb7ce68198cd9d38bf75d61ae",
-    remote = "https://github.com/helly25/bazel-compile-commands-extractor.git",
-)
+bazel_dep(name = "sqlite3", version = "3.53.3")
 
 bazel_dep(name = "opencv", version = "5.0.0.bcr.3")
 single_version_override(
@@ -29,7 +34,16 @@ single_version_override(
     version = "5.0.0.bcr.3",
 )
 
-bazel_dep(name = "sqlite3", version = "3.53.3")
+# Repo-only third party libraries
+
+git_repository(
+    name = "stdexec",
+    remote = "https://github.com/NVIDIA/stdexec.git",
+    commit = "e92245d53dfc37f9bc2a7ef0cc44d570bb7b3386",
+    build_file = "//third_party:stdexec.BUILD.bazel",
+)
+
+# Flutter support
 
 # rules_flutter is built against this fork version; 0.4.10 has API changes
 # (DartInfo.transitive_resources removed) that break its generated pub spokes.

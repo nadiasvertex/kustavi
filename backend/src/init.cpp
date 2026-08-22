@@ -15,9 +15,11 @@ void initialize(const std::filesystem::path &folder_path) {
   db.open(folder_path);
 
   image::execute_folder_ingestion_pass(
-      db, folder_path, [](int files_seen, int images_found) -> void {
-        spdlog::info("Ingestion progress: {} files seen, {} images found",
-                     files_seen, images_found);
+      db, folder_path,
+      [](int files_seen, int images_found, int images_prepared) -> void {
+        spdlog::info("Ingestion progress: {} files seen, {} images found, {} "
+                     "images prepared",
+                     files_seen, images_found, images_prepared);
       });
 }
 } // namespace kustavi::cmd
