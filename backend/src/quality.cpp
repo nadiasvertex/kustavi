@@ -7,8 +7,8 @@
 #include <spdlog/spdlog.h>
 #include <stdexec/execution.hpp>
 
-#include <atomic>
 #include <algorithm>
+#include <atomic>
 #include <ranges>
 
 namespace kustavi::image {
@@ -31,7 +31,7 @@ auto load_image_stage(const std::filesystem::path &path) -> cv::Mat {
 auto analyze_blur(const cv::Mat &gray) -> double {
   if (gray.empty()) {
     return 0.0;
-}
+  }
   cv::Mat laplacian;
   cv::Laplacian(gray, laplacian, CV_64F);
   cv::Scalar mean, stddev;
@@ -46,15 +46,15 @@ auto analyze_exposure(const cv::Mat &gray, const quality_thresholds &thresholds)
     -> std::pair<double, double> {
   if (gray.empty()) {
     return {0.0, 0.0};
-}
+  }
 
   int hist_size = 256;
   float range[] = {0, 256};
   const float *hist_range[] = {range};
   cv::Mat hist;
 
-  cv::calcHist(&gray, 1, nullptr, cv::Mat(), hist, 1, &hist_size, hist_range, true,
-               false);
+  cv::calcHist(&gray, 1, nullptr, cv::Mat(), hist, 1, &hist_size, hist_range,
+               true, false);
 
   double total_pixels = gray.total();
   double low_pixels = 0.0;
@@ -73,12 +73,43 @@ auto analyze_exposure(const cv::Mat &gray, const quality_thresholds &thresholds)
   return {low_pixels / total_pixels, high_pixels / total_pixels};
 }
 
+auto is_low_quality(quality_thresholds thresholds,
+                    const std::filesystem::path &path) -> bool {
+  // Step 1: Load image
+  cv::Mat img = load_image_stage(path);
+  local_image_metrics metrics{.path = path};
+
+  if (img.empty()) {
+    return true;
+  }
+
+  // Step 2: Analyze image
+  metrics.valid = true;
+  auto [under, over] = analyze_exposure(img, thresholds);
+  metrics.laplacian_variance = analyze_blur(img);
+  metrics.underexposed_ratio = under;
+  metrics.overexposed_ratio = over;
+
+  // Step 3: Evaluate criteria & return results
+  if (!metrics.valid) {
+    return true;
+  }
+
+  bool is_blurry = metrics.laplacian_variance < thresholds.blur_threshold;
+  bool is_underexposed =
+      metrics.underexposed_ratio > thresholds.underexposed_threshold;
+  bool is_overexposed =
+      metrics.overexposed_ratio > thresholds.overexposed_threshold;
+
+  return is_blurry || is_underexposed || is_overexposed;
+}
+
 auto find_low_quality_images(
     quality_thresholds thresholds,
     const std::vector<std::filesystem::path> &paths,
     const std::function<void(std::size_t images_analyzed)> &progress_callback)
     -> std::vector<std::filesystem::path> {
-      std::vector<bool> low_quality(paths.size());
+  std::vector<bool> low_quality(paths.size());
   std::vector<std::filesystem::path> low_quality_paths;
   std::atomic<std::size_t> analyzed_count{0};
 
@@ -88,36 +119,10 @@ auto find_low_quality_images(
   auto work_pipeline =
       ex::schedule(scheduler) |
       ex::bulk(ex::par, paths.size(), [&](std::size_t index) -> void {
-        const auto &path = paths[index];
+        low_quality[index] = is_low_quality(thresholds, paths[index]);
 
-        // Step 1: Load image
-        cv::Mat img = load_image_stage(path);
-        local_image_metrics metrics{.path = path};
-
-        // Step 2: Analyze image
-        if (!img.empty()) {
-          metrics.valid = true;
-          auto [under, over] = analyze_exposure(img, thresholds);
-          metrics.laplacian_variance = analyze_blur(img);
-          metrics.underexposed_ratio = under;
-          metrics.overexposed_ratio = over;
-        }
-
-        // Step 3: Evaluate criteria & update results thread-safely
-        if (metrics.valid) {
-          bool is_blurry =
-              metrics.laplacian_variance < thresholds.blur_threshold;
-          bool is_underexposed =
-              metrics.underexposed_ratio > thresholds.underexposed_threshold;
-          bool is_overexposed =
-              metrics.overexposed_ratio > thresholds.overexposed_threshold;
-
-          if (is_blurry || is_underexposed || is_overexposed) {
-            low_quality[index] = true;
-          }
-        }
-
-        std::size_t current_progress = ++analyzed_count;
+        std::size_t current_progress =
+            analyzed_count.fetch_add(1, std::memory_order_relaxed) + 1;
         if (progress_callback) {
           progress_callback(current_progress);
         }
@@ -127,9 +132,10 @@ auto find_low_quality_images(
   // threads
   stdexec::sync_wait(work_pipeline);
 
-  auto low_quality_views = std::views::zip(paths, low_quality)
-      | std::views::filter([](const auto& pair) { return std::get<1>(pair); })
-      | std::views::elements<0>;
+  auto low_quality_views =
+      std::views::zip(paths, low_quality) |
+      std::views::filter([](const auto &pair) { return std::get<1>(pair); }) |
+      std::views::elements<0>;
 
   std::ranges::copy(low_quality_views, std::back_inserter(low_quality_paths));
   return low_quality_paths;
