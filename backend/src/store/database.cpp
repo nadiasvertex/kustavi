@@ -1,4 +1,4 @@
-#include "database.h"
+#include "store/database.h"
 #include "paths.h"
 
 #include <filesystem>

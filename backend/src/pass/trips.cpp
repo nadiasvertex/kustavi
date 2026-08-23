@@ -1,4 +1,4 @@
-#include "trips.h"
+#include "pass/trips.h"
 
 #include <algorithm>
 #include <cmath>

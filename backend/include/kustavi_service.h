@@ -1,9 +1,9 @@
 #pragma once
 
-#include "database.h"
-#include "downscaler.h"
-#include "event_queue.h"
-#include "quality.h"
+#include "collection/event_queue.h"
+#include "pass/downscaler.h"
+#include "pass/quality.h"
+#include "store/database.h"
 
 #include <grpcpp/grpcpp.h>
 #include <proto/service.grpc.pb.h>

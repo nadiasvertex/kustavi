@@ -1,6 +1,6 @@
 #pragma once
 
-#include "database.h"
+#include "store/database.h"
 
 #include <array>
 #include <cstdint>

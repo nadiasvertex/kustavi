@@ -1,4 +1,4 @@
-#include "quality.h"
+#include "pass/quality.h"
 #include "exec/scheduler.h"
 
 #include <opencv2/core.hpp>      // For cv::Mat, cv::Scalar, cv::meanStdDev

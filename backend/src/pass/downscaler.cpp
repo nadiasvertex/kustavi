@@ -1,8 +1,8 @@
-#include "downscaler.h"
-#include "database.h"
+#include "pass/downscaler.h"
 #include "exec/scheduler.h"
 #include "exif.h"
 #include "paths.h"
+#include "store/database.h"
 
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>

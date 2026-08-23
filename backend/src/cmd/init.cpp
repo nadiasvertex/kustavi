@@ -1,6 +1,6 @@
-#include "init.h"
-#include "database.h"
-#include "downscaler.h"
+#include "cmd/init.h"
+#include "pass/downscaler.h"
+#include "store/database.h"
 
 #include <spdlog/spdlog.h>
 

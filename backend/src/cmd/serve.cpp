@@ -1,12 +1,10 @@
-#include "serve.h"
-
+#include "cmd/serve.h"
 #include "kustavi_service.h"
 
 #include <grpcpp/grpcpp.h>
 #include <spdlog/spdlog.h>
 
 #include <chrono>
-#include <exception>
 #include <iostream>
 #include <print>
 #include <string>

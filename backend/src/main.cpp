@@ -1,6 +1,6 @@
-#include "analyze.h"
-#include "init.h"
-#include "serve.h"
+#include "cmd/analyze.h"
+#include "cmd/init.h"
+#include "cmd/serve.h"
 #include "version.h"
 
 #include <CLI/CLI.hpp>

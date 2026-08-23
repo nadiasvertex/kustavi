@@ -1,8 +1,8 @@
-#include "analyze.h"
-#include "database.h"
-#include "quality.h"
-#include "similar.h"
-#include "store.h"
+#include "cmd/analyze.h"
+#include "pass/quality.h"
+#include "pass/similar.h"
+#include "store/database.h"
+#include "store/store.h"
 
 #include <spdlog/spdlog.h>
 

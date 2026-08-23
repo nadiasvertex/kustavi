@@ -1,7 +1,7 @@
-#include "similar.h"
+#include "pass/similar.h"
+#include "collection/vantage_point_tree.h"
 #include "exec/scheduler.h"
 #include "image_features.h"
-#include "vantage_point_tree.h"
 
 #include <opencv2/core.hpp>      // For cv::Mat, cv::Scalar, cv::meanStdDev
 #include <opencv2/imgcodecs.hpp> // For cv::imread

@@ -17,8 +17,8 @@
 #include <signal.h>
 #include <spawn.h>
 #include <string>
-#include <system_error>
 #include <sys/wait.h>
+#include <system_error>
 #include <thread>
 #include <unistd.h>
 #include <vector>
@@ -40,9 +40,9 @@ constexpr int k_fail = 1;
 }
 
 struct options {
-  std::string target;  // empty = spawn a local server; otherwise connect
+  std::string target; // empty = spawn a local server; otherwise connect
   std::string token;
-  std::string server;  // path to the server binary (auto-detected if empty)
+  std::string server; // path to the server binary (auto-detected if empty)
   std::string folder;
   std::string destination;
   bool no_auth = false;
@@ -229,8 +229,9 @@ auto spawn_server(const fs::path &binary, const std::string &token)
   posix_spawn_file_actions_t actions{};
   if (posix_spawn_file_actions_init(&actions) != 0 ||
       posix_spawn_file_actions_adddup2(&actions, pipe_fds[1], /*stdout=*/1) !=
-          0 || posix_spawn_file_actions_addopen(&actions, /*stdin=*/0,
-                                               "/dev/null", O_RDONLY, 0) != 0) {
+          0 ||
+      posix_spawn_file_actions_addopen(&actions, /*stdin=*/0, "/dev/null",
+                                       O_RDONLY, 0) != 0) {
     close_fd(pipe_fds[0]);
     close_fd(pipe_fds[1]);
     std::println(stderr, "posix_spawn_file_actions setup failed");
@@ -239,8 +240,8 @@ auto spawn_server(const fs::path &binary, const std::string &token)
 
   // The command vectors must outlive the spawn call; the char* array points
   // into them.
-  std::vector<std::string> command = {
-      binary.c_str(), "serve", "--listen", "127.0.0.1:0", "--token", token};
+  std::vector<std::string> command = {binary.c_str(), "serve",   "--listen",
+                                      "127.0.0.1:0",  "--token", token};
   std::vector<char *> argv;
   argv.reserve(command.size() + 1);
   for (auto &arg : command) {
@@ -301,15 +302,15 @@ auto wait_for_ready(server_process &server, std::chrono::seconds timeout)
     pfd.events = static_cast<std::int16_t>(POLLIN);
     pfd.revents = 0;
     const auto rc = ::poll(
-        &pfd, 1, static_cast<int>(
-                     std::chrono::duration_cast<std::chrono::milliseconds>(
-                         remaining)
-                         .count()));
+        &pfd, 1,
+        static_cast<int>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(remaining)
+                .count()));
     if (rc <= 0) {
-      break;  // timeout or poll error
+      break; // timeout or poll error
     }
     if (!read_line(stream, line)) {
-      break;  // EOF: the server exited before becoming ready
+      break; // EOF: the server exited before becoming ready
     }
     if (line.starts_with(k_ready_line_prefix)) {
       const auto text = line.substr(k_ready_line_prefix.size());
@@ -382,7 +383,7 @@ auto teardown_server(server_process &server, const options &opts) -> void {
   if (server.pid <= 0) {
     return;
   }
-  g_server_pid = -1;  // this path reaps the child; skip the atexit helper
+  g_server_pid = -1; // this path reaps the child; skip the atexit helper
   if (!opts.token.empty() && !opts.no_auth) {
     auto stub = k::Kustavi::NewStub(make_channel(opts));
     k::ShutdownRequest request;

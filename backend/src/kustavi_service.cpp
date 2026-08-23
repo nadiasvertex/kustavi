@@ -1,11 +1,10 @@
 #include "kustavi_service.h"
 
-#include "commit.h"
-#include "exif.h"
+#include "pass/commit.h"
+#include "pass/similar.h"
+#include "pass/trips.h"
 #include "paths.h"
-#include "similar.h"
-#include "store.h"
-#include "trips.h"
+#include "store/store.h"
 #include "version.h"
 
 #include <spdlog/spdlog.h>
