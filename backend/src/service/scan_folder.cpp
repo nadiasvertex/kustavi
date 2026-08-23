@@ -10,10 +10,9 @@
 #include <utility>
 #include <variant>
 
-namespace fs = std::filesystem;
-
 namespace kustavi {
 
+namespace fs = std::filesystem;
 using algorithm::append_range;
 
 // ---------------------------------------------------------------------------

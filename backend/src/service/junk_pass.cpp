@@ -5,14 +5,6 @@
 
 #include <spdlog/spdlog.h>
 
-#include <algorithm>
-#include <cinttypes>
-#include <cmath>
-#include <filesystem>
-#include <unordered_map>
-#include <utility>
-#include <vector>
-
 namespace kustavi {
 
 using algorithm::append_range;
