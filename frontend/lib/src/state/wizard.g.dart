@@ -47,7 +47,7 @@ final class WizardProvider extends $AsyncNotifierProvider<Wizard, WizardPhase> {
   Wizard create() => Wizard();
 }
 
-String _$wizardHash() => r'6bedede0f97ac2212a47d551c2171955026cd5a9';
+String _$wizardHash() => r'bf76b915fb45506467eb4cf8f2ad21573de52acf';
 
 /// The wizard controller (spec/frontend.md §6, §9).
 ///
