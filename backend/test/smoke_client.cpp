@@ -2,6 +2,7 @@
 
 #include <proto/service.grpc.pb.h>
 
+#include <array>
 #include <charconv>
 #include <chrono>
 #include <csignal>
@@ -123,21 +124,22 @@ auto close_fd(int &fd) -> void {
 
 /** Full path of this executable, with symlinks resolved. */
 auto own_executable_path() -> fs::path {
-  char buffer[4096] = {};
+  std::array<char, 4096> buffer{};
   fs::path path;
 #ifdef __APPLE__
-  auto size = static_cast<uint32_t>(sizeof(buffer));
-  if (_NSGetExecutablePath(buffer, &size) != 0) {
+  auto size = static_cast<uint32_t>(buffer.size());
+  if (_NSGetExecutablePath(buffer.data(), &size) != 0) {
     fail("could not resolve own executable path");
   }
 #else
-  const auto len = ::readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
+  const auto len =
+      ::readlink("/proc/self/exe", buffer.data(), buffer.size() - 1);
   if (len < 0) {
     fail("could not resolve own executable path");
   }
   buffer[len] = '\0';
 #endif
-  path = fs::path{buffer};
+  path = fs::path{buffer.data()};
   std::error_code ec;
   if (auto canonical = fs::canonical(path, ec); !ec) {
     return canonical;
@@ -147,10 +149,10 @@ auto own_executable_path() -> fs::path {
 
 /** Locates the server binary. Order: an explicit --server path, the bazel
  * runfiles manifest, common runfiles layouts, a sibling of this executable,
- * and ./bazel-bin/backend/server. */
-auto find_server_binary(const options &opts) -> std::optional<fs::path> {
+ * and ./bazel-bin/backend/server. Fails the process if none is found. */
+auto find_server_binary(const options &opts) -> fs::path {
   if (!opts.server.empty()) {
-    const fs::path path{opts.server};
+    fs::path path{opts.server};
     if (fs::is_regular_file(path)) {
       return path;
     }
@@ -173,7 +175,7 @@ auto find_server_binary(const options &opts) -> std::optional<fs::path> {
       }
       const auto key = line.substr(0, sep);
       if (key == "backend/server" || key.ends_with("/backend/server")) {
-        const fs::path real{line.substr(sep + 1)};
+        fs::path real{line.substr(sep + 1)};
         if (fs::is_regular_file(real)) {
           return real;
         }
@@ -183,18 +185,18 @@ auto find_server_binary(const options &opts) -> std::optional<fs::path> {
 
   for (const auto &prefix :
        {std::string{}, std::string{"_main/"}, std::string{"kustavi/"}}) {
-    const auto candidate = runfiles_root / (prefix + "backend/server");
+    auto candidate = runfiles_root / (prefix + "backend/server");
     if (fs::is_regular_file(candidate)) {
       return candidate;
     }
   }
 
-  const auto sibling = exe.parent_path() / "server";
+  auto sibling = exe.parent_path() / "server";
   if (fs::is_regular_file(sibling)) {
     return sibling;
   }
 
-  const auto bazel_bin = fs::path{"bazel-bin"} / "backend" / "server";
+  auto bazel_bin = fs::path{"bazel-bin"} / "backend" / "server";
   if (fs::is_regular_file(bazel_bin)) {
     return bazel_bin;
   }
@@ -220,8 +222,8 @@ auto generate_token() -> std::string {
  * @return std::nullopt on spawn failure. */
 auto spawn_server(const fs::path &binary, const std::string &token)
     -> std::optional<server_process> {
-  int pipe_fds[2] = {-1, -1};
-  if (::pipe(pipe_fds) != 0) {
+  std::array<int, 2> pipe_fds{-1, -1};
+  if (::pipe(pipe_fds.data()) != 0) {
     std::println(stderr, "pipe failed: {}", std::strerror(errno));
     return std::nullopt;
   }
@@ -315,10 +317,11 @@ auto wait_for_ready(server_process &server, std::chrono::seconds timeout)
     if (line.starts_with(k_ready_line_prefix)) {
       const auto text = line.substr(k_ready_line_prefix.size());
       int port = 0;
-      const auto parsed =
-          std::from_chars(text.data(), text.data() + text.size(), port);
-      if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() ||
-          port <= 0) {
+      // from_chars takes raw [first, last) pointers; no span overload exists.
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+      const auto *end = text.data() + text.size();
+      const auto parsed = std::from_chars(text.data(), end, port);
+      if (parsed.ec != std::errc{} || parsed.ptr != end || port <= 0) {
         break;
       }
       ::fclose(stream);
@@ -726,7 +729,7 @@ auto main(int argc, char **argv) -> int {
       if (opts.token.empty()) {
         opts.token = generate_token();
       }
-      auto spawned = spawn_server(*binary, opts.token);
+      auto spawned = spawn_server(binary, opts.token);
       if (!spawned) {
         fail("failed to spawn the server");
       }

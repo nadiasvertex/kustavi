@@ -3,15 +3,14 @@
 CLANG_TIDY := "/opt/homebrew/opt/llvm/bin/clang-tidy"
 CLANG_FORMAT := "/opt/homebrew/opt/llvm/bin/clang-format"
 
-os_name := os()
-flutter_target := if os_name == "macos" { "macos" } else if os_name == "windows" { "windows" } else { "linux" }
-ui_binary_path := if os_name == "macos" { "build/macos/Build/Products/Release/frontend.app/Contents/MacOS/frontend" } else if os_name == "windows" { "build/windows/x64/runner/Release/frontend.exe" } else { "build/linux/x64/release/bundle/frontend" }
-
 build:
   bazel build //...
 
 build-release:
-  bazel build //...--config=release
+  bazel build //... --config=release
+
+build-server-release:
+  bazel build //backend:server --config=release
 
 build-server:
   bazel build //backend:server
@@ -42,10 +41,6 @@ proto:
   PATH="$HOME/.pub-cache/bin:$PATH" protoc -I "$tmp" --dart_out="grpc:frontend/lib/src/generated" kustavi/service.proto && \
   rm -rf "$tmp"
 
-run:
-  bazel build //...
-  bazel run //frontend:kustavi
-
 compile-commands:
   bazel run :refresh_compile_commands
 
@@ -66,3 +61,25 @@ lint: compile-commands
     find ./backend -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) -print0 \
       | xargs -0 -P1 {{ CLANG_TIDY }} -p=. --fix --fix-errors \
           --extra-arg=-isysroot --extra-arg="$SDK"
+
+dist-clean:
+  rm -rf dist && mkdir -p dist
+
+package-server: build-server-release
+  @# Copy the backend binary → kustavi-backend
+  cp bazel-bin/backend/server dist/kustavi-backend
+
+package-gui: build-gui
+  @# Copy the UI binary → kustavi
+  if [ "{{os()}}" == "macos" ]; then \
+      unzip -q bazel-bin/frontend/kustavi_macos.zip -d "dist/" && \
+      mv dist/kustavi-backend dist/Kustavi.app/Contents/MacOS/ && \
+      codesign --deep --force --sign - dist/Kustavi.app; \
+  else \
+      mv dist/kustavi-backend dist/kustavi; \
+  fi
+
+package: dist-clean package-server package-gui
+
+run: package
+  dist/kustavi.app/Contents/MacOS/kustavi

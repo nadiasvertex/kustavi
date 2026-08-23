@@ -7,3 +7,7 @@ frontend/lib/src/generated/
 frontend/.dart_tool/
 frontend/.idea/
 test/photos/
+dist/
+.bazelbsp/
+.cache/clangd/index/
+.idea/

@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:collection';
 
+import 'package:grpc/grpc.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
-import '../backend/client.dart' show mapToBackendError;
+import '../backend/client.dart' show KustaviClient, mapToBackendError;
 import '../backend/client_provider.dart';
 import '../generated/kustavi/service.pb.dart' as pb;
 import 'decisions.dart';
@@ -78,13 +79,24 @@ class Wizard extends _$Wizard {
     _clearPassResults();
     _returnPhase = null;
     state = AsyncValue.data(WizardScanning(folder: folder));
-    final client = ref.read(kustaviClientProvider).requireValue;
-    final request = pb.ScanFolderRequest()..folder = folder..recursive = true;
-    _subscribe(
-      client.scanFolder(request),
-      _onScanEvent,
-      _onScanDone,
-    );
+    final client = ref.read(kustaviClientProvider);
+    if (client case AsyncData<KustaviClient>(:final value)) {
+      final request = pb.ScanFolderRequest()..folder = folder..recursive = true;
+      _subscribe(
+        value.scanFolder(request),
+        _onScanEvent,
+        _onScanDone,
+      );
+    } else if (client case AsyncError(:final error, :final stackTrace)) {
+      state = AsyncValue.error(error, stackTrace);
+    } else {
+      state = AsyncValue.error(
+        BackendRpc(
+          const GrpcError.unavailable('Back end is still starting up. Please wait a moment.'),
+        ),
+        StackTrace.current,
+      );
+    }
   }
 
   void cancelScan() {
