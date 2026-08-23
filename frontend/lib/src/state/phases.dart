@@ -2,9 +2,9 @@
 enum WizardStep {
   select('Select'),
   quality('Quality'),
-  junk('Junk'),
   duplicates('Duplicates'),
   trips('Trips'),
+  junk('Junk'),
   copy('Copy');
 
   const WizardStep(this.label);

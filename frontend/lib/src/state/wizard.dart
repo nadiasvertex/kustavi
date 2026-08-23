@@ -258,6 +258,31 @@ class Wizard extends _$Wizard {
       return;
     }
     _junkFlags.clear();
+    _returnPhase = state.value;
+    _similarGroups.clear();
+    state = const AsyncValue.data(WizardSimilarRunning());
+    final client = ref.read(kustaviClientProvider).requireValue;
+    _subscribe(
+      client.runSimilarPass(),
+      _onSimilarEvent,
+      _onSimilarDone,
+    );
+  }
+
+  void continueFromJunk() {
+    if (state.value is! WizardJunkReview) {
+      return;
+    }
+    _returnPhase = state.value;
+    state = const AsyncValue.data(WizardTrips());
+  }
+
+  void continueFromTrips() {
+    if (state.value is! WizardTrips) {
+      return;
+    }
+    _junkFlags.clear();
+    _returnPhase = const WizardTrips();
     if (_modelReady) {
       _startJunkPass();
     } else {
@@ -265,22 +290,41 @@ class Wizard extends _$Wizard {
     }
   }
 
-  void _startJunkPass() {
-    _returnPhase = _qualityReviewPhase;
-    state = const AsyncValue.data(WizardJunkRunning());
-    final client = ref.read(kustaviClientProvider).requireValue;
-    _subscribe(client.runJunkPass(), _onJunkEvent, _onJunkDone);
+  void cancelTrips() {
+    if (state.value is! WizardTrips) {
+      return;
+    }
+    _cancelPass();
+    state = AsyncValue.data(_returnPhase ?? _similarReviewPhase);
   }
-
-  // --- S5 ----------------------------------------------------------------
 
   void cancelJunkPrep() {
     if (state.value is! WizardJunkPrep) {
       return;
     }
     ref.read(modelStatusProvider.notifier).cancelDownload();
-    state = AsyncValue.data(_qualityReviewPhase);
+    state = AsyncValue.data(_returnPhase ?? _qualityReviewPhase);
   }
+
+  void _startJunkPass() {
+    state = const AsyncValue.data(WizardJunkRunning());
+    final client = ref.read(kustaviClientProvider).requireValue;
+    _subscribe(client.runJunkPass(), _onJunkEvent, _onJunkDone);
+  }
+
+  WizardSimilarReview get _similarReviewPhase => WizardSimilarReview(
+        groupCount: _similarGroups.length,
+        markedCount: _similarMarkedCount(),
+      );
+
+  void _onSimilarDone() {
+    if (state.value is! WizardSimilarRunning) {
+      return;
+    }
+    state = AsyncValue.data(_similarReviewPhase);
+  }
+
+
 
   // --- S6 ----------------------------------------------------------------
 
@@ -318,7 +362,7 @@ class Wizard extends _$Wizard {
       return;
     }
     _cancelPass();
-    state = AsyncValue.data(_qualityReviewPhase);
+    state = AsyncValue.data(_returnPhase ?? _qualityReviewPhase);
   }
 
   // --- S7 ----------------------------------------------------------------
@@ -327,7 +371,7 @@ class Wizard extends _$Wizard {
     if (state.value is! WizardJunkReview) {
       return;
     }
-    state = AsyncValue.data(_qualityReviewPhase);
+    state = AsyncValue.data(_returnPhase ?? _qualityReviewPhase);
   }
 
   void keepAllJunkFlagged() {
@@ -344,20 +388,6 @@ class Wizard extends _$Wizard {
     ref.read(deletionPlanProvider.notifier).markAll(_junkFlags.keys);
   }
 
-  void continueFromJunk() {
-    if (state.value is! WizardJunkReview) {
-      return;
-    }
-    _similarGroups.clear();
-    _returnPhase = state.value;
-    state = const AsyncValue.data(WizardSimilarRunning());
-    final client = ref.read(kustaviClientProvider).requireValue;
-    _subscribe(
-      client.runSimilarPass(),
-      _onSimilarEvent,
-      _onSimilarDone,
-    );
-  }
 
   // --- S8 ----------------------------------------------------------------
 
@@ -380,18 +410,6 @@ class Wizard extends _$Wizard {
       case pb.SimilarEvent_Event.notSet:
         break;
     }
-  }
-
-  void _onSimilarDone() {
-    if (state.value is! WizardSimilarRunning) {
-      return;
-    }
-    state = AsyncValue.data(
-      WizardSimilarReview(
-        groupCount: _similarGroups.length,
-        markedCount: _similarMarkedCount(),
-      ),
-    );
   }
 
   int _similarMarkedCount() {
@@ -418,7 +436,7 @@ class Wizard extends _$Wizard {
       return;
     }
     _cancelPass();
-    state = AsyncValue.data(_junkReviewPhase);
+    state = AsyncValue.data(_returnPhase ?? _qualityReviewPhase);
   }
 
   // --- S9 ----------------------------------------------------------------
@@ -427,7 +445,15 @@ class Wizard extends _$Wizard {
     if (state.value is! WizardSimilarReview) {
       return;
     }
-    state = AsyncValue.data(_junkReviewPhase);
+    state = AsyncValue.data(_returnPhase ?? _qualityReviewPhase);
+  }
+
+  void continueFromSimilar() {
+    if (state.value is! WizardSimilarReview) {
+      return;
+    }
+    _returnPhase = state.value;
+    state = const AsyncValue.data(WizardTrips());
   }
 
   // --- step error (§10.2) -------------------------------------------------

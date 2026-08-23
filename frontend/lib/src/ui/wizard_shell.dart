@@ -262,6 +262,16 @@ class _WizardShellState extends ConsumerState<WizardShell> {
             onPressed: wizard.backFromSimilar,
             child: const Text('Back'),
           ),
+          FilledButton(
+            onPressed: wizard.continueFromSimilar,
+            child: const Text('Continue'),
+          ),
+        ],
+      WizardTrips() => [
+          FilledButton(
+            onPressed: wizard.continueFromTrips,
+            child: const Text('Continue'),
+          ),
         ],
       _ => null,
     };
