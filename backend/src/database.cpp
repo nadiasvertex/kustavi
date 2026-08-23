@@ -150,6 +150,22 @@ void database::initialize_schema() {
             updated_at INTEGER NOT NULL,
             FOREIGN KEY(image_id) REFERENCES images(id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS quality_flags (
+            image_id TEXT PRIMARY KEY,
+            laplacian REAL NOT NULL,
+            underexposed REAL NOT NULL,
+            overexposed REAL NOT NULL,
+            processed_at INTEGER NOT NULL,
+            FOREIGN KEY(image_id) REFERENCES images(id) ON DELETE CASCADE
+        );
+        CREATE TABLE IF NOT EXISTS similar_groups (
+            group_id INTEGER NOT NULL,
+            image_id TEXT NOT NULL,
+            keeper_id TEXT NOT NULL,
+            score REAL NOT NULL,
+            processed_at INTEGER NOT NULL,
+            FOREIGN KEY(image_id) REFERENCES images(id) ON DELETE CASCADE
+        );
     )");
 }
 

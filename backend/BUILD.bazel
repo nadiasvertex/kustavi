@@ -9,6 +9,7 @@ cc_binary(
     includes = ["include"],
     deps = [
         "//proto:service_cc_grpc",
+        "@grpc//:grpc++",
         "@opencv//:core",
         "@opencv//:imgproc",
         "@opencv//:imgcodecs",
@@ -17,6 +18,16 @@ cc_binary(
         "@stdexec",
         "@cli11",
         "@spdlog",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_binary(
+    name = "smoke_client",
+    srcs = ["test/smoke_client.cpp"],
+    deps = [
+        "//proto:service_cc_grpc",
+        "@grpc//:grpc++",
     ],
     visibility = ["//visibility:public"],
 )

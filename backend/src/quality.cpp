@@ -7,7 +7,10 @@
 #include <spdlog/spdlog.h>
 #include <stdexec/execution.hpp>
 
+#include <algorithm>
+#include <array>
 #include <atomic>
+#include <cmath>
 #include <ranges>
 
 namespace kustavi::image {
@@ -30,23 +33,23 @@ auto calculate_clipping_weights(const cv::Mat &region,
     -> std::pair<double, double> {
 
   int hist_size = 256;
-  float range[] = {0, 256};
-  const float *hist_range[] = {range};
+  static constexpr std::array<float, 2> range{0.0f, 256.0f};
+  std::array<const float *, 1> hist_range{range.data()};
   cv::Mat hist;
-  cv::calcHist(&region, 1, nullptr, cv::Mat(), hist, 1, &hist_size, hist_range,
-               true, false);
+  cv::calcHist(&region, 1, nullptr, cv::Mat(), hist, 1, &hist_size,
+               hist_range.data(), true, false);
 
-  double total_pixels = region.total();
+  const auto total_pixels = static_cast<double>(region.total());
   double under_exposed_weight = 0.0;
   double over_exposed_weight = 0.0;
 
   for (int i = 0; i < hist_size; ++i) {
-    float bin_val = hist.at<float>(i);
+    const float bin_val = hist.at<float>(i);
 
     if (i <= thresholds.low_bin_index) {
       // Quadratic penalty: highest at 0, tapering off toward the threshold
       // index
-      double severity =
+      const double severity =
           std::pow((thresholds.low_bin_index - i) /
                        static_cast<double>(thresholds.low_bin_index),
                    2);
@@ -54,9 +57,9 @@ auto calculate_clipping_weights(const cv::Mat &region,
     }
     if (i >= thresholds.high_bin_index) {
       // Quadratic penalty: highest at 255
-      double severity = std::pow((i - thresholds.high_bin_index) /
-                                     (255.0 - thresholds.high_bin_index),
-                                 2);
+      const double severity = std::pow((i - thresholds.high_bin_index) /
+                                           (255.0 - thresholds.high_bin_index),
+                                       2);
       over_exposed_weight += bin_val * severity;
     }
   }
@@ -118,7 +121,7 @@ auto analyze_exposure(const cv::Mat &gray, const quality_thresholds &thresholds)
 
   // 3. Contextual Override
   // If enough local zones are well-exposed, ignore a high global underexposure
-  // score (This saves your low-key and dark background photos from getting
+  // score (This saves our low-key and dark background photos from getting
   // flagged)
   if (well_exposed_cells >= thresholds.min_passing_cells) {
     return {0.0, global_over};
@@ -128,48 +131,48 @@ auto analyze_exposure(const cv::Mat &gray, const quality_thresholds &thresholds)
 }
 
 /**
- * Determine if an image is low quality based on blur and exposure metrics.
+ * Compute the sharpness and exposure metrics for a single image.
  */
-auto is_low_quality(quality_thresholds thresholds,
-                    const std::filesystem::path &path) -> bool {
-  // Step 1: Load image
-  cv::Mat img = load_image_stage(path);
+auto compute_metrics(const std::filesystem::path &path,
+                     const quality_thresholds &thresholds)
+    -> local_image_metrics {
   local_image_metrics metrics{.path = path};
 
+  const cv::Mat img = load_image_stage(path);
   if (img.empty()) {
-    return true;
+    return metrics;
   }
 
-  // Step 2: Analyze image
   metrics.valid = true;
   auto [under, over] = analyze_exposure(img, thresholds);
-  metrics.laplacian_variance = analyze_blur(img);
   metrics.underexposed_ratio = under;
   metrics.overexposed_ratio = over;
+  metrics.laplacian_variance = analyze_blur(img);
 
-  // Step 3: Evaluate criteria & return results
+  return metrics;
+}
+
+auto is_flagged(const local_image_metrics &metrics,
+                const quality_thresholds &thresholds) -> bool {
   if (!metrics.valid) {
-    return true;
+    return false;
   }
-
-  bool is_blurry = metrics.laplacian_variance < thresholds.blur_threshold;
-  bool is_underexposed =
+  const bool is_blurry = metrics.laplacian_variance < thresholds.blur_threshold;
+  const bool is_underexposed =
       metrics.underexposed_ratio > thresholds.underexposed_threshold;
-  bool is_overexposed =
+  const bool is_overexposed =
       metrics.overexposed_ratio > thresholds.overexposed_threshold;
 
   return is_blurry || is_underexposed || is_overexposed;
 }
 
-/**
- * Find low quality images in a batch of image paths.
- */
-auto find_low_quality_images(
-    quality_thresholds thresholds,
-    const std::vector<std::filesystem::path> &paths,
-    const std::function<void(std::size_t images_analyzed)> &progress_callback)
-    -> std::vector<std::filesystem::path> {
-  std::vector<bool> low_quality(paths.size());
+auto analyze_images(quality_thresholds thresholds,
+                    const std::vector<std::filesystem::path> &paths,
+                    std::stop_token stop_token,
+                    const quality_progress_callback &progress_callback,
+                    const quality_result_callback &on_result)
+    -> std::vector<local_image_metrics> {
+  std::vector<local_image_metrics> results(paths.size());
   std::atomic<std::size_t> analyzed_count{0};
 
   auto scheduler = exec::make_scheduler();
@@ -178,22 +181,52 @@ auto find_low_quality_images(
   auto work_pipeline =
       ex::schedule(scheduler) |
       ex::bulk(ex::par, paths.size(), [&](std::size_t index) -> void {
-        low_quality[index] = is_low_quality(thresholds, paths[index]);
+        local_image_metrics metrics;
+        if (!stop_token.stop_requested()) {
+          metrics = compute_metrics(paths[index], thresholds);
+          if (on_result) {
+            on_result(metrics);
+          }
+        } else {
+          metrics.path = paths[index];
+        }
 
-        std::size_t current_progress =
+        const std::size_t current_progress =
             analyzed_count.fetch_add(1, std::memory_order_relaxed) + 1;
         if (progress_callback) {
-          progress_callback(current_progress);
+          progress_callback(current_progress, paths.size());
         }
+
+        results[index] = std::move(metrics);
       });
 
   // Synchronously wait for the bulk pipeline to run to completion across
   // threads
   stdexec::sync_wait(work_pipeline);
 
-  return std::views::zip(paths, low_quality) |
-         std::views::filter(
-             [](const auto &pair) { return std::get<1>(pair); }) |
-         std::views::elements<0> | std::ranges::to<std::vector>();
+  return results;
+}
+
+auto find_low_quality_images(
+    quality_thresholds thresholds,
+    const std::vector<std::filesystem::path> &paths,
+    const std::function<void(std::size_t images_analyzed)> &progress_callback)
+    -> std::vector<std::filesystem::path> {
+  const auto metrics = analyze_images(
+      thresholds, paths, std::stop_token{},
+      [progress_callback](std::size_t done, std::size_t) -> void {
+        if (progress_callback) {
+          progress_callback(done);
+        }
+      },
+      nullptr);
+
+  std::vector<std::filesystem::path> low_quality;
+  for (const auto &m : metrics) {
+    if (is_flagged(m, thresholds)) {
+      low_quality.push_back(m.path);
+    }
+  }
+  return low_quality;
 }
 } // namespace kustavi::image

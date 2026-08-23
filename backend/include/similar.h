@@ -6,6 +6,10 @@
 
 namespace kustavi::image {
 
+/** Default similarity radius: the normalized hash distance below which two
+ * images count as near-duplicates. */
+inline constexpr double default_similarity_radius = 0.15;
+
 /**
  * Find similar images in a batch of image paths.
  */

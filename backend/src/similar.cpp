@@ -43,8 +43,9 @@ auto extract_features(const std::filesystem::path &path) -> image_features {
   image_features feats{.path = path};
 
   cv::Mat img = cv::imread(path.string(), cv::IMREAD_COLOR);
-  if (img.empty())
+  if (img.empty()) {
     return feats;
+  }
 
   // 1. Compute Color Histogram (HS channels) using std::array
   cv::Mat hsv;
@@ -97,7 +98,8 @@ auto find_similar_images(
         all_features[idx] = extract_features(paths[idx]);
 
         if (progress_callback) {
-          progress_callback(++completed_count);
+          progress_callback(
+              completed_count.fetch_add(1, std::memory_order_relaxed) + 1);
         }
       });
 

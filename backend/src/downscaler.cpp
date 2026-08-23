@@ -1,6 +1,7 @@
 #include "downscaler.h"
 #include "database.h"
 #include "exec/scheduler.h"
+#include "exif.h"
 #include "paths.h"
 
 #include <opencv2/core.hpp>
@@ -11,14 +12,49 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cctype>
+#include <cstdint>
 #include <filesystem>
+#include <mutex>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <unordered_set>
 
 namespace ex = stdexec;
 namespace fs = std::filesystem;
 
 namespace kustavi::image {
+
+namespace {
+
+/** Deterministic 64-bit FNV-1a hash, stable across runs so cached working
+ * images survive restarts. */
+auto fnv1a64(std::string_view s) -> uint64_t {
+  uint64_t hash = 1469598103934665603ULL;
+  for (const unsigned char c : s) {
+    hash ^= static_cast<uint64_t>(c);
+    hash *= 1099511628211ULL;
+  }
+  return hash;
+}
+
+auto hex64(uint64_t value) -> std::string {
+  static constexpr std::string_view digits = "0123456789abcdef";
+  std::string out(16, '0');
+  for (std::size_t i = 16; i > 0; --i) {
+    out[i - 1] = digits[value & 0xF];
+    value >>= 4;
+  }
+  return out;
+}
+
+/** Forces '/' separators so image ids are platform-independent. */
+auto slash_id(const fs::path &relative) -> std::string {
+  std::string id = relative.generic_string();
+  return id;
+}
+} // namespace
 
 auto generate_working_image(const std::filesystem::path &base_path,
                             const std::filesystem::path &src_path,
@@ -33,12 +69,23 @@ auto generate_working_image(const std::filesystem::path &base_path,
   result.absolute_path = src_path;
 
   try {
-    std::string cached_filename = src_path.stem().string() + "_" +
-                                  std::to_string(fs::file_size(src_path)) +
-                                  ".jpg";
+    std::error_code size_ec;
+    const auto file_size = fs::file_size(src_path, size_ec);
+    if (size_ec) {
+      result.error_message = "File size could not be read.";
+      return result;
+    }
+    result.size_bytes = static_cast<std::int64_t>(file_size);
+
+    // Key the cache entry on the relative id so identically named files in
+    // different subfolders never collide.
+    const auto relative_id = slash_id(fs::relative(src_path, base_path));
+    std::string cached_filename = hex64(fnv1a64(relative_id)) + "_" +
+                                  src_path.stem().string() + "_" +
+                                  std::to_string(file_size) + ".jpg";
     fs::path dest_path = config::image_cache_path(cache_path) / cached_filename;
 
-    result.relative_id = fs::relative(src_path, base_path).string();
+    result.relative_id = relative_id;
     result.working_path = dest_path.string();
 
     if (fs::exists(dest_path)) {
@@ -103,13 +150,14 @@ auto is_valid_image_file(const std::filesystem::path &path) -> bool {
     return false;
   }
 
-  static const std::unordered_set<std::string> valid_extensions = {
-      ".jpg", ".jpeg", ".png", ".webp"};
+  std::string ext = path.extension().string();
+  if (ext.starts_with(".")) {
+    ext.erase(0, 1);
+  }
+  std::ranges::transform(
+      ext, ext.begin(), [](unsigned char c) -> int { return std::tolower(c); });
 
-  auto ext = path.extension().string();
-  std::ranges::transform(ext, ext.begin(), ::tolower);
-
-  return valid_extensions.contains(ext);
+  return std::ranges::contains(supported_image_extensions, ext);
 }
 
 void insert_ingested_images(database &db,
@@ -120,8 +168,8 @@ void insert_ingested_images(database &db,
   db.begin_transaction();
   try {
     auto insert_stmt = db.prepare(R"(
-            INSERT OR IGNORE INTO images (id, absolute_path, file_name, original_width, original_height, size_bytes, working_image_path, scanned_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, strftime('%s','now'));
+            INSERT OR IGNORE INTO images (id, absolute_path, file_name, original_width, original_height, size_bytes, taken_unix_ms, latitude, longitude, working_image_path, scanned_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s','now'));
         )");
 
     for (const auto &img : images) {
@@ -133,7 +181,19 @@ void insert_ingested_images(database &db,
       insert_stmt.bind_int(4, img.original_width);
       insert_stmt.bind_int(5, img.original_height);
       insert_stmt.bind_int64(6, img.size_bytes);
-      insert_stmt.bind_text(7, img.working_path);
+      if (img.taken_unix_ms.has_value()) {
+        insert_stmt.bind_int64(7, *img.taken_unix_ms);
+      } else {
+        insert_stmt.bind_null(7);
+      }
+      if (img.latitude.has_value() && img.longitude.has_value()) {
+        insert_stmt.bind_double(8, *img.latitude);
+        insert_stmt.bind_double(9, *img.longitude);
+      } else {
+        insert_stmt.bind_null(8);
+        insert_stmt.bind_null(9);
+      }
+      insert_stmt.bind_text(10, img.working_path);
       insert_stmt.step();
       insert_stmt.reset();
     }
@@ -144,73 +204,125 @@ void insert_ingested_images(database &db,
   }
 }
 
-void execute_folder_ingestion_pass(
-    database &db, const std::filesystem::path &source_folder,
-    const std::function<void(std::size_t files_seen, std::size_t images_found,
-                             std::size_t images_prepared)> &progress_callback) {
+auto execute_folder_ingestion_pass(
+    database &db, const std::filesystem::path &source_folder, bool recursive,
+    std::stop_token stop_token,
+    const ingestion_progress_callback &progress_callback,
+    const ingestion_image_callback &on_image) -> ingestion_summary {
 
   auto cache_dir = config::cache_path(source_folder);
   std::size_t files_seen = 0;
+  std::size_t images_found = 0;
   std::vector<fs::path> paths_to_process;
+  ingestion_summary summary;
 
   spdlog::debug("scanning '{}'", source_folder.string());
-  for (const auto &entry : fs::recursive_directory_iterator(source_folder)) {
+
+  const auto evaluate_entry = [&](const fs::directory_entry &entry) -> void {
+    if (entry.is_directory()) {
+      return;
+    }
     files_seen++;
 
     const auto &abs_path = entry.path();
     spdlog::debug("evaluating '{}'", abs_path.string());
 
     if (is_valid_image_file(abs_path)) {
+      images_found++;
       paths_to_process.push_back(abs_path);
     }
+  };
 
-    if (files_seen % 20 == 0) {
-      progress_callback(files_seen, paths_to_process.size(), 0);
+  if (recursive) {
+    for (const auto &entry : fs::recursive_directory_iterator(source_folder)) {
+      if (stop_token.stop_requested()) {
+        break;
+      }
+      evaluate_entry(entry);
+      if (files_seen % 20 == 0) {
+        progress_callback(files_seen, images_found, 0);
+      }
+    }
+  } else {
+    for (const auto &entry : fs::directory_iterator(source_folder)) {
+      if (stop_token.stop_requested()) {
+        break;
+      }
+      evaluate_entry(entry);
     }
   }
 
-  progress_callback(files_seen, paths_to_process.size(), 0);
+  progress_callback(files_seen, images_found, 0);
+
+  summary.files_seen = files_seen;
+  summary.images_found = images_found;
 
   // If there's nothing to do, return.
   if (paths_to_process.empty()) {
-    return;
+    return summary;
   }
 
   std::vector<ingestion_result> results(paths_to_process.size());
   std::atomic<std::size_t> successful_images{0};
   std::atomic<std::size_t> tasks_completed{0};
+  std::mutex errors_mutex;
 
   auto scheduler = exec::make_scheduler();
   auto work =
       ex::schedule(scheduler) |
       ex::bulk(ex::par, paths_to_process.size(), [&](std::size_t idx) -> void {
+        if (stop_token.stop_requested()) {
+          return;
+        }
         const auto &path = paths_to_process[idx];
 
         // Generate the image result and save directly to its distinct index
-        results[idx] = generate_working_image(source_folder, path, cache_dir);
+        auto result = generate_working_image(source_folder, path, cache_dir);
 
-        // Track overall workflow progress
-        if (results[idx].success) {
+        if (result.success) {
+          const auto metadata = exif::read_exif(path);
+          result.taken_unix_ms = metadata.taken_unix_ms;
+          result.latitude = metadata.latitude;
+          result.longitude = metadata.longitude;
+
           successful_images.fetch_add(1, std::memory_order_relaxed);
+          if (on_image) {
+            on_image(result);
+          }
+        } else if (!result.error_message.empty()) {
+          const std::string entry =
+              result.relative_id + ": " + result.error_message;
+          std::scoped_lock lock(errors_mutex);
+          summary.errors.push_back(entry);
         }
 
-        // Trigger progress callback periodically
+        // Track overall workflow progress
         auto current_completed =
             tasks_completed.fetch_add(1, std::memory_order_relaxed) + 1;
         if (current_completed % 20 == 0) {
           progress_callback(files_seen, results.size(),
                             successful_images.load(std::memory_order_relaxed));
         }
+
+        results[idx] = std::move(result);
       });
 
   // Wait for everything to finish before proceeding to the next step
   ex::sync_wait(work);
 
-  // Update final totals
-  progress_callback(files_seen, results.size(), successful_images.load());
+  summary.images_prepared = successful_images.load();
 
-  // Save all the of the images we processed.
-  insert_ingested_images(db, results);
+  // Save only the images we successfully prepared.
+  std::vector<ingestion_result> prepared;
+  prepared.reserve(summary.images_prepared);
+  for (const auto &result : results) {
+    if (result.success) {
+      prepared.push_back(result);
+    }
+  }
+  insert_ingested_images(db, prepared);
+
+  return summary;
 }
 
 } // namespace kustavi::image

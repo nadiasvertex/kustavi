@@ -2,6 +2,7 @@
 
 #include <filesystem>
 #include <functional>
+#include <thread>
 #include <vector>
 
 namespace kustavi::image {
@@ -30,6 +31,36 @@ struct local_image_metrics {
   bool valid = false;
 };
 
+using quality_progress_callback =
+    std::function<void(std::size_t done, std::size_t total)>;
+
+using quality_result_callback =
+    std::function<void(const local_image_metrics &)>;
+
+/**
+ * @brief Computes sharpness and exposure metrics for every image in the
+ * batch.
+ *
+ * `on_result` is called (from scheduler threads) per analyzed image;
+ * `progress_callback` reports (done, total) as work completes. Images are
+ * skipped once `stop_token` is requested; their metrics stay `valid == false`.
+ *
+ * @return Metrics in the same order as `paths` (invalid for skipped files).
+ */
+auto analyze_images(quality_thresholds thresholds,
+                    const std::vector<std::filesystem::path> &paths,
+                    std::stop_token stop_token,
+                    const quality_progress_callback &progress_callback,
+                    const quality_result_callback &on_result)
+    -> std::vector<local_image_metrics>;
+
+/** True when any quality flag applies to the metrics. */
+auto is_flagged(const local_image_metrics &metrics,
+                const quality_thresholds &thresholds) -> bool;
+
+/**
+ * Find low quality images in a batch of image paths.
+ */
 auto find_low_quality_images(
     quality_thresholds thresholds,
     const std::vector<std::filesystem::path> &paths,
