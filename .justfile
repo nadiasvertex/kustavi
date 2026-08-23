@@ -22,6 +22,18 @@ build-gui:
 test-gui:
   cd frontend && flutter test
 
+# Backend smoke test: the smoke client spawns the server itself (ephemeral
+# loopback port), exercises every RPC pass against a copy of test/photos,
+# then shuts the server down.
+test-backend:
+  bazel build //backend:server //backend:smoke_client
+  tmp="$(mktemp -d)" && \
+  trap 'rm -rf "$tmp"' EXIT && \
+  cp -R test/photos "$tmp/photos" && \
+  bazel run //backend:smoke_client -- --folder "$tmp/photos" --destination "$tmp/committed" --concurrency-check --cancel-check
+
+test: test-backend test-gui
+
 proto:
   mkdir -p frontend/lib/src/generated && \
   tmp="$(mktemp -d)" && \

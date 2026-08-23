@@ -2,16 +2,30 @@
 
 #include <proto/service.grpc.pb.h>
 
+#include <charconv>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
+#include <fcntl.h>
 #include <filesystem>
+#include <fstream>
+#include <poll.h>
 #include <print>
+#include <random>
+#include <signal.h>
+#include <spawn.h>
 #include <string>
 #include <system_error>
+#include <sys/wait.h>
 #include <thread>
-#include <utility>
+#include <unistd.h>
 #include <vector>
+
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
 
 namespace fs = std::filesystem;
 namespace k = kustavi;
@@ -26,8 +40,9 @@ constexpr int k_fail = 1;
 }
 
 struct options {
-  std::string target;
+  std::string target;  // empty = spawn a local server; otherwise connect
   std::string token;
+  std::string server;  // path to the server binary (auto-detected if empty)
   std::string folder;
   std::string destination;
   bool no_auth = false;
@@ -47,11 +62,12 @@ auto parse_args(int argc, char **argv) -> options {
   }
 
   options opts;
-  opts.target = "127.0.0.1:1";
   for (std::size_t i = 0; i < args.size(); ++i) {
     const auto &arg = args[i];
     if (arg == "--target" && i + 1 < args.size()) {
       opts.target = args[++i];
+    } else if (arg == "--server" && i + 1 < args.size()) {
+      opts.server = args[++i];
     } else if (arg == "--token" && i + 1 < args.size()) {
       opts.token = args[++i];
     } else if (arg == "--folder" && i + 1 < args.size()) {
@@ -81,6 +97,306 @@ void add_auth_metadata(grpc::ClientContext &context, const options &opts) {
   if (!opts.no_auth) {
     context.AddMetadata("x-kustavi-auth-token", opts.token);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Local server process management
+// ---------------------------------------------------------------------------
+
+constexpr std::string_view k_ready_line_prefix = "KUSTAVI-READY ";
+
+/** A spawned server: pid plus the read end of the pipe carrying the server's
+ * stdout (reserved for the KUSTAVI-READY handshake). */
+struct server_process {
+  pid_t pid = -1;
+  int stdout_fd = -1;
+};
+
+std::atomic<pid_t> g_server_pid{-1};
+
+auto close_fd(int &fd) -> void {
+  if (fd >= 0) {
+    ::close(fd);
+    fd = -1;
+  }
+}
+
+/** Full path of this executable, with symlinks resolved. */
+auto own_executable_path() -> fs::path {
+  char buffer[4096] = {};
+  fs::path path;
+#ifdef __APPLE__
+  uint32_t size = static_cast<uint32_t>(sizeof(buffer));
+  if (_NSGetExecutablePath(buffer, &size) != 0) {
+    fail("could not resolve own executable path");
+  }
+#else
+  const auto len = ::readlink("/proc/self/exe", buffer, sizeof(buffer) - 1);
+  if (len < 0) {
+    fail("could not resolve own executable path");
+  }
+  buffer[len] = '\0';
+#endif
+  path = fs::path{buffer};
+  std::error_code ec;
+  if (auto canonical = fs::canonical(path, ec); !ec) {
+    return canonical;
+  }
+  return path;
+}
+
+/** Locates the server binary. Order: an explicit --server path, the bazel
+ * runfiles manifest, common runfiles layouts, a sibling of this executable,
+ * and ./bazel-bin/backend/server. */
+auto find_server_binary(const options &opts) -> std::optional<fs::path> {
+  if (!opts.server.empty()) {
+    const fs::path path{opts.server};
+    if (fs::is_regular_file(path)) {
+      return path;
+    }
+    fail("server binary not found: " + opts.server);
+  }
+
+  const auto exe = own_executable_path();
+  const auto runfiles_root =
+      exe.parent_path() / (exe.filename().string() + ".runfiles");
+
+  // The runfiles MANIFEST maps runfiles paths to real output paths regardless
+  // of the repo-prefix scheme in use.
+  std::ifstream manifest(runfiles_root / "MANIFEST");
+  if (manifest) {
+    std::string line;
+    while (std::getline(manifest, line)) {
+      const auto sep = line.find(' ');
+      if (sep == std::string::npos) {
+        continue;
+      }
+      const auto key = line.substr(0, sep);
+      if (key == "backend/server" || key.ends_with("/backend/server")) {
+        const fs::path real{line.substr(sep + 1)};
+        if (fs::is_regular_file(real)) {
+          return real;
+        }
+      }
+    }
+  }
+
+  for (const auto &prefix :
+       {std::string{}, std::string{"_main/"}, std::string{"kustavi/"}}) {
+    const auto candidate = runfiles_root / (prefix + "backend/server");
+    if (fs::is_regular_file(candidate)) {
+      return candidate;
+    }
+  }
+
+  const auto sibling = exe.parent_path() / "server";
+  if (fs::is_regular_file(sibling)) {
+    return sibling;
+  }
+
+  const auto bazel_bin = fs::path{"bazel-bin"} / "backend" / "server";
+  if (fs::is_regular_file(bazel_bin)) {
+    return bazel_bin;
+  }
+
+  fail("could not locate the server binary; pass --server <path> or "
+       "--target <host:port>");
+}
+
+auto generate_token() -> std::string {
+  std::mt19937_64 rng(std::random_device{}());
+  constexpr std::string_view digits = "0123456789abcdef";
+  std::string token;
+  token.reserve(32);
+  for (int i = 0; i < 32; ++i) {
+    token.push_back(digits[rng() & 15u]);
+  }
+  return token;
+}
+
+/** Spawns the server bound to an ephemeral loopback port, authenticating
+ * with `token`. The server's stdout is captured on a pipe for the
+ * KUSTAVI-READY handshake; stderr is inherited so server logs stay visible.
+ * @return std::nullopt on spawn failure. */
+auto spawn_server(const fs::path &binary, const std::string &token)
+    -> std::optional<server_process> {
+  int pipe_fds[2] = {-1, -1};
+  if (::pipe(pipe_fds) != 0) {
+    std::println(stderr, "pipe failed: {}", std::strerror(errno));
+    return std::nullopt;
+  }
+
+  posix_spawn_file_actions_t actions{};
+  if (posix_spawn_file_actions_init(&actions) != 0 ||
+      posix_spawn_file_actions_adddup2(&actions, pipe_fds[1], /*stdout=*/1) !=
+          0 || posix_spawn_file_actions_addopen(&actions, /*stdin=*/0,
+                                               "/dev/null", O_RDONLY, 0) != 0) {
+    close_fd(pipe_fds[0]);
+    close_fd(pipe_fds[1]);
+    std::println(stderr, "posix_spawn_file_actions setup failed");
+    return std::nullopt;
+  }
+
+  // The command vectors must outlive the spawn call; the char* array points
+  // into them.
+  std::vector<std::string> command = {
+      binary.c_str(), "serve", "--listen", "127.0.0.1:0", "--token", token};
+  std::vector<char *> argv;
+  argv.reserve(command.size() + 1);
+  for (auto &arg : command) {
+    argv.push_back(arg.data());
+  }
+  argv.push_back(nullptr);
+  pid_t pid = -1;
+  const auto rc = ::posix_spawn(&pid, binary.c_str(), &actions, nullptr,
+                                argv.data(), nullptr);
+  posix_spawn_file_actions_destroy(&actions);
+  if (rc != 0) {
+    close_fd(pipe_fds[0]);
+    close_fd(pipe_fds[1]);
+    std::println(stderr, "posix_spawn failed: {}", std::strerror(rc));
+    return std::nullopt;
+  }
+
+  close_fd(pipe_fds[1]);
+  return server_process{.pid = pid, .stdout_fd = pipe_fds[0]};
+}
+
+/** Reads one line from `stream` (a stdio wrapper on the server's stdout
+ * pipe).
+ * @return false on EOF or read error. */
+auto read_line(FILE *stream, std::string &line) -> bool {
+  line.clear();
+  int c = ::fgetc(stream);
+  while (c != EOF && c != '\n') {
+    line.push_back(static_cast<char>(c));
+    c = ::fgetc(stream);
+  }
+  if (c == EOF) {
+    return !ferror(stream) && !line.empty();
+  }
+  return true;
+}
+
+/** Reads the server's captured stdout until the KUSTAVI-READY line arrives,
+ * forwarding any other line to stderr.
+ * @return the bound port, or std::nullopt on EOF or timeout. */
+auto wait_for_ready(server_process &server, std::chrono::seconds timeout)
+    -> std::optional<int> {
+  auto *stream = ::fdopen(server.stdout_fd, "r");
+  if (stream == nullptr) {
+    std::println(stderr, "fdopen failed: {}", std::strerror(errno));
+    close_fd(server.stdout_fd);
+    return std::nullopt;
+  }
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  std::string line;
+  while (true) {
+    const auto remaining = deadline - std::chrono::steady_clock::now();
+    if (remaining <= std::chrono::seconds{0}) {
+      break;
+    }
+    pollfd pfd;
+    pfd.fd = server.stdout_fd;
+    pfd.events = static_cast<std::int16_t>(POLLIN);
+    pfd.revents = 0;
+    const auto rc = ::poll(
+        &pfd, 1, static_cast<int>(
+                     std::chrono::duration_cast<std::chrono::milliseconds>(
+                         remaining)
+                         .count()));
+    if (rc <= 0) {
+      break;  // timeout or poll error
+    }
+    if (!read_line(stream, line)) {
+      break;  // EOF: the server exited before becoming ready
+    }
+    if (line.starts_with(k_ready_line_prefix)) {
+      const auto text = line.substr(k_ready_line_prefix.size());
+      int port = 0;
+      const auto parsed =
+          std::from_chars(text.data(), text.data() + text.size(), port);
+      if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() ||
+          port <= 0) {
+        break;
+      }
+      ::fclose(stream);
+      server.stdout_fd = -1;
+      return port;
+    }
+    std::println(stderr, "[server] {}", line);
+  }
+  ::fclose(stream);
+  server.stdout_fd = -1;
+  return std::nullopt;
+}
+
+/** Polls for `pid` to exit for up to `grace`; if the process is still alive
+ * on the first poll, sends it `signum`. Returns true once the child has been
+ * reaped. */
+auto reap_within(pid_t pid, std::chrono::milliseconds grace, int signum)
+    -> bool {
+  const auto deadline = std::chrono::steady_clock::now() + grace;
+  bool signalled = false;
+  while (std::chrono::steady_clock::now() < deadline) {
+    int status = 0;
+    const auto rc = ::waitpid(pid, &status, WNOHANG);
+    if (rc > 0) {
+      return true;
+    }
+    if (rc < 0) {
+      return errno == ECHILD;
+    }
+    if (!signalled) {
+      ::kill(pid, signum);
+      signalled = true;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds{100});
+  }
+  return false;
+}
+
+/** Kills and reaps a leftover server (atexit / signal cleanup path). */
+auto reap_server_on_exit() -> void {
+  const auto pid = g_server_pid.exchange(-1);
+  if (pid <= 0) {
+    return;
+  }
+  reap_within(pid, std::chrono::seconds{5}, SIGTERM);
+  reap_within(pid, std::chrono::seconds{2}, SIGKILL);
+  int status = 0;
+  ::waitpid(pid, &status, 0);
+}
+
+auto handle_termination_signal(int) -> void {
+  const auto pid = g_server_pid.exchange(-1);
+  if (pid > 0) {
+    ::kill(pid, SIGKILL);
+  }
+  ::_exit(130);
+}
+
+/** Gracefully stops a spawned server: best-effort Shutdown RPC, then
+ * SIGTERM, then SIGKILL, and reaps the child. */
+auto teardown_server(server_process &server, const options &opts) -> void {
+  if (server.pid <= 0) {
+    return;
+  }
+  g_server_pid = -1;  // this path reaps the child; skip the atexit helper
+  if (!opts.token.empty() && !opts.no_auth) {
+    auto stub = k::Kustavi::NewStub(make_channel(opts));
+    k::ShutdownRequest request;
+    k::ShutdownResponse response;
+    grpc::ClientContext context;
+    add_auth_metadata(context, opts);
+    (void)stub->Shutdown(&context, request, &response);
+  }
+  reap_within(server.pid, std::chrono::seconds{10}, SIGTERM);
+  reap_within(server.pid, std::chrono::seconds{5}, SIGKILL);
+  int status = 0;
+  ::waitpid(server.pid, &status, 0);
+  server.pid = -1;
+  close_fd(server.stdout_fd);
 }
 
 void check_get_info(const options &opts, const bool expect_auth_failure) {
@@ -400,34 +716,67 @@ void run_shutdown(const options &opts) {
 
 auto main(int argc, char **argv) -> int {
   try {
-    const auto opts = parse_args(argc, argv);
+    auto opts = parse_args(argc, argv);
+
+    server_process server;
+    if (opts.target.empty()) {
+      // Spawn mode: run a local server for the duration of the checks.
+      const auto binary = find_server_binary(opts);
+      if (opts.token.empty()) {
+        opts.token = generate_token();
+      }
+      auto spawned = spawn_server(*binary, opts.token);
+      if (!spawned) {
+        fail("failed to spawn the server");
+      }
+      server = *spawned;
+      g_server_pid = server.pid;
+      std::atexit(reap_server_on_exit);
+      ::signal(SIGINT, handle_termination_signal);
+      ::signal(SIGTERM, handle_termination_signal);
+
+      const auto port = wait_for_ready(server, std::chrono::seconds{60});
+      if (!port) {
+        fail("server did not report KUSTAVI-READY within 60s");
+      }
+      opts.target = "127.0.0.1:" + std::to_string(*port);
+      std::println("server ready on {} (pid {})", opts.target, server.pid);
+    } else if (opts.token.empty() && !opts.no_auth) {
+      fail("--token is required when connecting to an external --target");
+    }
+
     if (!opts.token.empty()) {
       check_get_info(opts, true);
     }
     check_get_info(opts, false);
-    if (opts.folder.empty()) {
+    if (!opts.folder.empty()) {
+      run_scan(opts);
+      run_quality(opts);
+      run_similar(opts);
+      run_trips(opts);
+      if (!opts.destination.empty()) {
+        std::error_code ec;
+        fs::remove_all(opts.destination, ec);
+        run_commit(opts);
+      }
+      if (opts.concurrency_check) {
+        run_concurrency_check(opts);
+      }
+      if (opts.cancel_check) {
+        run_cancel_check(opts);
+      }
+    } else {
       std::println("ok: no --folder given; skipping pass checks");
-      return 0;
     }
-    run_scan(opts);
-    run_quality(opts);
-    run_similar(opts);
-    run_trips(opts);
-    if (!opts.destination.empty()) {
-      std::error_code ec;
-      fs::remove_all(opts.destination, ec);
-      run_commit(opts);
-    }
-    if (opts.concurrency_check) {
-      run_concurrency_check(opts);
-    }
-    if (opts.cancel_check) {
-      run_cancel_check(opts);
-    }
-    if (opts.shutdown) {
+    // In spawn mode the shutdown check always runs: the server must go away.
+    if (opts.shutdown || server.pid > 0) {
       run_shutdown(opts);
     }
     std::println("ALL OK");
+
+    if (server.pid > 0) {
+      teardown_server(server, opts);
+    }
     return 0;
   } catch (const std::exception &e) {
     // Plain fprintf: a catch handler must not itself throw.

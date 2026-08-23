@@ -25,6 +25,9 @@ cc_binary(
 cc_binary(
     name = "smoke_client",
     srcs = ["test/smoke_client.cpp"],
+    # The smoke client spawns the server as a child process; make it
+    # available in the runfiles tree.
+    data = [":server"],
     deps = [
         "//proto:service_cc_grpc",
         "@grpc//:grpc++",
