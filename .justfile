@@ -70,16 +70,10 @@ package-server: build-server-release
   cp bazel-bin/backend/server dist/kustavi-backend
 
 package-gui: build-gui
-  @# Copy the UI binary → kustavi
-  if [ "{{os()}}" == "macos" ]; then \
-      unzip -q bazel-bin/frontend/kustavi_macos.zip -d "dist/" && \
-      mv dist/kustavi-backend dist/Kustavi.app/Contents/MacOS/ && \
-      codesign --deep --force --sign - dist/Kustavi.app; \
-  else \
-      mv dist/kustavi-backend dist/kustavi; \
-  fi
+  unzip -q bazel-bin/frontend/kustavi_macos.zip -d "dist/"
+  mv dist/kustavi-backend dist/Kustavi.app/Contents/MacOS/
 
 package: dist-clean package-server package-gui
 
 run: package
-  dist/kustavi.app/Contents/MacOS/kustavi
+  dist/Kustavi.app/Contents/MacOS/Kustavi
