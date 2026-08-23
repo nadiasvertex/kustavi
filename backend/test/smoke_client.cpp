@@ -4,6 +4,7 @@
 
 #include <charconv>
 #include <chrono>
+#include <csignal>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -14,7 +15,6 @@
 #include <poll.h>
 #include <print>
 #include <random>
-#include <signal.h>
 #include <spawn.h>
 #include <string>
 #include <sys/wait.h>
@@ -126,7 +126,7 @@ auto own_executable_path() -> fs::path {
   char buffer[4096] = {};
   fs::path path;
 #ifdef __APPLE__
-  uint32_t size = static_cast<uint32_t>(sizeof(buffer));
+  auto size = static_cast<uint32_t>(sizeof(buffer));
   if (_NSGetExecutablePath(buffer, &size) != 0) {
     fail("could not resolve own executable path");
   }
@@ -274,7 +274,7 @@ auto read_line(FILE *stream, std::string &line) -> bool {
     c = ::fgetc(stream);
   }
   if (c == EOF) {
-    return !ferror(stream) && !line.empty();
+    return (ferror(stream) == 0) && !line.empty();
   }
   return true;
 }
