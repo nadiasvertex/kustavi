@@ -76,7 +76,7 @@ class ProcessHandle {
   /// A handle for a process that was never launched (tests, pre-launch
   /// endpoints). Its [exitCode] never completes and [kill] is a no-op.
   ProcessHandle.inactive({required this.token, required this.port})
-      : _process = null;
+    : _process = null;
 
   final Process? _process;
 
@@ -95,8 +95,7 @@ class ProcessHandle {
   static const _readyPrefix = 'KUSTAVI-READY';
   static final _readyPattern = RegExp(r'^KUSTAVI-READY (\d+)\s*$');
 
-  Future<int> get exitCode =>
-      _process?.exitCode ?? Completer<int>().future;
+  Future<int> get exitCode => _process?.exitCode ?? Completer<int>().future;
 
   /// Launches the binary, waits for the ready line, and verifies the server
   /// answers `GetInfo` (spec/frontend.md §3.1).
@@ -105,11 +104,13 @@ class ProcessHandle {
     required String token,
     Duration readyTimeout = const Duration(seconds: 30),
   }) async {
-    final process = await Process.start(
-      binary,
-      ['--listen', '127.0.0.1:0', '--token', token],
-      mode: ProcessStartMode.normal,
-    );
+    final process = await Process.start(binary, [
+      'serve',
+      '--listen',
+      '127.0.0.1:0',
+      '--token',
+      token,
+    ], mode: ProcessStartMode.normal);
     final handle = ProcessHandle._(process, token: token);
     final port = await handle._waitForReady(readyTimeout);
     await handle._probeReadiness(port);
@@ -142,7 +143,9 @@ class ProcessHandle {
       final match = _readyPattern.firstMatch(line);
       if (match == null) {
         _failReady(
-          BackendStartupFailed('Back end emitted a malformed ready line: "$line"'),
+          BackendStartupFailed(
+            'Back end emitted a malformed ready line: "$line"',
+          ),
         );
         return;
       }
@@ -172,20 +175,21 @@ class ProcessHandle {
   Future<int> _waitForReady(Duration timeout) async {
     final completer = Completer<int>();
     _readyCompleter = completer;
-    unawaited(exitCode.then((code) {
-      _failReady(
-        BackendStartupFailed(
-          'Back end process exited (code $code) before signalling readiness.',
-        ),
-      );
-    }));
+    unawaited(
+      exitCode.then((code) {
+        _failReady(
+          BackendStartupFailed(
+            'Back end process exited (code $code) before signalling readiness.',
+          ),
+        );
+      }),
+    );
     try {
       return await completer.future.timeout(
         timeout,
-        onTimeout: () =>
-            throw const BackendStartupFailed(
-              'Back end did not signal readiness in time.',
-            ),
+        onTimeout: () => throw const BackendStartupFailed(
+          'Back end did not signal readiness in time.',
+        ),
       );
     } finally {
       _readyCompleter = null;
@@ -260,8 +264,9 @@ String? findBackendBinary({
     return File(envPath).existsSync() ? envPath : null;
   }
   final exe = executablePath ?? Platform.resolvedExecutable;
-  final binaryName =
-      Platform.isWindows ? 'kustavi-backend.exe' : 'kustavi-backend';
+  final binaryName = Platform.isWindows
+      ? 'kustavi-backend.exe'
+      : 'kustavi-backend';
   final candidate = p.join(p.dirname(exe), binaryName);
   return File(candidate).existsSync() ? candidate : null;
 }
@@ -304,16 +309,18 @@ class BackendProcess extends _$BackendProcess {
       _handle = null;
       handle.kill();
     });
-    unawaited(handle.exitCode.then((code) {
-      if (!handle.shutdownRequested) {
-        state = AsyncValue.error(
-          BackendCrashed(
-            'Back end process exited unexpectedly (code $code).',
-          ),
-          StackTrace.current,
-        );
-      }
-    }));
+    unawaited(
+      handle.exitCode.then((code) {
+        if (!handle.shutdownRequested) {
+          state = AsyncValue.error(
+            BackendCrashed(
+              'Back end process exited unexpectedly (code $code).',
+            ),
+            StackTrace.current,
+          );
+        }
+      }),
+    );
     return BackendEndpoint(handle: handle, token: token, port: handle.port);
   }
 
