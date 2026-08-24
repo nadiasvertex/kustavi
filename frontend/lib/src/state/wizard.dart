@@ -26,6 +26,8 @@ class Wizard extends _$Wizard {
   final Map<String, QualityFlagInfo> _qualityFlags = {};
   final Map<String, JunkFlagInfo> _junkFlags = {};
   final List<SimilarGroupInfo> _similarGroups = [];
+  final List<TripInfo> _tripResults = [];
+  final Map<int, Set<String>> _tripSelections = {};
 
   StreamSubscription<dynamic>? _passSubscription;
   bool _cancelRequested = false;
@@ -47,6 +49,12 @@ class Wizard extends _$Wizard {
 
   List<SimilarGroupInfo> get similarGroups =>
       List<SimilarGroupInfo>.unmodifiable(_similarGroups);
+
+  List<TripInfo> get tripResults =>
+      List<TripInfo>.unmodifiable(_tripResults);
+
+  Map<int, Set<String>> get tripSelections =>
+      UnmodifiableMapView(_tripSelections);
 
   WizardQualityReview get _qualityReviewPhase => WizardQualityReview(
         flaggedCount: _qualityFlags.length,
@@ -274,15 +282,22 @@ class Wizard extends _$Wizard {
       return;
     }
     _returnPhase = state.value;
-    state = const AsyncValue.data(WizardTrips());
+    _tripResults.clear();
+    _tripSelections.clear();
+    state = const AsyncValue.data(WizardTripsRunning());
+    final client = ref.read(kustaviClientProvider).requireValue;
+    _subscribe(
+      client.runTripsPass(_tripsRequest()),
+      _onTripsEvent,
+      _onTripsDone,
+    );
   }
 
   void continueFromTrips() {
-    if (state.value is! WizardTrips) {
+    if (state.value is! WizardTripsReview) {
       return;
     }
-    _junkFlags.clear();
-    _returnPhase = const WizardTrips();
+    _returnPhase = _tripsReviewPhase;
     if (_modelReady) {
       _startJunkPass();
     } else {
@@ -291,11 +306,17 @@ class Wizard extends _$Wizard {
   }
 
   void cancelTrips() {
-    if (state.value is! WizardTrips) {
+    if (state.value is! WizardTripsRunning) {
       return;
     }
     _cancelPass();
     state = AsyncValue.data(_returnPhase ?? _similarReviewPhase);
+  }
+
+  pb.RunTripsPassRequest _tripsRequest() {
+    return pb.RunTripsPassRequest()
+      ..maxGapHours = 48
+      ..maxDistanceKm = 300;
   }
 
   void cancelJunkPrep() {
@@ -317,11 +338,58 @@ class Wizard extends _$Wizard {
         markedCount: _similarMarkedCount(),
       );
 
+  WizardTripsReview get _tripsReviewPhase => WizardTripsReview(
+        tripCount: _tripResults.length,
+        markedCount: _tripsMarkedCount(),
+        trips: _tripResults,
+      );
+
+  int _tripsMarkedCount() {
+    int count = 0;
+    for (final trip in _tripResults) {
+      final selections = _tripSelections[trip.id];
+      if (selections != null) {
+        count += selections.length;
+      }
+    }
+    return count;
+  }
+
   void _onSimilarDone() {
     if (state.value is! WizardSimilarRunning) {
       return;
     }
     state = AsyncValue.data(_similarReviewPhase);
+  }
+
+  // --- Trips pass ---------------------------------------------------------
+
+  void _onTripsEvent(pb.TripsEvent event) {
+    if (state.value is! WizardTripsRunning) {
+      return;
+    }
+    switch (event.whichEvent()) {
+      case pb.TripsEvent_Event.progress:
+        state = AsyncValue.data(
+          WizardTripsRunning(
+            done: event.progress.done,
+            total: event.progress.total,
+          ),
+        );
+      case pb.TripsEvent_Event.trip:
+        _tripResults.add(TripInfo.fromTrip(event.trip));
+      case pb.TripsEvent_Event.complete:
+        break;
+      case pb.TripsEvent_Event.notSet:
+        break;
+    }
+  }
+
+  void _onTripsDone() {
+    if (state.value is! WizardTripsRunning) {
+      return;
+    }
+    state = AsyncValue.data(_tripsReviewPhase);
   }
 
 
@@ -453,7 +521,22 @@ class Wizard extends _$Wizard {
       return;
     }
     _returnPhase = state.value;
-    state = const AsyncValue.data(WizardTrips());
+    _tripResults.clear();
+    _tripSelections.clear();
+    state = const AsyncValue.data(WizardTripsRunning());
+    final client = ref.read(kustaviClientProvider).requireValue;
+    _subscribe(
+      client.runTripsPass(_tripsRequest()),
+      _onTripsEvent,
+      _onTripsDone,
+    );
+  }
+
+  void backFromTrips() {
+    if (state.value is! WizardTripsReview) {
+      return;
+    }
+    state = AsyncValue.data(_returnPhase ?? _similarReviewPhase);
   }
 
   // --- step error (§10.2) -------------------------------------------------
@@ -521,6 +604,8 @@ class Wizard extends _$Wizard {
     _qualityFlags.clear();
     _junkFlags.clear();
     _similarGroups.clear();
+    _tripResults.clear();
+    _tripSelections.clear();
     if (!keepReturnPhase) {
       _returnPhase = null;
     }

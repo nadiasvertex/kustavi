@@ -256,7 +256,7 @@ void main() {
       container.read(wizardProvider.notifier).continueFromSimilar();
       await pumpUntil(
         container,
-        () => container.read(wizardProvider).value is WizardTrips,
+        () => container.read(wizardProvider).value is WizardTripsReview,
       );
 
       container.read(wizardProvider.notifier).continueFromTrips();
@@ -303,7 +303,7 @@ void main() {
       container.read(wizardProvider.notifier).continueFromSimilar();
       await pumpUntil(
         container,
-        () => container.read(wizardProvider).value is WizardTrips,
+        () => container.read(wizardProvider).value is WizardTripsReview,
       );
 
       container.read(wizardProvider.notifier).continueFromTrips();
@@ -317,9 +317,9 @@ void main() {
       );
 
       container.read(wizardProvider.notifier).continueFromJunk();
-      expect(
-        container.read(wizardProvider).value,
-        isA<WizardTrips>(),
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardTripsReview,
       );
     });
 

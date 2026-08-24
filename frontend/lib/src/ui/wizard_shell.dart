@@ -16,7 +16,9 @@ import 'junk_review.dart';
 import 'placeholder.dart';
 import 'quality_review.dart';
 import 'scanning.dart';
+import 'similar_review.dart';
 import 'start.dart';
+import 'trips_review.dart';
 import 'widgets/progress.dart';
 
 /// The wizard frame: step indicator, phase body, per-step action bar, and
@@ -155,9 +157,23 @@ class _WizardShellState extends ConsumerState<WizardShell> {
           ),
         WizardSessionRestore() =>
           const PlaceholderScreen('Saved session restore'),
-        WizardSimilarReview() =>
-          const PlaceholderScreen('Similar photo review'),
-        WizardTrips() => const PlaceholderScreen('Trips'),
+        WizardSimilarReview(:final groupCount, :final markedCount) =>
+          SimilarReviewScreen(
+            groupCount: groupCount,
+            markedCount: markedCount,
+          ),
+        WizardTripsRunning(:final done, :final total) =>
+          PassProgressScreen(
+            title: 'Grouping by trip',
+            done: done,
+            total: total,
+          ),
+        WizardTripsReview(:final tripCount, :final markedCount, :final trips) =>
+          TripsReviewScreen(
+            tripCount: tripCount,
+            markedCount: markedCount,
+            trips: trips,
+          ),
         WizardCommitSummary() => const PlaceholderScreen('Commit summary'),
         WizardCommitting() => const PlaceholderScreen('Copying photos'),
         WizardDone() => const PlaceholderScreen('Done'),
@@ -267,7 +283,17 @@ class _WizardShellState extends ConsumerState<WizardShell> {
             child: const Text('Continue'),
           ),
         ],
-      WizardTrips() => [
+      WizardTripsRunning() => [
+          OutlinedButton(
+            onPressed: wizard.cancelTrips,
+            child: const Text('Back'),
+          ),
+        ],
+      WizardTripsReview() => [
+          OutlinedButton(
+            onPressed: wizard.backFromTrips,
+            child: const Text('Back'),
+          ),
           FilledButton(
             onPressed: wizard.continueFromTrips,
             child: const Text('Continue'),

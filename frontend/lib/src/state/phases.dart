@@ -1,3 +1,5 @@
+import '../state/domain.dart';
+
 /// The wizard's six steps, in order (spec/frontend.md §6.1).
 enum WizardStep {
   select('Select'),
@@ -185,15 +187,28 @@ final class WizardSimilarReview extends WizardPhase {
   int get stepIndex => WizardStep.duplicates.index;
 }
 
-/// S10 — trips; spatiotemporal grouping with user thresholds.
-final class WizardTrips extends WizardPhase {
-  const WizardTrips({
-    this.maxGapHours = 48,
-    this.maxDistanceKm = 300,
+/// S9 — trips pass running.
+final class WizardTripsRunning extends WizardPhase {
+  const WizardTripsRunning({this.done = 0, this.total = 0});
+
+  final int done;
+  final int total;
+
+  @override
+  int get stepIndex => WizardStep.trips.index;
+}
+
+/// S10 — trips review of spatiotemporal clusters.
+final class WizardTripsReview extends WizardPhase {
+  const WizardTripsReview({
+    required this.tripCount,
+    required this.markedCount,
+    required this.trips,
   });
 
-  final int maxGapHours;
-  final int maxDistanceKm;
+  final int tripCount;
+  final int markedCount;
+  final List<TripInfo> trips;
 
   @override
   int get stepIndex => WizardStep.trips.index;

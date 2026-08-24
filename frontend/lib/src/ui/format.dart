@@ -36,3 +36,19 @@ String formatDateTime(DateTime dateTime) {
   return '${dateTime.year}-${two(dateTime.month)}-${two(dateTime.day)} '
       '${two(dateTime.hour)}:${two(dateTime.minute)}';
 }
+
+/// Duration between two dates, e.g. `3d 14h`.
+String formatDuration(DateTime start, DateTime end) {
+  final diff = end.difference(start);
+  final days = diff.inDays;
+  final hours = diff.inHours % 24;
+  const d = 'd';
+  const h = 'h';
+  if (days > 0 && hours > 0) {
+    return '$days$d $hours$h';
+  }
+  if (days > 0) {
+    return '$days$d';
+  }
+  return '${diff.inHours}h';
+}
