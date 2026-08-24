@@ -26,21 +26,23 @@ Future<T?> showImageDetail<T extends Object?>(
   double? exposureScore,
   String? junkReason,
 }) {
-  return showDialog<T>(
-    context: context,
-    barrierColor: Colors.black,
-    builder: (context) => DetailView(
-      image: image,
-      canToggleDeletion: canToggleDeletion,
-      step: step,
-      qualityFlagged: qualityFlagged,
-      junkFlagged: junkFlagged,
-      similarKeepers: similarKeepers,
-      sharpness: sharpness,
-      exposureScore: exposureScore,
-      junkReason: junkReason,
-    ),
-  );
+    return showDialog<T>(
+      context: context,
+      barrierColor: Colors.black,
+      builder: (context) => Material(
+        child: DetailView(
+          image: image,
+          canToggleDeletion: canToggleDeletion,
+          step: step,
+          qualityFlagged: qualityFlagged,
+          junkFlagged: junkFlagged,
+          similarKeepers: similarKeepers,
+          sharpness: sharpness,
+          exposureScore: exposureScore,
+          junkReason: junkReason,
+        ),
+      ),
+    );
 }
 
 /// Modal: the working preview shows instantly; the full-resolution master is
