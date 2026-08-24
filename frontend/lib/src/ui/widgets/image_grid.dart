@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 
-/// A bounded image grid with fixed cell sizing that fits inside a [Column].
+/// An image grid with fixed cell sizing (~280px cells, 1–6 columns).
 ///
-/// Use this when the grid is placed inside a [Column] inside a scrollable
-/// (e.g. [SliverList] delegate) — it constrains itself to the available
-/// space rather than scrolling independently like the original [GridView.builder].
+/// Adapts to its height constraints: with a bounded height (e.g. inside an
+/// [Expanded] of a plain [Column]) it fills the space and scrolls on its
+/// own; with an unbounded height (inside an already-scrollable ancestor,
+/// e.g. a [SliverList] delegate) it shrinks to its content and lets that
+/// ancestor scroll.
 class ImageGrid extends StatelessWidget {
   const ImageGrid({super.key, required this.count, required this.builder});
 
@@ -20,28 +22,36 @@ class ImageGrid extends StatelessWidget {
     // Determine grid dimensions so we use a fixed cross-axis count.
     // We pick the same maxCrossAxisExtent as the old GridView.builder (280).
     final mediaWidth = MediaQuery.sizeOf(context).width;
-    final crossAxisSpacing = 12.0;
-    final maxCrossAxisExtent = 280.0;
-    final padding = 32.0;
+    const crossAxisSpacing = 12.0;
+    const maxCrossAxisExtent = 280.0;
+    const padding = 32.0;
     final usableWidth = mediaWidth - padding;
     final columnCount = ((usableWidth + crossAxisSpacing) /
-        (maxCrossAxisExtent + crossAxisSpacing))
+            (maxCrossAxisExtent + crossAxisSpacing))
         .floor()
         .clamp(1, 6);
 
-    return GridView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: columnCount,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        childAspectRatio: 1,
-      ),
-      itemCount: count,
-      itemBuilder: builder,
-      // Don't scroll — take up only as much space as the cells need.
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final boundedHeight = constraints.maxHeight.isFinite;
+        return GridView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: columnCount,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 1,
+          ),
+          itemCount: count,
+          itemBuilder: builder,
+          // A bounded region scrolls the grid itself; an unbounded (sliver)
+          // context must not, so the grid fits its cells and defers to the
+          // outer scrollable.
+          shrinkWrap: !boundedHeight,
+          physics:
+              boundedHeight ? null : const NeverScrollableScrollPhysics(),
+        );
+      },
     );
   }
 }
