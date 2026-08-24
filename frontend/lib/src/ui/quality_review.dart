@@ -22,6 +22,7 @@ class QualityReviewScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(wizardProvider);
     final wizard = ref.read(wizardProvider.notifier);
     final theme = Theme.of(context);
 
