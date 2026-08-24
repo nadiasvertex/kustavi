@@ -5,16 +5,19 @@
 
 #include <CLI/CLI.hpp>
 #include <opencv2/core/utils/logger.hpp>
+#include <spdlog/sinks/basic_file_sink.h>
 #include <spdlog/sinks/ostream_sink.h>
 #include <spdlog/spdlog.h>
 
 #include <exception>
+#include <expected>
 #include <filesystem>
 #include <iostream>
 #include <optional>
 #include <print>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -23,17 +26,44 @@ struct listen_address {
   int port = 0;
 };
 
-/** Routes all log output to stderr so stdout stays reserved for the
+/** Routes all log output to the given sinks so stdout stays reserved for the
  * KUSTAVI-READY handshake line (spec/frontend.md §3.1). OpenCV logs to
  * stdout directly (e.g. its parallel-backend registry on first use), so it
  * is silenced too. */
-void route_logs_to_stderr() {
-  auto sink = std::make_shared<spdlog::sinks::ostream_sink_mt>(std::cerr);
-  auto logger = std::make_shared<spdlog::logger>("kustavi", sink);
+void route_logs(std::vector<spdlog::sink_ptr> sinks) {
+  auto logger =
+      std::make_shared<spdlog::logger>("kustavi", sinks.begin(), sinks.end());
   logger->set_level(spdlog::level::info);
   logger->flush_on(spdlog::level::info);
   spdlog::set_default_logger(std::move(logger));
   cv::utils::logging::setLogLevel(cv::utils::logging::LOG_LEVEL_SILENT);
+}
+
+void route_logs_to_stderr() {
+  route_logs({std::make_shared<spdlog::sinks::ostream_sink_mt>(std::cerr)});
+}
+
+/** Routes all log output to [file] (appending) while mirroring it on
+ * stderr, so the GUI's in-app log ring keeps working (spec/frontend.md
+ * §3.1).
+ * @return std::unexpected with an error message when the file cannot be
+ *         opened.
+ */
+auto route_logs_to_file(const std::filesystem::path &file)
+    -> std::expected<void, std::string> {
+  std::error_code ec;
+  std::filesystem::create_directories(file.parent_path(), ec);
+  try {
+    route_logs(
+        {
+            std::make_shared<spdlog::sinks::basic_file_sink_mt>(
+                file.string(), false),
+            std::make_shared<spdlog::sinks::ostream_sink_mt>(std::cerr),
+        });
+    return {};
+  } catch (const spdlog::spdlog_ex &e) {
+    return std::unexpected(e.what());
+  }
 }
 
 /** Parses a "host:port" string.
@@ -70,18 +100,24 @@ auto main(int argc, char **argv) -> int {
     route_logs_to_stderr();
 
     CLI::App app{"Kustavi Backend Server"};
+    // Let the global options below be accepted after a subcommand as well
+    // (`kustavi-backend serve --log-file ...`), not only before it.
+    app.fallthrough();
 
     std::string listen;
     std::string auth_token;
     bool verbose = false;
     bool version = false;
     std::filesystem::path folder_path;
+    std::filesystem::path log_file;
 
-    // --listen / --token are top-level so the GUI can launch
-    // `kustavi-backend --listen 127.0.0.1:0 --token <t>` without a
+    // Global flags; the GUI passes them together with the 'serve'
     // subcommand (spec/frontend.md §3.1).
     app.add_flag("-v,--verbose", verbose, "Enable verbose logging");
     app.add_flag("--version", version, "Print version and exit");
+    app.add_option(
+        "--log-file", log_file,
+        "Also write all log output to the given file (mirrored on stderr)");
 
     // ==========================================
     // Define the 'init' subcommand
@@ -113,6 +149,14 @@ auto main(int argc, char **argv) -> int {
 
     // parse the args and handle --help automatically
     CLI11_PARSE(app, argc, argv)
+
+    if (!log_file.empty()) {
+      if (auto error = route_logs_to_file(log_file); error) {
+        std::cerr << "Error: cannot open log file '" << log_file.string()
+                  << "': " << error.error() << '\n';
+        return 1;
+      }
+    }
 
     if (version) {
       std::print("kustavi server version {}\n", kustavi::version);
