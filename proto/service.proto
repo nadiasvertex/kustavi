@@ -88,7 +88,11 @@ message ScanComplete {
 
 // --- pass 2: quality -------------------------------------------------------
 
-message RunQualityPassRequest {}
+message RunQualityPassRequest {
+  double blur_threshold = 1;           // Laplacian variance threshold (default 100)
+  double underexposed_threshold = 2;   // Max underexposed pixel ratio (default 0.3)
+  double overexposed_threshold = 3;    // Max overexposed pixel ratio (default 0.3)
+}
 
 message QualityEvent {
   oneof event {

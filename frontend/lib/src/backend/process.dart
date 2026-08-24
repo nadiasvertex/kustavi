@@ -69,19 +69,24 @@ class RingBuffer {
 /// Wraps the launched back-end [Process]: ready handshake, log ring, exit
 /// supervision, and teardown.
 class ProcessHandle {
-  ProcessHandle._(this._process, {required this.token}) {
+  ProcessHandle._(this._process, {required this.token, this.logFile}) {
     _pump();
   }
 
   /// A handle for a process that was never launched (tests, pre-launch
   /// endpoints). Its [exitCode] never completes and [kill] is a no-op.
   ProcessHandle.inactive({required this.token, required this.port})
-    : _process = null;
+    : _process = null,
+       logFile = null;
 
   final Process? _process;
 
   /// Secure random string exchanged with the back end at launch.
   final String token;
+
+  /// Absolute path of the file the back end mirrors its logs to (null when
+  /// no log file was requested at launch).
+  final String? logFile;
 
   /// OS-assigned loopback port parsed from the ready line.
   int port = 0;
@@ -99,19 +104,32 @@ class ProcessHandle {
 
   /// Launches the binary, waits for the ready line, and verifies the server
   /// answers `GetInfo` (spec/frontend.md §3.1).
+  ///
+  /// When [logFile] is non-null, `--log-file <logFile>` is appended so the
+  /// back end also writes its logs to that file.
   static Future<ProcessHandle> launchAndVerify({
     required String binary,
     required String token,
+    String? logFile,
     Duration readyTimeout = const Duration(seconds: 30),
   }) async {
-    final process = await Process.start(binary, [
+    final args = <String>[
       'serve',
       '--listen',
       '127.0.0.1:0',
       '--token',
       token,
-    ], mode: ProcessStartMode.normal);
-    final handle = ProcessHandle._(process, token: token);
+    ];
+    if (logFile != null) {
+      args.addAll(['--log-file', logFile]);
+    }
+    final process =
+        await Process.start(binary, args, mode: ProcessStartMode.normal);
+    final handle = ProcessHandle._(
+      process,
+      token: token,
+      logFile: logFile,
+    );
     final port = await handle._waitForReady(readyTimeout);
     await handle._probeReadiness(port);
     return handle;
@@ -280,6 +298,28 @@ String generateAuthToken([Random? random]) {
   );
 }
 
+/// A unique path inside the OS temp directory (`/tmp` on POSIX) for the log
+/// file of one back-end launch, e.g.
+/// `kustavi-backend-20260824-143012-a1b2c3d4.log`.
+String defaultBackendLogFile({
+  Directory? tempDir,
+  DateTime? now,
+  Random? random,
+}) {
+  final directory = tempDir ?? Directory.systemTemp;
+  final time = now ?? DateTime.now();
+  String two(int value) => value.toString().padLeft(2, '0');
+  final stamp = '${time.year}'
+      '${two(time.month)}${two(time.day)}'
+      '-${two(time.hour)}${two(time.minute)}${two(time.second)}';
+  final r = random ?? Random.secure();
+  const alphabet = '0123456789abcdefghijklmnopqrstuvwxyz';
+  final suffix = String.fromCharCodes(
+    List<int>.generate(8, (_) => alphabet.codeUnitAt(r.nextInt(36))),
+  );
+  return p.join(directory.path, 'kustavi-backend-$stamp-$suffix.log');
+}
+
 /// Launches exactly one back-end process, runs the ready handshake, and
 /// exposes the loopback endpoint (spec/frontend.md §3.1).
 ///
@@ -303,6 +343,7 @@ class BackendProcess extends _$BackendProcess {
     final handle = await ProcessHandle.launchAndVerify(
       binary: binary,
       token: token,
+      logFile: defaultBackendLogFile(),
     );
     _handle = handle;
     ref.onDispose(() {

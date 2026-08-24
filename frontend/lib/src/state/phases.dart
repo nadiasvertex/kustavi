@@ -126,10 +126,17 @@ final class WizardQualityRunning extends WizardPhase {
 
 /// S4 — quality review of flagged candidates.
 final class WizardQualityReview extends WizardPhase {
-  const WizardQualityReview({required this.flaggedCount, required this.totalImages});
+  const WizardQualityReview({
+    required this.flaggedCount,
+    required this.totalImages,
+    this.rerunEnabled = false,
+  });
 
   final int flaggedCount;
   final int totalImages;
+
+  /// Whether the user adjusted thresholds and can rerun the pass.
+  final bool rerunEnabled;
 
   @override
   int get stepIndex => WizardStep.quality.index;

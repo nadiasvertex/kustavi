@@ -133,7 +133,11 @@ class FakeKustaviClient implements KustaviClient {
   }
 
   @override
-  Stream<QualityEvent> runQualityPass() =>
+  Stream<QualityEvent> runQualityPass({
+    required double blurThreshold,
+    required double underexposedThreshold,
+    required double overexposedThreshold,
+  }) =>
       _script(qualityEvents, qualityError);
 
   @override

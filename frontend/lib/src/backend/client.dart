@@ -21,7 +21,11 @@ abstract interface class KustaviClient {
   Future<GetInfoResponse> getInfo();
   Future<void> shutdown();
   Stream<ScanEvent> scanFolder(ScanFolderRequest request);
-  Stream<QualityEvent> runQualityPass();
+  Stream<QualityEvent> runQualityPass({
+    required double blurThreshold,
+    required double underexposedThreshold,
+    required double overexposedThreshold,
+  });
   Stream<ModelEvent> ensureModel();
   Stream<JunkEvent> runJunkPass();
   Stream<SimilarEvent> runSimilarPass();
@@ -75,9 +79,19 @@ class GrpcKustaviClient implements KustaviClient {
   }
 
   @override
-  Stream<QualityEvent> runQualityPass() {
+  Stream<QualityEvent> runQualityPass({
+    required double blurThreshold,
+    required double underexposedThreshold,
+    required double overexposedThreshold,
+  }) {
     return _pass(
-      _client.runQualityPass(RunQualityPassRequest(), options: _options),
+      _client.runQualityPass(
+        RunQualityPassRequest()
+          ..blurThreshold = blurThreshold
+          ..underexposedThreshold = underexposedThreshold
+          ..overexposedThreshold = overexposedThreshold,
+        options: _options,
+      ),
     );
   }
 

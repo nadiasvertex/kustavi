@@ -51,7 +51,6 @@ auto kustavi_service::RunQualityPass(grpc::ServerContext *context,
                                      const RunQualityPassRequest *request,
                                      grpc::ServerWriter<QualityEvent> *writer)
     -> grpc::Status {
-  (void)request;
   if (!check_auth(context)) {
     return unauthenticated();
   }
@@ -62,6 +61,27 @@ auto kustavi_service::RunQualityPass(grpc::ServerContext *context,
     return *err;
   }
   pass_guard guard(pass_active_, true);
+
+  double blur = request->blur_threshold();
+  double under = request->underexposed_threshold();
+  double over = request->overexposed_threshold();
+  if (blur <= 0) {
+    return {grpc::StatusCode::INVALID_ARGUMENT,
+            "blur_threshold must be a positive number"};
+  }
+  if (under < 0 || under >= 1) {
+    return {grpc::StatusCode::INVALID_ARGUMENT,
+            "underexposed_threshold must be in [0, 1)"};
+  }
+  if (over < 0 || over >= 1) {
+    return {grpc::StatusCode::INVALID_ARGUMENT,
+            "overexposed_threshold must be in [0, 1)"};
+  }
+
+  image::quality_thresholds thresholds;
+  thresholds.blur_threshold = blur;
+  thresholds.underexposed_threshold = under;
+  thresholds.overexposed_threshold = over;
 
   std::vector<fs::path> paths;
   std::unordered_map<std::string, std::string> path_to_id;
@@ -81,7 +101,6 @@ auto kustavi_service::RunQualityPass(grpc::ServerContext *context,
   event_queue<quality_event> queue;
   std::stop_source stop_source;
   std::exception_ptr producer_error;
-  const auto thresholds = image::quality_thresholds{};
 
   std::thread producer = run_producer(
       queue, stop_source, producer_error, [&](std::stop_token st) -> void {

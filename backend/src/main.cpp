@@ -54,13 +54,12 @@ auto route_logs_to_file(const std::filesystem::path &file)
   std::error_code ec;
   std::filesystem::create_directories(file.parent_path(), ec);
   try {
-    route_logs(
-        {
-            std::make_shared<spdlog::sinks::basic_file_sink_mt>(
-                file.string(), false),
-            std::make_shared<spdlog::sinks::ostream_sink_mt>(std::cerr),
-        });
-    return {};
+    route_logs({
+        std::make_shared<spdlog::sinks::basic_file_sink_mt>(file.string(),
+                                                            false),
+        std::make_shared<spdlog::sinks::ostream_sink_mt>(std::cerr),
+    });
+    return std::expected<void, std::string>{std::in_place};
   } catch (const spdlog::spdlog_ex &e) {
     return std::unexpected(e.what());
   }
@@ -151,9 +150,10 @@ auto main(int argc, char **argv) -> int {
     CLI11_PARSE(app, argc, argv)
 
     if (!log_file.empty()) {
-      if (auto error = route_logs_to_file(log_file); error) {
+      const auto result = route_logs_to_file(log_file);
+      if (!result.has_value()) {
         std::cerr << "Error: cannot open log file '" << log_file.string()
-                  << "': " << error.error() << '\n';
+                  << "': " << result.error() << '\n';
         return 1;
       }
     }

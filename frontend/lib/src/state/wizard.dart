@@ -29,6 +29,20 @@ class Wizard extends _$Wizard {
   final List<TripInfo> _tripResults = [];
   final Map<int, Set<String>> _tripSelections = {};
 
+  // Quality pass thresholds (user-adjustable, defaults match back end)
+  static const double _kDefaultBlurThreshold = 100.0;
+  static const double _kDefaultUnderexposedThreshold = 0.3;
+  static const double _kDefaultOverexposedThreshold = 0.3;
+
+  double _blurThreshold = _kDefaultBlurThreshold;
+  double _underexposedThreshold = _kDefaultUnderexposedThreshold;
+  double _overexposedThreshold = _kDefaultOverexposedThreshold;
+
+  // Public accessors for the UI (quality review screen)
+  double get blurThreshold => _blurThreshold;
+  double get underexposedThreshold => _underexposedThreshold;
+  double get overexposedThreshold => _overexposedThreshold;
+
   StreamSubscription<dynamic>? _passSubscription;
   bool _cancelRequested = false;
   pb.ScanComplete? _pendingScanComplete;
@@ -59,7 +73,13 @@ class Wizard extends _$Wizard {
   WizardQualityReview get _qualityReviewPhase => WizardQualityReview(
         flaggedCount: _qualityFlags.length,
         totalImages: _images.length,
+        rerunEnabled: _hasThresholdChanges,
       );
+
+  bool get _hasThresholdChanges =>
+      _blurThreshold != _kDefaultBlurThreshold ||
+      _underexposedThreshold != _kDefaultUnderexposedThreshold ||
+      _overexposedThreshold != _kDefaultOverexposedThreshold;
 
   WizardJunkReview get _junkReviewPhase => WizardJunkReview(
         flaggedCount: _junkFlags.length,
@@ -192,7 +212,15 @@ class Wizard extends _$Wizard {
     _qualityFlags.clear();
     state = const AsyncValue.data(WizardQualityRunning());
     final client = ref.read(kustaviClientProvider).requireValue;
-    _subscribe(client.runQualityPass(), _onQualityEvent, _onQualityDone);
+    _subscribe(
+      client.runQualityPass(
+        blurThreshold: _blurThreshold,
+        underexposedThreshold: _underexposedThreshold,
+        overexposedThreshold: _overexposedThreshold,
+      ),
+      _onQualityEvent,
+      _onQualityDone,
+    );
   }
 
   // --- S3 ----------------------------------------------------------------
@@ -233,6 +261,32 @@ class Wizard extends _$Wizard {
     _cancelPass();
     state = AsyncValue.data(_returnPhase ?? const WizardStart());
   }
+
+  // --- S4 rerun -----------------------------------------------------------
+
+  void rerunQualityPass() {
+    if (state.value is! WizardQualityReview) {
+      return;
+    }
+    _clearPassResults(keepReturnPhase: true);
+    state = const AsyncValue.data(WizardQualityRunning());
+    final client = ref.read(kustaviClientProvider).requireValue;
+    _subscribe(
+      client.runQualityPass(
+        blurThreshold: _blurThreshold,
+        underexposedThreshold: _underexposedThreshold,
+        overexposedThreshold: _overexposedThreshold,
+      ),
+      _onQualityEvent,
+      _onQualityDone,
+    );
+  }
+
+  void setBlurThreshold(double value) => _blurThreshold = value;
+
+  void setUnderexposedThreshold(double value) => _underexposedThreshold = value;
+
+  void setOverexposedThreshold(double value) => _overexposedThreshold = value;
 
   // --- S4 ----------------------------------------------------------------
 
