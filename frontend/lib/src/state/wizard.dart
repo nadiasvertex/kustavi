@@ -28,6 +28,7 @@ class Wizard extends _$Wizard {
   final List<SimilarGroupInfo> _similarGroups = [];
   final List<TripInfo> _tripResults = [];
   final Map<int, Set<String>> _tripSelections = {};
+  final Map<int, String> _tripFolderNames = {};
 
   // Quality pass thresholds (user-adjustable, defaults match back end)
   static const double _kDefaultBlurThreshold = 100.0;
@@ -76,6 +77,42 @@ class Wizard extends _$Wizard {
 
   Map<int, Set<String>> get tripSelections =>
       UnmodifiableMapView(_tripSelections);
+
+  /// Effective folder name for a trip: user-renamed, or auto-generated.
+  String _effectiveFolderOf(TripInfo trip) {
+    return _tripFolderNames[trip.id] ?? (trip.folder ?? '');
+  }
+
+  /// Trips grouped into named folders, sorted by folder name then by start date.
+  List<TripFolderInfo> get tripFolders {
+    final Map<String, List<TripInfo>> byFolder = {};
+    for (final trip in _tripResults) {
+      final name = _effectiveFolderOf(trip);
+      byFolder.putIfAbsent(name, () => []).add(trip);
+    }
+    final sortedNames = List<String>.from(byFolder.keys)..sort();
+    return sortedNames
+        .map((name) => TripFolderInfo(
+              name: name,
+              trips: byFolder[name]!,
+            ))
+        .toList(growable: false);
+  }
+
+  /// Renames the folder that [tripId] belongs to to [newName].
+  void renameTripFolder(int tripId, String newName) {
+    if (newName.isEmpty) {
+      return;
+    }
+    _tripFolderNames[tripId] = newName;
+    _publishTripsReviewPhase();
+  }
+
+  void _publishTripsReviewPhase() {
+    if (state.value is WizardTripsReview) {
+      state = AsyncValue.data(_tripsReviewPhase);
+    }
+  }
 
   WizardQualityReview get _qualityReviewPhase => WizardQualityReview(
         flaggedCount: _qualityFlags.length,
@@ -460,6 +497,7 @@ class Wizard extends _$Wizard {
 
   WizardTripsReview get _tripsReviewPhase => WizardTripsReview(
         tripCount: _tripResults.length,
+        tripFolders: tripFolders,
         markedCount: _tripsMarkedCount(),
         trips: _tripResults,
       );
@@ -731,6 +769,7 @@ class Wizard extends _$Wizard {
     _similarGroups.clear();
     _tripResults.clear();
     _tripSelections.clear();
+    _tripFolderNames.clear();
     if (!keepReturnPhase) {
       _returnPhase = null;
     }

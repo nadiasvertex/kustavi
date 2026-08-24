@@ -169,11 +169,12 @@ class _WizardShellState extends ConsumerState<WizardShell> {
             done: done,
             total: total,
           ),
-        WizardTripsReview(:final tripCount, :final markedCount, :final trips) =>
+        WizardTripsReview(:final tripCount, :final markedCount, :final trips, :final tripFolders) =>
           TripsReviewScreen(
             tripCount: tripCount,
             markedCount: markedCount,
             trips: trips,
+            tripFolders: tripFolders,
           ),
         WizardCommitSummary() => const PlaceholderScreen('Commit summary'),
         WizardCommitting() => const PlaceholderScreen('Copying photos'),

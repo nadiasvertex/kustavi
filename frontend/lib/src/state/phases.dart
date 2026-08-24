@@ -211,11 +211,15 @@ final class WizardTripsReview extends WizardPhase {
     required this.tripCount,
     required this.markedCount,
     required this.trips,
+    required this.tripFolders,
   });
 
   final int tripCount;
   final int markedCount;
   final List<TripInfo> trips;
+
+  /// Trips grouped into named folders (spec/frontend.md §6.2, §15).
+  final List<TripFolderInfo> tripFolders;
 
   @override
   int get stepIndex => WizardStep.trips.index;

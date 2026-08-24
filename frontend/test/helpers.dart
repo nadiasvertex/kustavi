@@ -112,3 +112,25 @@ pb.SimilarEvent similarGroup(
 /// A gRPC "internal" error for step-failure tests.
 GrpcError rpcBoom([String message = 'boom']) =>
     GrpcError.custom(StatusCode.internal, message);
+
+pb.TripsEvent tripEvent(
+  int id,
+  List<String> imageIds, {
+  String? folder,
+  int? startMs,
+  int? endMs,
+}) {
+  final trip = pb.Trip()
+    ..id = id
+    ..imageIds.addAll(imageIds);
+  if (startMs != null) {
+    trip.startUnixMs = Int64(startMs);
+  }
+  if (endMs != null) {
+    trip.endUnixMs = Int64(endMs);
+  }
+  if (folder != null && folder.isNotEmpty) {
+    trip.folder = folder;
+  }
+  return pb.TripsEvent()..trip = trip;
+}

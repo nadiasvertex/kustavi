@@ -2,11 +2,23 @@
 
 #include <algorithm>
 #include <cmath>
+#include <chrono>
+#include <cmath>
+#include <ctime>
 #include <numbers>
 
 namespace kustavi {
 
 namespace {
+
+auto folder_name_from_epoch_ms(std::int64_t epoch_ms) -> std::string {
+  using namespace std::chrono;
+  const time_t seconds = static_cast<time_t>(epoch_ms / 1000);
+  const tm utc = *std::gmtime(&seconds);
+  char buf[32];
+  std::strftime(buf, sizeof(buf), "%B %Y", &utc);
+  return std::string(buf);
+}
 
 auto haversine_km(double lat1, double lon1, double lat2, double lon2)
     -> double {
@@ -78,6 +90,7 @@ auto find_trips(const std::vector<trip_member> &members, int max_gap_hours,
         value.centroid_latitude = gps_lat_sum / static_cast<double>(gps_count);
         value.centroid_longitude = gps_lon_sum / static_cast<double>(gps_count);
       }
+      value.folder = folder_name_from_epoch_ms(value.start_unix_ms);
     }
   };
 

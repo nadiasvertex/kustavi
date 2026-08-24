@@ -169,6 +169,7 @@ class TripInfo {
     required this.end,
     required this.memberIds,
     this.centroid,
+    this.folder,
   });
 
   factory TripInfo.fromTrip(pb.Trip trip) {
@@ -180,6 +181,7 @@ class TripInfo {
       centroid: trip.hasCentroid()
           ? (trip.centroid.latitude, trip.centroid.longitude)
           : null,
+      folder: trip.folder.isEmpty ? null : trip.folder,
     );
   }
 
@@ -192,6 +194,24 @@ class TripInfo {
 
   /// Mean of members with GPS; null when no member has GPS.
   final (double, double)? centroid;
+
+  /// Auto-generated folder name from the back end (e.g. "January 2024"),
+  /// or null when the back end did not provide one.
+  final String? folder;
+}
+
+/// A named collection of trips, displayed as a collapsible folder
+/// in the trips review UI (spec/frontend.md §6.2, §15).
+class TripFolderInfo {
+  const TripFolderInfo({
+    required this.name,
+    required this.trips,
+  });
+
+  final String name;
+
+  /// Trips belonging to this folder, in their original order.
+  final List<TripInfo> trips;
 }
 
 /// Errors as values. The GUI never throws operational failures.

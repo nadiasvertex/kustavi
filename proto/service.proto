@@ -229,6 +229,7 @@ message Trip {
   int64 end_unix_ms = 3;
   repeated string image_ids = 4;  // chronological order
   optional GpsPoint centroid = 5; // mean of members with GPS; unset if none
+  optional string folder = 6;     // user-visible folder name for grouping trips
 }
 
 message TripsComplete {

@@ -23,6 +23,7 @@ struct trip {
   std::vector<std::string> image_ids;       //! Chronological order.
   std::optional<double> centroid_latitude;  //! Mean of members with GPS.
   std::optional<double> centroid_longitude; //! Mean of members with GPS.
+  std::optional<std::string> folder;        //! User-visible folder name for grouping.
 };
 
 struct trips_result {
