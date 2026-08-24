@@ -26,10 +26,11 @@ class ImageGrid extends StatelessWidget {
     const maxCrossAxisExtent = 280.0;
     const padding = 32.0;
     final usableWidth = mediaWidth - padding;
-    final columnCount = ((usableWidth + crossAxisSpacing) /
-            (maxCrossAxisExtent + crossAxisSpacing))
-        .floor()
-        .clamp(1, 6);
+    final columnCount =
+        ((usableWidth + crossAxisSpacing) /
+                (maxCrossAxisExtent + crossAxisSpacing))
+            .floor()
+            .clamp(1, 6);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -48,8 +49,7 @@ class ImageGrid extends StatelessWidget {
           // context must not, so the grid fits its cells and defers to the
           // outer scrollable.
           shrinkWrap: !boundedHeight,
-          physics:
-              boundedHeight ? null : const NeverScrollableScrollPhysics(),
+          physics: boundedHeight ? null : const NeverScrollableScrollPhysics(),
         );
       },
     );
