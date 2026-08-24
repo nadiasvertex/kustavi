@@ -282,11 +282,20 @@ class Wizard extends _$Wizard {
     );
   }
 
-  void setBlurThreshold(double value) => _blurThreshold = value;
+  void setBlurThreshold(double value) {
+    _blurThreshold = value;
+    state = AsyncValue.data(state.value!);
+  }
 
-  void setUnderexposedThreshold(double value) => _underexposedThreshold = value;
+  void setUnderexposedThreshold(double value) {
+    _underexposedThreshold = value;
+    state = AsyncValue.data(state.value!);
+  }
 
-  void setOverexposedThreshold(double value) => _overexposedThreshold = value;
+  void setOverexposedThreshold(double value) {
+    _overexposedThreshold = value;
+    state = AsyncValue.data(state.value!);
+  }
 
   // --- S4 ----------------------------------------------------------------
 
