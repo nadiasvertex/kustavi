@@ -77,9 +77,11 @@ class FakeKustaviClient implements KustaviClient {
   final bool scanStreamStaysOpen;
 
   ScanFolderRequest? lastScanRequest;
+  RunQualityPassRequest? lastQualityRequest;
   CommitRequest? lastCommitRequest;
   RunTripsPassRequest? lastTripsRequest;
   int shutdownCount = 0;
+  int qualityPassCount = 0;
 
   final Completer<void> _modelDone = Completer<void>();
   StreamController<ScanEvent>? _scanController;
@@ -137,8 +139,14 @@ class FakeKustaviClient implements KustaviClient {
     required double blurThreshold,
     required double underexposedThreshold,
     required double overexposedThreshold,
-  }) =>
-      _script(qualityEvents, qualityError);
+  }) {
+    qualityPassCount++;
+    lastQualityRequest = RunQualityPassRequest()
+      ..blurThreshold = blurThreshold
+      ..underexposedThreshold = underexposedThreshold
+      ..overexposedThreshold = overexposedThreshold;
+    return _script(qualityEvents, qualityError);
+  }
 
   @override
   Stream<ModelEvent> ensureModel() {

@@ -197,6 +197,110 @@ void main() {
       );
     });
 
+    test('threshold change republishes the review phase (notifies, reruns)',
+        () async {
+      final client = FakeKustaviClient(
+        scanEvents: [
+          scanImage('a.jpg'),
+          scanImage('b.jpg'),
+          scanComplete(images: 2),
+        ],
+        qualityEvents: [qualityFlag('a.jpg')],
+      );
+      container = makeContainer(client);
+      await reachConfirmFolder(container, client);
+      container.read(wizardProvider.notifier).continueFromConfirm();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardQualityReview,
+      );
+
+      final wizard = container.read(wizardProvider.notifier);
+      final before = container.read(wizardProvider).value
+          as WizardQualityReview;
+      expect(before.rerunEnabled, isFalse);
+
+      var notifications = 0;
+      container.listen(wizardProvider, (_, _) => notifications++);
+
+      wizard.setBlurThreshold(250);
+      expect(notifications, 1);
+      final after = container.read(wizardProvider).value
+          as WizardQualityReview;
+      expect(identical(before, after), isFalse);
+      expect(after.rerunEnabled, isTrue);
+      // The republished phase keeps the review's counts.
+      expect(after.flaggedCount, before.flaggedCount);
+      expect(after.totalImages, before.totalImages);
+
+      // A write with an unchanged value publishes nothing.
+      wizard.setBlurThreshold(250);
+      expect(notifications, 1);
+      expect(identical(container.read(wizardProvider).value, after), isTrue);
+    });
+
+    test('rerunQualityPass keeps the image index and applies new thresholds',
+        () async {
+      final client = FakeKustaviClient(
+        scanEvents: [
+          scanImage('a.jpg'),
+          scanImage('b.jpg'),
+          scanComplete(images: 2),
+        ],
+        qualityEvents: [qualityFlag('a.jpg')],
+      );
+      container = makeContainer(client);
+      await reachConfirmFolder(container, client);
+      final wizard = container.read(wizardProvider.notifier);
+      wizard.continueFromConfirm();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardQualityReview,
+      );
+
+      wizard.setBlurThreshold(250);
+      wizard.setUnderexposedThreshold(0.5);
+      wizard.rerunQualityPass();
+
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardQualityReview,
+      );
+      final phase = container.read(wizardProvider).value
+          as WizardQualityReview;
+      expect(client.qualityPassCount, 2);
+      // The index survived the rerun: the header total and the S2 grid
+      // (via [backFromQuality]) stay valid.
+      expect(phase.flaggedCount, 1);
+      expect(phase.totalImages, 2);
+      expect(wizard.images, hasLength(2));
+      // The pass ran with the adjusted thresholds.
+      expect(client.lastQualityRequest?.blurThreshold, 250);
+      expect(client.lastQualityRequest?.underexposedThreshold, 0.5);
+    });
+
+    test('rerunQualityPass without threshold changes is a no-op', () async {
+      final client = FakeKustaviClient(
+        scanEvents: [
+          scanImage('a.jpg'),
+          scanComplete(images: 1),
+        ],
+        qualityEvents: [qualityFlag('a.jpg')],
+      );
+      container = makeContainer(client);
+      await reachConfirmFolder(container, client);
+      container.read(wizardProvider.notifier).continueFromConfirm();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardQualityReview,
+      );
+
+      final before = container.read(wizardProvider).value;
+      container.read(wizardProvider.notifier).rerunQualityPass();
+      expect(identical(container.read(wizardProvider).value, before), isTrue);
+      expect(client.qualityPassCount, 1);
+    });
+
     test('continue with ready model → similar pass → S8 review', () async {
       final client = FakeKustaviClient(
         scanEvents: [

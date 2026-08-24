@@ -265,10 +265,13 @@ class Wizard extends _$Wizard {
   // --- S4 rerun -----------------------------------------------------------
 
   void rerunQualityPass() {
-    if (state.value is! WizardQualityReview) {
+    if (state.value is! WizardQualityReview || !_hasThresholdChanges) {
       return;
     }
-    _clearPassResults(keepReturnPhase: true);
+    // The folder did not change, so the image index is still valid — keep
+    // it (the S4 total and the S2 grid both read it); only the quality
+    // results are cleared, as the pass repopulates them.
+    _clearPassResults(keepReturnPhase: true, keepIndex: true);
     state = const AsyncValue.data(WizardQualityRunning());
     final client = ref.read(kustaviClientProvider).requireValue;
     _subscribe(
@@ -283,18 +286,39 @@ class Wizard extends _$Wizard {
   }
 
   void setBlurThreshold(double value) {
+    if (value == _blurThreshold) {
+      return;
+    }
     _blurThreshold = value;
-    state = AsyncValue.data(state.value!);
+    _publishQualityReviewPhase();
   }
 
   void setUnderexposedThreshold(double value) {
+    if (value == _underexposedThreshold) {
+      return;
+    }
     _underexposedThreshold = value;
-    state = AsyncValue.data(state.value!);
+    _publishQualityReviewPhase();
   }
 
   void setOverexposedThreshold(double value) {
+    if (value == _overexposedThreshold) {
+      return;
+    }
     _overexposedThreshold = value;
-    state = AsyncValue.data(state.value!);
+    _publishQualityReviewPhase();
+  }
+
+  /// Republishes the quality review phase with the current threshold state
+  /// (recomputing [WizardQualityReview.rerunEnabled]). [WizardPhase] is
+  /// immutable and Riverpod only notifies listeners when the state value
+  /// differs, so each changed threshold must produce a *new* phase instance
+  /// — reassigning the same instance is a silent no-op and the review
+  /// screen would never rebuild.
+  void _publishQualityReviewPhase() {
+    if (state.value is WizardQualityReview) {
+      state = AsyncValue.data(_qualityReviewPhase);
+    }
   }
 
   // --- S4 ----------------------------------------------------------------
@@ -659,11 +683,16 @@ class Wizard extends _$Wizard {
     _pendingScanComplete = null;
   }
 
-  void _clearPassResults({bool keepReturnPhase = false}) {
+  void _clearPassResults({
+    bool keepReturnPhase = false,
+    bool keepIndex = false,
+  }) {
     _cancelPass();
     _pendingScanComplete = null;
-    _images.clear();
-    _orderedIds.clear();
+    if (!keepIndex) {
+      _images.clear();
+      _orderedIds.clear();
+    }
     _qualityFlags.clear();
     _junkFlags.clear();
     _similarGroups.clear();

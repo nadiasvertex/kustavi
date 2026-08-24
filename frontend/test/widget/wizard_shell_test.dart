@@ -98,6 +98,54 @@ void main() {
       );
     });
 
+    testWidgets('quality sliders update and enable rerun', (tester) async {
+      final client = FakeKustaviClient(
+        scanEvents: [
+          scanImage('a.jpg'),
+          scanImage('b.jpg'),
+          scanComplete(images: 2),
+        ],
+        qualityEvents: [qualityFlag('a.jpg')],
+      );
+      final container = makeContainer(client);
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: WizardShell(pickDirectory: _pickPhotos),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(find.text('Select folder…'));
+      await tester.pump();
+      await tester.pump();
+      await tester.tap(find.text('Continue'));
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.text('1 of 2 images flagged'), findsOneWidget);
+      expect(find.text('Rerun pass'), findsNothing);
+
+      await tester.drag(find.byType(Slider).first, const Offset(150, 0));
+      await tester.pump();
+
+      final value = tester.widget<Slider>(find.byType(Slider).first).value;
+      expect(value, isNot(100.0));
+      // The value label follows the new threshold.
+      expect(
+        find.text(
+          value >= 100 && value == value.roundToDouble()
+              ? value.toInt().toString()
+              : value.toStringAsFixed(1),
+        ),
+        findsOneWidget,
+      );
+      // The adjusted threshold enables the rerun button.
+      expect(find.text('Rerun pass'), findsOneWidget);
+    });
+
     testWidgets('zero images → no-images screen with actions',
         (tester) async {
       final client = FakeKustaviClient(scanEvents: [scanComplete(images: 0)]);
