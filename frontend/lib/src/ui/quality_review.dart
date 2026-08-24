@@ -54,8 +54,14 @@ class QualityReviewScreen extends ConsumerWidget {
                 _blurSlider(theme, wizard),
                 const SizedBox(height: 12),
                 _exposureSliders(theme, wizard),
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: wizard.resetThresholds,
+                  icon: const Icon(Icons.restore, size: 18),
+                  label: const Text('Reset to defaults'),
+                ),
                 if (rerunEnabled) ...[
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 8),
                   FilledButton.icon(
                     onPressed: wizard.rerunQualityPass,
                     icon: const Icon(Icons.refresh, size: 18),

@@ -38,6 +38,13 @@ class Wizard extends _$Wizard {
   double _underexposedThreshold = _kDefaultUnderexposedThreshold;
   double _overexposedThreshold = _kDefaultOverexposedThreshold;
 
+  /// Whether the quality pass has been run at least once (so we have
+  /// last-run thresholds to compare against).
+  bool _hasLastRunThresholds = false;
+  double _lastBlurThreshold = _kDefaultBlurThreshold;
+  double _lastUnderexposedThreshold = _kDefaultUnderexposedThreshold;
+  double _lastOverexposedThreshold = _kDefaultOverexposedThreshold;
+
   // Public accessors for the UI (quality review screen)
   double get blurThreshold => _blurThreshold;
   double get underexposedThreshold => _underexposedThreshold;
@@ -76,10 +83,14 @@ class Wizard extends _$Wizard {
         rerunEnabled: _hasThresholdChanges,
       );
 
-  bool get _hasThresholdChanges =>
-      _blurThreshold != _kDefaultBlurThreshold ||
-      _underexposedThreshold != _kDefaultUnderexposedThreshold ||
-      _overexposedThreshold != _kDefaultOverexposedThreshold;
+  bool get _hasThresholdChanges {
+    if (!_hasLastRunThresholds) {
+      return false;
+    }
+    return _blurThreshold != _lastBlurThreshold ||
+        _underexposedThreshold != _lastUnderexposedThreshold ||
+        _overexposedThreshold != _lastOverexposedThreshold;
+  }
 
   WizardJunkReview get _junkReviewPhase => WizardJunkReview(
         flaggedCount: _junkFlags.length,
@@ -210,6 +221,7 @@ class Wizard extends _$Wizard {
     }
     _returnPhase = state.value;
     _qualityFlags.clear();
+    _saveLastRunThresholds();
     state = const AsyncValue.data(WizardQualityRunning());
     final client = ref.read(kustaviClientProvider).requireValue;
     _subscribe(
@@ -251,7 +263,15 @@ class Wizard extends _$Wizard {
     if (state.value is! WizardQualityRunning) {
       return;
     }
+    _saveLastRunThresholds();
     state = AsyncValue.data(_qualityReviewPhase);
+  }
+
+  void _saveLastRunThresholds() {
+    _hasLastRunThresholds = true;
+    _lastBlurThreshold = _blurThreshold;
+    _lastUnderexposedThreshold = _underexposedThreshold;
+    _lastOverexposedThreshold = _overexposedThreshold;
   }
 
   void cancelQuality() {
@@ -272,6 +292,7 @@ class Wizard extends _$Wizard {
     // it (the S4 total and the S2 grid both read it); only the quality
     // results are cleared, as the pass repopulates them.
     _clearPassResults(keepReturnPhase: true, keepIndex: true);
+    _saveLastRunThresholds();
     state = const AsyncValue.data(WizardQualityRunning());
     final client = ref.read(kustaviClientProvider).requireValue;
     _subscribe(
@@ -306,6 +327,18 @@ class Wizard extends _$Wizard {
       return;
     }
     _overexposedThreshold = value;
+    _publishQualityReviewPhase();
+  }
+
+  void resetThresholds() {
+    if (_blurThreshold == _kDefaultBlurThreshold &&
+        _underexposedThreshold == _kDefaultUnderexposedThreshold &&
+        _overexposedThreshold == _kDefaultOverexposedThreshold) {
+      return;
+    }
+    _blurThreshold = _kDefaultBlurThreshold;
+    _underexposedThreshold = _kDefaultUnderexposedThreshold;
+    _overexposedThreshold = _kDefaultOverexposedThreshold;
     _publishQualityReviewPhase();
   }
 
