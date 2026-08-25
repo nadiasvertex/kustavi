@@ -75,8 +75,7 @@ class Wizard extends _$Wizard {
   List<TripInfo> get tripResults =>
       List<TripInfo>.unmodifiable(_tripResults);
 
-  Map<int, Set<String>> get tripSelections =>
-      UnmodifiableMapView(_tripSelections);
+  Map<int, Set<String>> get tripSelections => _tripSelections;
 
   /// Effective folder name for a trip: user-renamed, or auto-generated.
   String _effectiveFolderOf(TripInfo trip) {

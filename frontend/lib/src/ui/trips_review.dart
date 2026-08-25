@@ -307,19 +307,26 @@ class _TripWidget extends ConsumerWidget {
           ],
           const SizedBox(height: 4),
 
-          // Trip images in chronological order
+          // Trip images in chronological order, excluding already-deleted images
           ImageGrid(
             count: trip.memberIds.length,
             builder: (context, index) {
               final imageId = trip.memberIds[index];
+
+              // Skip images already marked for deletion in a previous pass
+              if (plan.explicitDeleted.contains(imageId)) {
+                return const SizedBox.shrink();
+              }
+
               final image = wizard.images[imageId];
               if (image == null) {
                 return const SizedBox.shrink();
               }
 
-              final isMarked = _isMarked(plan, imageId, selections);
+              final isMarked = selections.contains(imageId);
 
               return ImageCell(
+                key: ValueKey('${trip.id}:$imageId'),
                 image: image,
                 marked: isMarked,
                 onTap: () => _toggleSelection(context, ref, imageId),
@@ -340,12 +347,6 @@ class _TripWidget extends ConsumerWidget {
         ],
       ),
     );
-  }
-
-  bool _isMarked(DeletionIntent plan, String id, Set<String> selections) {
-    if (plan.explicitDeleted.contains(id)) return true;
-    if (plan.explicitKept.contains(id)) return false;
-    return selections.contains(id);
   }
 
   void _toggleSelection(
