@@ -252,8 +252,10 @@ message SimilarComplete {
 // --- pass 5: trips ----------------------------------------------------------------
 
 message RunTripsPassRequest {
-  int32 max_gap_hours = 1;    
-  int32 max_distance_km = 2;  
+  int32 max_gap_hours = 1;
+  int32 max_distance_km = 2;
+  int32 home_radius_km = 3;
+  int32 leg_radius_km = 4;
 }
 
 message TripsEvent {
@@ -273,8 +275,20 @@ message Trip {
   uint32 id = 1;
   int64 start_unix_ms = 2;
   int64 end_unix_ms = 3;
-  repeated string image_ids = 4;  
-  optional GpsPoint centroid = 5; 
+  repeated string image_ids = 4;
+  optional GpsPoint centroid = 5;
+  optional string folder = 6;
+  string folder_slug = 7;
+  string place_name = 8;
+  repeated TripLeg legs = 9;
+  bool is_home = 10;
+}
+
+message TripLeg {
+  string place_name = 1;
+  string slug = 2;
+  repeated string image_ids = 3;
+  optional GpsPoint centroid = 4;
 }
 
 message TripsComplete {
@@ -285,8 +299,9 @@ message TripsComplete {
 // --- pass 6: commit ------------------------------------------------------------------
 
 message CommitRequest {
-  string destination = 1;     
-  repeated string keep_ids = 2;  
+  string destination = 1;
+  repeated string keep_ids = 2;
+  map<string, string> folder_for_id = 3;
 }
 
 message CommitEvent {
@@ -337,7 +352,16 @@ Precondition: Vision LLM weights verified. Interrogates the Moondream-3.1 engine
 Precondition: Active session. Compares assets for duplicates using perceptual indices. To scale performance efficiently to 50,000 images without running an \(O(N^2)\) brute force wall, the backend must organize comparison hashes via high-speed tree architectures (such as a **VP-Tree** or **BK-Tree**). Matches are recorded into `similar_groups`.
 
 ### RunTripsPass
-Clusters chronologically utilizing temporal adjacency calculations. Computes data in-memory on database records.
+Home-anchored clustering over in-memory database records. Detects recurring
+"home" GPS clusters (dense cells whose photos span ≥ 7 days and ≥ 50% of the
+archive timeline), then groups away-from-home photos chronologically into
+trips (broken by `max_gap_hours` or a `max_distance_km` centroid-drift
+guard), splits each trip into contiguous `TripLeg`s at `leg_radius_km` GPS
+jumps, and reverse-geocodes leg centroids to "City, Country" folder names via
+the bundled GeoNames table (`backend/data/cities.tsv`, located through
+`config::geo_data_path()`; folders fall back to "Month Year" when it is
+absent). At-home photos become monthly `is_home` trips. See
+`spec/proto.md` §RunTripsPass for the full rule set.
 
 ### Commit
-Creates target destination path layouts. Copies calculated image files while automatically grabbing matching layout sidecars (such as `.xmp` and `.aae` extensions) sitting adjacent within the original folders. Tracks progress using byte counts (`done_bytes` and `total_bytes`) alongside item counters for linear rendering representation.
+Creates target destination path layouts. Copies calculated image files while automatically grabbing matching layout sidecars (such as `.xmp` and `.aae` extensions) sitting adjacent within the original folders. By default each file keeps its path relative to the session folder; when `CommitRequest.folder_for_id` maps its id to a sub-path, the file is placed under `destination/<sub-path>/` (the trip/leg folder layout) instead, with `-<n>` suffixing on same-folder name collisions. Sub-paths that are absolute or contain `..` are ignored. Tracks progress using byte counts (`done_bytes` and `total_bytes`) alongside item counters for linear rendering representation.

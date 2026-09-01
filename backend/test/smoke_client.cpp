@@ -673,6 +673,52 @@ void run_commit(const options &opts) {
          std::to_string(copied));
   }
   std::println("ok: Commit copied={} (re-run consistent)", copied);
+
+  // Trip-folder layout: folder_for_id routes every kept file under one
+  // sub-directory of a fresh destination.
+  const std::filesystem::path foldered_dest =
+      std::filesystem::path(opts.destination) / "foldered";
+  k::CommitRequest foldered;
+  foldered.set_destination(foldered_dest.string());
+  auto &id_to_folder = *foldered.mutable_folder_for_id();
+  for (const auto &id : g_image_ids) {
+    foldered.add_keep_ids(id);
+    id_to_folder[id] = "trip-a";
+  }
+  grpc::ClientContext third_context;
+  add_auth_metadata(third_context, opts);
+  auto third_reader = stub->Commit(&third_context, foldered);
+  k::CommitEvent third_event;
+  uint32_t third_copied = 0;
+  while (third_reader->Read(&third_event)) {
+    if (third_event.has_complete()) {
+      third_copied = third_event.complete().copied();
+    }
+  }
+  const auto third_status = third_reader->Finish();
+  if (!third_status.ok()) {
+    fail("Commit foldered: " + third_status.error_message());
+  }
+  if (third_copied != static_cast<uint32_t>(g_image_ids.size())) {
+    fail("Commit foldered copied " + std::to_string(third_copied));
+  }
+  std::error_code count_ec;
+  std::size_t under_trip_a = 0;
+  for (auto it = std::filesystem::recursive_directory_iterator(
+           foldered_dest / "trip-a", count_ec);
+       !count_ec && it != std::filesystem::recursive_directory_iterator();
+       ++it) {
+    if (it->is_regular_file()) {
+      ++under_trip_a;
+    }
+  }
+  if (under_trip_a != g_image_ids.size()) {
+    fail("Commit foldered: " + std::to_string(under_trip_a) +
+         " files under trip-a/, expected " +
+         std::to_string(g_image_ids.size()));
+  }
+  std::println("ok: Commit folder_for_id routed {} files under trip-a/",
+               under_trip_a);
 }
 
 void run_concurrency_check(const options &opts) {

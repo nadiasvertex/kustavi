@@ -206,8 +206,10 @@ message SimilarComplete {
 // --- pass 5: trips ----------------------------------------------------------------
 
 message RunTripsPassRequest {
-  int32 max_gap_hours = 1;    // max time gap between consecutive photos (default 48)
-  int32 max_distance_km = 2;  // max distance between consecutive photos (default 300)
+  int32 max_gap_hours = 1;    // time gap that ends an away trip (default 48)
+  int32 max_distance_km = 2;  // centroid drift that ends an away trip (default 300)
+  int32 home_radius_km = 3;   // distance from a home cluster that counts as away (default 15)
+  int32 leg_radius_km = 4;    // GPS jump that starts a new leg within a trip (default 25)
 }
 
 message TripsEvent {
@@ -230,6 +232,17 @@ message Trip {
   repeated string image_ids = 4;  // chronological order
   optional GpsPoint centroid = 5; // mean of members with GPS; unset if none
   optional string folder = 6;     // user-visible folder name for grouping trips
+  string folder_slug = 7;         // filesystem-safe form of folder (commit layout)
+  string place_name = 8;          // dominant place ("Italy"); empty without geo
+  repeated TripLeg legs = 9;      // contiguous stays; one entry unless the trip has legs
+  bool is_home = 10;              // photos taken near a detected home cluster
+}
+
+message TripLeg {
+  string place_name = 1;          // "Rome, Italy"; empty without geo
+  string slug = 2;                // filesystem-safe; unique within the trip
+  repeated string image_ids = 3;  // chronological order
+  optional GpsPoint centroid = 4; // mean of members with GPS; unset if none
 }
 
 message TripsComplete {
@@ -242,6 +255,11 @@ message TripsComplete {
 message CommitRequest {
   string destination = 1;     // absolute path; created if missing
   repeated string keep_ids = 2;  // image ids to copy
+  // Optional per-image destination sub-path (a trip/leg folder slug). When an
+  // id is present, its file is copied into that sub-path of the destination
+  // under its original filename; ids absent from the map keep their path
+  // relative to the session folder.
+  map<string, string> folder_for_id = 3;
 }
 
 message CommitEvent {

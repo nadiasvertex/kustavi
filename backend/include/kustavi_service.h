@@ -3,6 +3,7 @@
 #include "collection/event_queue.h"
 #include "pass/downscaler.h"
 #include "pass/quality.h"
+#include "pass/trips.h"
 #include "store/database.h"
 
 #include <grpcpp/grpcpp.h>
@@ -112,12 +113,7 @@ struct trips_progress_evt {
   std::size_t total = 0;
 };
 struct trips_result_evt {
-  uint32_t id = 0;
-  std::int64_t start_unix_ms = 0;
-  std::int64_t end_unix_ms = 0;
-  std::vector<std::string> image_ids;
-  std::optional<double> centroid_latitude;
-  std::optional<double> centroid_longitude;
+  trip value;
 };
 struct trips_complete_evt {
   std::size_t trips = 0;

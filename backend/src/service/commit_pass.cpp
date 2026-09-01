@@ -7,6 +7,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <unordered_map>
 #include <utility>
@@ -54,6 +55,7 @@ auto kustavi_service::Commit(grpc::ServerContext *context,
     for (const auto &record : records) {
       id_to_path.emplace(record.id, record.absolute_path);
     }
+    const auto &folder_for_id = request->folder_for_id();
     sources.reserve(request->keep_ids_size());
     for (const auto &id : request->keep_ids()) {
       const auto it = id_to_path.find(id);
@@ -61,7 +63,20 @@ auto kustavi_service::Commit(grpc::ServerContext *context,
         errors.push_back(id + ": not found in session");
         continue;
       }
-      sources.push_back({.id = id, .path = it->second});
+      fs::path subdir;
+      if (const auto fit = folder_for_id.find(id); fit != folder_for_id.end()) {
+        const fs::path raw = fs::path(fit->second).lexically_normal();
+        const bool escapes =
+            raw.is_absolute() ||
+            std::ranges::any_of(raw, [](const fs::path &part) -> bool {
+              return part == "..";
+            });
+        if (!escapes) {
+          subdir = raw;
+        }
+      }
+      sources.push_back(
+          {.id = id, .path = it->second, .dest_subdir = std::move(subdir)});
     }
   } catch (const std::exception &e) {
     return {grpc::StatusCode::INTERNAL,

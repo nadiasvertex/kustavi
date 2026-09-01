@@ -427,6 +427,74 @@ void main() {
       );
     });
 
+    test('trips review: move photos between trips, create, unassign, rerun',
+        () async {
+      final client = FakeKustaviClient(
+        scanEvents: [
+          scanImage('a.jpg'),
+          scanImage('b.jpg'),
+          scanImage('c.jpg'),
+          scanComplete(images: 3),
+        ],
+        modelEvents: [modelReady()],
+        similarEvents: const [],
+        tripsEvents: [
+          tripEvent(0, ['a.jpg', 'b.jpg'],
+              folder: 'Rome, Italy · April 2026',
+              startMs: 1000,
+              endMs: 2000),
+          tripEvent(1, ['c.jpg'],
+              folder: 'Oslo, Norway · May 2026',
+              startMs: 9000,
+              endMs: 9000),
+        ],
+      );
+      container = makeContainer(client);
+      await reachConfirmFolder(container, client);
+      container.read(wizardProvider.notifier).continueFromConfirm();
+      await pumpUntil(container,
+          () => container.read(wizardProvider).value is WizardQualityReview);
+      container.read(wizardProvider.notifier).continueFromQuality();
+      await pumpUntil(container,
+          () => container.read(wizardProvider).value is WizardSimilarReview);
+      await pumpUntil(container,
+          () => container.read(modelStatusProvider).value is ModelPrepReady);
+      container.read(wizardProvider.notifier).continueFromSimilar();
+      await pumpUntil(container,
+          () => container.read(wizardProvider).value is WizardTripsReview);
+
+      final wizard = container.read(wizardProvider.notifier);
+      expect(wizard.tripResults.map((t) => t.id), [0, 1]);
+      expect(wizard.tripResults.first.memberIds, ['a.jpg', 'b.jpg']);
+
+      // Move b.jpg from trip 0 into trip 1.
+      wizard.moveImagesToTrip(['b.jpg'], 1);
+      expect(wizard.tripResults.firstWhere((t) => t.id == 0).memberIds,
+          ['a.jpg']);
+      expect(
+        wizard.tripResults.firstWhere((t) => t.id == 1).memberIds,
+        containsAll(<String>['b.jpg', 'c.jpg']),
+      );
+
+      // Pull a.jpg out of every trip -> trip 0 disappears, a.jpg is unassigned.
+      wizard.moveImagesToTrip(['a.jpg'], null);
+      expect(wizard.tripResults.map((t) => t.id), [1]);
+      expect(wizard.unassignedTripImageIds, contains('a.jpg'));
+
+      // Create a new trip from the unassigned photo.
+      final newId = wizard.createTripFromImages(['a.jpg']);
+      expect(wizard.tripResults.any((t) => t.id == newId), isTrue);
+      expect(wizard.unassignedTripImageIds, isNot(contains('a.jpg')));
+
+      // Re-clustering sends the slider values and drops hand edits.
+      wizard.rerunTripsPass(homeRadiusKm: 7, legRadiusKm: 40);
+      await pumpUntil(container,
+          () => container.read(wizardProvider).value is WizardTripsReview);
+      expect(client.lastTripsRequest!.homeRadiusKm, 7);
+      expect(client.lastTripsRequest!.legRadiusKm, 40);
+      expect(wizard.tripResults.map((t) => t.id), [0, 1]);
+    });
+
     test('back from confirm discards results (fresh session → S0)', () async {
       final client = FakeKustaviClient(
         scanEvents: [

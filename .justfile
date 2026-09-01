@@ -25,7 +25,8 @@ test-gui:
 # loopback port), exercises every RPC pass against a copy of test/photos,
 # then shuts the server down.
 test-backend:
-  bazel build //backend:server //backend:smoke_client
+  bazel build //backend:server //backend:smoke_client //backend:trips_test
+  KUSTAVI_GEO_DATA="$(pwd)/backend/data/cities.tsv" bazel run //backend:trips_test
   tmp="$(mktemp -d)" && \
   trap 'rm -rf "$tmp"' EXIT && \
   cp -R test/photos "$tmp/photos" && \
@@ -83,6 +84,9 @@ dist-clean:
 package-server: build-server-release
   @# Copy the backend binary → kustavi-backend
   cp bazel-bin/backend/server dist/kustavi-backend
+  @# Bundle the GeoNames place table next to the binary (trips pass folder
+  @# names); geo_data_path() looks here first in a packaged build.
+  cp backend/data/cities.tsv dist/cities.tsv
   @# Bundle the llama.cpp shared libraries next to the binary and repoint the
   @# binary at them via an @loader_path rpath (Bazel's build rpath points into
   @# the sandbox and does not survive the copy).
@@ -93,6 +97,7 @@ package-server: build-server-release
 package-gui: build-gui
   unzip -q bazel-bin/frontend/kustavi_macos.zip -d "dist/"
   mv dist/kustavi-backend dist/Kustavi.app/Contents/MacOS/
+  mv dist/cities.tsv dist/Kustavi.app/Contents/MacOS/
   @# Move the bundled llama.cpp dylibs alongside the backend binary.
   find dist -maxdepth 1 \( -name 'libllama*.dylib' -o -name 'libggml*.dylib' -o -name 'libmtmd*.dylib' \) \
     -exec mv {} dist/Kustavi.app/Contents/MacOS/ \;

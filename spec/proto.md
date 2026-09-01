@@ -267,8 +267,10 @@ message SimilarComplete {
 // --- pass 5: trips ----------------------------------------------------------------
 
 message RunTripsPassRequest {
-  int32 max_gap_hours = 1;    // max time gap between consecutive photos (default 48)
-  int32 max_distance_km = 2;  // max distance between consecutive photos (default 300)
+  int32 max_gap_hours = 1;    // time gap that ends an away trip (default 48)
+  int32 max_distance_km = 2;  // centroid drift that ends an away trip (default 300)
+  int32 home_radius_km = 3;   // distance from a home cluster that counts as away (default 15)
+  int32 leg_radius_km = 4;    // GPS jump that starts a new leg within a trip (default 25)
 }
 
 message TripsEvent {
@@ -290,6 +292,18 @@ message Trip {
   int64 end_unix_ms = 3;
   repeated string image_ids = 4;  // chronological order
   optional GpsPoint centroid = 5; // mean of members with GPS; unset if none
+  optional string folder = 6;     // display folder name for grouping trips
+  string folder_slug = 7;         // filesystem-safe form of folder (commit layout)
+  string place_name = 8;          // dominant place ("Italy"); empty without geo
+  repeated TripLeg legs = 9;      // contiguous stays; one entry unless the trip has legs
+  bool is_home = 10;              // photos taken near a detected home cluster
+}
+
+message TripLeg {
+  string place_name = 1;          // "Rome, Italy"; empty without geo
+  string slug = 2;                // filesystem-safe; unique within the trip
+  repeated string image_ids = 3;  // chronological order
+  optional GpsPoint centroid = 4; // mean of members with GPS; unset if none
 }
 
 message TripsComplete {
@@ -300,8 +314,9 @@ message TripsComplete {
 // --- pass 6: commit ------------------------------------------------------------------
 
 message CommitRequest {
-  string destination = 1;     // absolute path; created if missing
+  string destination = 1;        // absolute path; created if missing
   repeated string keep_ids = 2;  // image ids to copy
+  map<string, string> folder_for_id = 3;  // optional per-image destination sub-path (trip/leg slug)
 }
 
 message CommitEvent {
@@ -425,15 +440,32 @@ Preconditions: active session; no pass running. Re-runnable at any time
 
 - Considers only images with a usable `taken` timestamp; the rest are
   counted in `unassigned`.
-- Clusters chronologically with an adjacency rule: two consecutive
-  photos (in time order) belong to the same trip if
-  `time_gap ≤ max_gap_hours` AND (either one lacks GPS, or the
-  haversine distance is `≤ max_distance_km`). The distance check
-  exists to break clusters that are physically impossible (e.g. two
-  locations thousands of km apart interleaved by clock skew); ordinary
-  driving within the distance budget never breaks a trip.
+- **Home detection.** The GPS photos are binned onto a ~11 km grid; a cell
+  is a "home" when it is dense (≥ 5 photos or ≥ 5% of all GPS photos) AND
+  its photos recur across the archive — spanning ≥ 7 days of wall-clock
+  time and ≥ 50% of the whole timeline. Several homes are allowed
+  (home, work, a relative's place). An archive with no such cell (a pure
+  travel dump) has no home, so every cluster is a trip.
+- **Away segmentation.** Walking in time order, a photo is *away* when it
+  has GPS and lies farther than `home_radius_km` from every home (a photo
+  without GPS inherits the previous photo's state). A run of away photos
+  is one trip while the time gap stays `≤ max_gap_hours` AND the running
+  trip centroid has not drifted past `max_distance_km` (the drift guard
+  breaks clusters glued together by clock skew; ordinary travel does not
+  trip it). At-home photos are bucketed by calendar month into `is_home`
+  trips.
+- **Legs.** Each trip is split into contiguous `TripLeg`s whenever GPS
+  jumps past `leg_radius_km` from the current leg centroid (Rome → Florence
+  → Venice; a revisit is a fresh leg).
+- **Naming.** When the bundled GeoNames table (`backend/data/cities.tsv`)
+  is present, each leg centroid is reverse-geocoded to "City, Country" and
+  the trip `folder` becomes e.g. `"Rome, Italy · April 2026"`, or
+  `"Italy · April 2026 (Rome, Florence, …)"` for a multi-leg trip;
+  `folder_slug` is the filesystem-safe form used by the commit layout.
+  Without the table, `folder` falls back to `"Month Year"`.
 - Emits one `Trip` per cluster (ids in chronological order, with start,
-  end, and centroid when any member has GPS), then `TripsComplete`.
+  end, centroid/legs/folder/place_name when derivable), then
+  `TripsComplete`.
 - Metadata-only work: must complete in well under a second for a
   50,000-image session; `TripsProgress` is emitted for uniformity.
 
@@ -442,12 +474,20 @@ Preconditions: active session; no pass running. Re-runnable at any time
 Preconditions: active session; no pass running.
 
 - Creates `destination` (and any missing parents) if absent.
-- Copies each `keep_id`'s file into `destination`, preserving the path
-  relative to the session folder (subdirectories included).
+- Copies each `keep_id`'s file into `destination`. By default the path
+  relative to the session folder is preserved (subdirectories included).
+  When `folder_for_id` maps the id to a sub-path, the file instead lands
+  at `destination/<sub-path>/<original filename>` (the trip/leg folder
+  layout). Sub-paths are sanitised: an absolute path or one containing a
+  `..` component is ignored and the file falls back to the preserved
+  layout.
 - Collision policy: if the destination file already exists — same size:
   treated as already copied (counts toward `copied`, making re-commits
-  idempotent); different size: not overwritten, counted in `skipped`,
-  and reported in `errors` as `"<id>: name conflict"`.
+  idempotent). Different size in the preserved layout: not overwritten,
+  counted in `skipped`, reported in `errors` as `"<id>: name conflict"`.
+  Different size in the `folder_for_id` layout: written under a `-<n>`
+  suffix, since two distinct files legitimately share a name in one trip
+  folder.
 - Copy failures (permissions, disk full, source disappeared) are
   reported per-file in `errors` and do not abort the run.
 - Emits `CommitProgress` per file, then `CommitComplete`.

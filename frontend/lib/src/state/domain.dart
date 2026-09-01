@@ -161,7 +161,38 @@ class SimilarGroupInfo {
   final List<double> memberScores;
 }
 
-/// A spatiotemporal trip cluster.
+/// A contiguous stay at one place within a trip (Rome, then Florence).
+class TripLegInfo {
+  const TripLegInfo({
+    required this.placeName,
+    required this.slug,
+    required this.memberIds,
+    this.centroid,
+  });
+
+  factory TripLegInfo.fromLeg(pb.TripLeg leg) {
+    return TripLegInfo(
+      placeName: leg.placeName,
+      slug: leg.slug,
+      memberIds: List<String>.unmodifiable(leg.imageIds),
+      centroid: leg.hasCentroid()
+          ? (leg.centroid.latitude, leg.centroid.longitude)
+          : null,
+    );
+  }
+
+  /// "Rome, Italy"; empty when the back end had no geo table.
+  final String placeName;
+
+  /// Filesystem-safe label, unique within the trip.
+  final String slug;
+
+  final List<String> memberIds;
+  final (double, double)? centroid;
+}
+
+/// A spatiotemporal trip cluster: an away-from-home trip, or a per-month
+/// bucket of at-home photos ([isHome]).
 class TripInfo {
   const TripInfo({
     required this.id,
@@ -170,6 +201,10 @@ class TripInfo {
     required this.memberIds,
     this.centroid,
     this.folder,
+    this.folderSlug = '',
+    this.placeName = '',
+    this.legs = const <TripLegInfo>[],
+    this.isHome = false,
   });
 
   factory TripInfo.fromTrip(pb.Trip trip) {
@@ -182,6 +217,12 @@ class TripInfo {
           ? (trip.centroid.latitude, trip.centroid.longitude)
           : null,
       folder: trip.folder.isEmpty ? null : trip.folder,
+      folderSlug: trip.folderSlug,
+      placeName: trip.placeName,
+      legs: List<TripLegInfo>.unmodifiable(
+        trip.legs.map(TripLegInfo.fromLeg),
+      ),
+      isHome: trip.isHome,
     );
   }
 
@@ -195,9 +236,42 @@ class TripInfo {
   /// Mean of members with GPS; null when no member has GPS.
   final (double, double)? centroid;
 
-  /// Auto-generated folder name from the back end (e.g. "January 2024"),
-  /// or null when the back end did not provide one.
+  /// Display folder name from the back end ("Rome, Italy · April 2026", or
+  /// "April 2026" without geo), or null when the back end gave none.
   final String? folder;
+
+  /// Filesystem-safe form of [folder] used for the committed output layout.
+  final String folderSlug;
+
+  /// Dominant place ("Italy"); empty without a geo table or GPS.
+  final String placeName;
+
+  /// Contiguous legs; a single entry unless the trip visited several places.
+  final List<TripLegInfo> legs;
+
+  /// True when these are at-home photos rather than a trip.
+  final bool isHome;
+
+  TripInfo copyWith({
+    DateTime? start,
+    DateTime? end,
+    List<String>? memberIds,
+    (double, double)? centroid,
+    List<TripLegInfo>? legs,
+  }) {
+    return TripInfo(
+      id: id,
+      start: start ?? this.start,
+      end: end ?? this.end,
+      memberIds: memberIds ?? this.memberIds,
+      centroid: centroid ?? this.centroid,
+      folder: folder,
+      folderSlug: folderSlug,
+      placeName: placeName,
+      legs: legs ?? this.legs,
+      isHome: isHome,
+    );
+  }
 }
 
 /// A named collection of trips, displayed as a collapsible folder

@@ -39,6 +39,26 @@ class Wizard extends _$Wizard {
   final Map<int, Set<String>> _tripSelections = {};
   final Map<int, String> _tripFolderNames = {};
 
+  /// Per-image trip reassignment applied on top of the clustering result.
+  /// The value is a trip id, or [_kUnassignedTrip] for "pulled out of every
+  /// trip". Cleared whenever the trips pass re-runs.
+  final Map<String, int> _tripMembership = {};
+
+  /// Trips the user created by hand; their members live in [_tripMembership].
+  final List<TripInfo> _userTrips = [];
+  int _nextUserTripId = 1000000;
+
+  /// Whether the commit step should lay files out in trip/leg folders.
+  bool _organizeIntoTripFolders = true;
+
+  /// Trips-pass tunables (GUI sliders; defaults match the back end).
+  int _tripGapHours = 48;
+  int _tripDistanceKm = 300;
+  int _tripHomeRadiusKm = 15;
+  int _tripLegRadiusKm = 25;
+
+  static const int _kUnassignedTrip = -1;
+
   // Quality pass thresholds (user-adjustable, defaults match back end)
   static const double _kDefaultBlurThreshold = 100.0;
   static const double _kDefaultUnderexposedThreshold = 0.3;
@@ -81,10 +101,103 @@ class Wizard extends _$Wizard {
   List<SimilarGroupInfo> get similarGroups =>
       List<SimilarGroupInfo>.unmodifiable(_similarGroups);
 
-  List<TripInfo> get tripResults =>
-      List<TripInfo>.unmodifiable(_tripResults);
+  /// Effective trips: the clustering result plus hand-created trips, with
+  /// per-image reassignments applied, sorted chronologically. Empty trips
+  /// (all members moved away) are dropped.
+  List<TripInfo> get tripResults {
+    final trips = <TripInfo>[];
+    for (final base in [..._tripResults, ..._userTrips]) {
+      final ids = _effectiveMemberIds(base);
+      if (ids.isEmpty) {
+        continue;
+      }
+      trips.add(_rebuildTrip(base, ids));
+    }
+    trips.sort((a, b) => a.start.compareTo(b.start));
+    return List<TripInfo>.unmodifiable(trips);
+  }
 
   Map<int, Set<String>> get tripSelections => _tripSelections;
+
+  bool get organizeIntoTripFolders => _organizeIntoTripFolders;
+  set organizeIntoTripFolders(bool value) {
+    _organizeIntoTripFolders = value;
+    _publishTripsReviewPhase();
+  }
+
+  int get tripGapHours => _tripGapHours;
+  int get tripDistanceKm => _tripDistanceKm;
+  int get tripHomeRadiusKm => _tripHomeRadiusKm;
+  int get tripLegRadiusKm => _tripLegRadiusKm;
+
+  List<String> _effectiveMemberIds(TripInfo base) {
+    final ids = <String>{};
+    for (final id in base.memberIds) {
+      if ((_tripMembership[id] ?? base.id) == base.id) {
+        ids.add(id);
+      }
+    }
+    _tripMembership.forEach((id, tid) {
+      if (tid == base.id) {
+        ids.add(id);
+      }
+    });
+    final ordered = ids.toList()
+      ..sort((a, b) {
+        final ta = _images[a]?.taken;
+        final tb = _images[b]?.taken;
+        if (ta != null && tb != null && ta != tb) {
+          return ta.compareTo(tb);
+        }
+        return a.compareTo(b);
+      });
+    return ordered;
+  }
+
+  TripInfo _rebuildTrip(TripInfo base, List<String> ids) {
+    // Untouched trip: keep the back end's start/end/centroid/legs verbatim.
+    if (ids.length == base.memberIds.length &&
+        ids.toSet().containsAll(base.memberIds)) {
+      return base;
+    }
+    DateTime? first;
+    DateTime? last;
+    double latSum = 0;
+    double lonSum = 0;
+    int gps = 0;
+    for (final id in ids) {
+      final img = _images[id];
+      if (img == null) {
+        continue;
+      }
+      final taken = img.taken;
+      if (taken != null) {
+        if (first == null || taken.isBefore(first)) first = taken;
+        if (last == null || taken.isAfter(last)) last = taken;
+      }
+      final g = img.gps;
+      if (g != null) {
+        latSum += g.$1;
+        lonSum += g.$2;
+        gps++;
+      }
+    }
+    return base.copyWith(
+      start: first ?? base.start,
+      end: last ?? base.end,
+      memberIds: List<String>.unmodifiable(ids),
+      centroid: gps > 0 ? (latSum / gps, lonSum / gps) : null,
+      // Hand edits invalidate the back end's leg split; collapse to one leg.
+      legs: <TripLegInfo>[
+        TripLegInfo(
+          placeName: base.placeName,
+          slug: base.folderSlug.isNotEmpty ? base.folderSlug : 'leg-1',
+          memberIds: List<String>.unmodifiable(ids),
+          centroid: gps > 0 ? (latSum / gps, lonSum / gps) : null,
+        ),
+      ],
+    );
+  }
 
   /// Effective folder name for a trip: user-renamed, or auto-generated.
   String _effectiveFolderOf(TripInfo trip) {
@@ -94,7 +207,7 @@ class Wizard extends _$Wizard {
   /// Trips grouped into named folders, sorted by folder name then by start date.
   List<TripFolderInfo> get tripFolders {
     final Map<String, List<TripInfo>> byFolder = {};
-    for (final trip in _tripResults) {
+    for (final trip in tripResults) {
       final name = _effectiveFolderOf(trip);
       byFolder.putIfAbsent(name, () => []).add(trip);
     }
@@ -107,6 +220,107 @@ class Wizard extends _$Wizard {
         .toList(growable: false);
   }
 
+  /// Image ids not in any effective trip and not already marked for deletion
+  /// (never-clustered photos plus any the user pulled out of a trip).
+  List<String> get unassignedTripImageIds {
+    final assigned = <String>{};
+    for (final trip in tripResults) {
+      assigned.addAll(trip.memberIds);
+    }
+    final plan = ref.read(deletionPlanProvider);
+    return _orderedIds
+        .where((id) =>
+            !assigned.contains(id) && !plan.explicitDeleted.contains(id))
+        .toList(growable: false);
+  }
+
+  /// Reassigns [imageIds] to [tripId] (null → pull them out of every trip).
+  void moveImagesToTrip(Iterable<String> imageIds, int? tripId) {
+    for (final id in imageIds) {
+      _tripMembership[id] = tripId ?? _kUnassignedTrip;
+    }
+    _publishTripsReviewPhase();
+  }
+
+  /// Creates a new trip seeded with [imageIds]; returns its id.
+  int createTripFromImages(Iterable<String> imageIds) {
+    final id = _nextUserTripId++;
+    DateTime? first;
+    for (final imgId in imageIds) {
+      final taken = _images[imgId]?.taken;
+      if (taken != null && (first == null || taken.isBefore(first))) {
+        first = taken;
+      }
+    }
+    final anchor = first ?? DateTime.now();
+    _userTrips.add(TripInfo(
+      id: id,
+      start: anchor,
+      end: anchor,
+      memberIds: const <String>[],
+      folder: first != null ? 'Trip · ${_monthYear(anchor)}' : 'New trip',
+    ));
+    for (final imgId in imageIds) {
+      _tripMembership[imgId] = id;
+    }
+    _publishTripsReviewPhase();
+    return id;
+  }
+
+  /// Per-image destination sub-path for `CommitRequest.folderForId`, built
+  /// from the effective trip/leg layout. Empty when the user opted out.
+  Map<String, String> commitFolderPlan() {
+    if (!_organizeIntoTripFolders) {
+      return const <String, String>{};
+    }
+    final plan = <String, String>{};
+    for (final trip in tripResults) {
+      final folderName = _effectiveFolderOf(trip);
+      final tripSlug = _slugify(
+          folderName.isNotEmpty ? folderName : trip.folderSlug);
+      if (tripSlug.isEmpty) {
+        continue;
+      }
+      if (trip.legs.length > 1) {
+        for (final leg in trip.legs) {
+          final legSlug = leg.slug.isNotEmpty ? _slugify(leg.slug) : 'leg';
+          for (final id in leg.memberIds) {
+            plan[id] = '$tripSlug/$legSlug';
+          }
+        }
+      }
+      for (final id in trip.memberIds) {
+        plan.putIfAbsent(id, () => tripSlug);
+      }
+    }
+    return plan;
+  }
+
+  static String _monthYear(DateTime d) {
+    const months = [
+      'January', 'February', 'March', 'April', 'May', 'June', 'July',
+      'August', 'September', 'October', 'November', 'December',
+    ];
+    return '${months[d.month - 1]} ${d.year}';
+  }
+
+  static String _slugify(String text) {
+    final buffer = StringBuffer();
+    var pendingSep = false;
+    for (final rune in text.toLowerCase().runes) {
+      final isAlnum = (rune >= 0x30 && rune <= 0x39) ||
+          (rune >= 0x61 && rune <= 0x7a);
+      if (isAlnum) {
+        if (pendingSep && buffer.isNotEmpty) buffer.write('-');
+        pendingSep = false;
+        buffer.writeCharCode(rune);
+      } else {
+        pendingSep = true;
+      }
+    }
+    return buffer.toString();
+  }
+
   /// Renames the folder that [tripId] belongs to to [newName].
   void renameTripFolder(int tripId, String newName) {
     if (newName.isEmpty) {
@@ -114,6 +328,40 @@ class Wizard extends _$Wizard {
     }
     _tripFolderNames[tripId] = newName;
     _publishTripsReviewPhase();
+  }
+
+  /// Re-runs the trips pass with updated slider values, discarding any
+  /// hand edits (they are defined against the previous clustering).
+  void rerunTripsPass({
+    int? gapHours,
+    int? distanceKm,
+    int? homeRadiusKm,
+    int? legRadiusKm,
+  }) {
+    if (state.value is! WizardTripsReview) {
+      return;
+    }
+    _tripGapHours = gapHours ?? _tripGapHours;
+    _tripDistanceKm = distanceKm ?? _tripDistanceKm;
+    _tripHomeRadiusKm = homeRadiusKm ?? _tripHomeRadiusKm;
+    _tripLegRadiusKm = legRadiusKm ?? _tripLegRadiusKm;
+    _resetTripEdits();
+    _tripResults.clear();
+    _tripSelections.clear();
+    state = const AsyncValue.data(WizardTripsRunning());
+    final client = ref.read(kustaviClientProvider).requireValue;
+    _subscribe(
+      client.runTripsPass(_tripsRequest()),
+      _onTripsEvent,
+      _onTripsDone,
+    );
+  }
+
+  void _resetTripEdits() {
+    _tripMembership.clear();
+    _userTrips.clear();
+    _tripFolderNames.clear();
+    _nextUserTripId = 1000000;
   }
 
   void _publishTripsReviewPhase() {
@@ -449,6 +697,7 @@ class Wizard extends _$Wizard {
     _returnPhase = state.value;
     _tripResults.clear();
     _tripSelections.clear();
+    _resetTripEdits();
     state = const AsyncValue.data(WizardTripsRunning());
     final client = ref.read(kustaviClientProvider).requireValue;
     _subscribe(
@@ -480,8 +729,10 @@ class Wizard extends _$Wizard {
 
   pb.RunTripsPassRequest _tripsRequest() {
     return pb.RunTripsPassRequest()
-      ..maxGapHours = 48
-      ..maxDistanceKm = 300;
+      ..maxGapHours = _tripGapHours
+      ..maxDistanceKm = _tripDistanceKm
+      ..homeRadiusKm = _tripHomeRadiusKm
+      ..legRadiusKm = _tripLegRadiusKm;
   }
 
   void cancelJunkPrep() {
@@ -507,16 +758,20 @@ class Wizard extends _$Wizard {
         markedCount: _similarMarkedCount(),
       );
 
-  WizardTripsReview get _tripsReviewPhase => WizardTripsReview(
-        tripCount: _tripResults.length,
-        tripFolders: tripFolders,
-        markedCount: _tripsMarkedCount(),
-        trips: _tripResults,
-      );
+  WizardTripsReview get _tripsReviewPhase {
+    final trips = tripResults;
+    return WizardTripsReview(
+      tripCount: trips.length,
+      tripFolders: tripFolders,
+      markedCount: _tripsMarkedCount(trips),
+      trips: trips,
+      unassignedCount: unassignedTripImageIds.length,
+    );
+  }
 
-  int _tripsMarkedCount() {
+  int _tripsMarkedCount(List<TripInfo> trips) {
     int count = 0;
-    for (final trip in _tripResults) {
+    for (final trip in trips) {
       final selections = _tripSelections[trip.id];
       if (selections != null) {
         count += selections.length;
@@ -724,6 +979,7 @@ class Wizard extends _$Wizard {
     _returnPhase = state.value;
     _tripResults.clear();
     _tripSelections.clear();
+    _resetTripEdits();
     state = const AsyncValue.data(WizardTripsRunning());
     final client = ref.read(kustaviClientProvider).requireValue;
     _subscribe(
@@ -812,7 +1068,7 @@ class Wizard extends _$Wizard {
     _similarGroups.clear();
     _tripResults.clear();
     _tripSelections.clear();
-    _tripFolderNames.clear();
+    _resetTripEdits();
     if (!keepReturnPhase) {
       _returnPhase = null;
     }

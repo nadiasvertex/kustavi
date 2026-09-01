@@ -131,7 +131,10 @@ Plain immutable Dart types, built from proto events:
 - `SimilarGroupInfo`: id, member ids, recommended keep id, per-member
   scores.
 - `TripInfo`: id, start/end `DateTime`, member ids, centroid `(double,
-  double)?`.
+  double)?`, folder name, folder slug, place name, `List<TripLegInfo>`
+  legs, `isHome` flag.
+- `TripLegInfo`: place name, slug, member ids, centroid — one contiguous
+  stay within a trip.
 - `DeletionPlan`: split into `Set<String> explicitKept` and `Set<String> explicitDeleted` to preserve user intent across automated pass defaults.
 - `WizardPhase`: sealed class hierarchy (§6).
 
@@ -236,18 +239,31 @@ Marks update live inside `DeletionPlan` user collections as the user interacts.
 When G = 0: "No similar photos found" + [Continue].
 
 **S10 — Trips.**
-Entry: `RunTripsPass` with the current slider values (defaults: 48 h,
-300 km). Re-clustering runs on slider release; a brief "Clustering…"
-indicator is shown and previous results are replaced.
-UI, two panes:
-- Left: sliders — "Max time gap: <n> h" (1–168 h) and "Max distance:
-  <n> km" (10–1000 km) — and the trip list, one row per trip:
-  "<start date> – <end date> · <n> photos" (plus a location marker if GPS
-  is available). If `unassigned > 0`, a row "No timestamp · <n> photos".
-- Right: grid of the selected trip's members in chronological order, with
-  deletion badges; cell click → detail view with the deletion toggle
-  enabled. The trips step is organizational: per-image decisions are
-  made through the detail view, never in bulk.
+Entry: `RunTripsPass` with the current slider values (defaults: gap 48 h,
+drift 300 km, away-from-home 15 km, new-leg 25 km).
+- **Clustering settings** (collapsible): four sliders — "Max time gap"
+  (1–168 h), "Max trip drift" (10–1000 km), "Away-from-home distance"
+  (1–100 km), "New-leg distance" (1–200 km) — a "Re-cluster" button, and
+  an "Organize output into trip folders" switch (default on). Re-cluster
+  re-runs the pass and **discards manual trip edits** (a snackbar says
+  so), since edits are defined against the previous clustering.
+- **Folders** group trips by their display name ("Rome, Italy · April
+  2026", or "April 2026" without geo). Folder headers are inline-editable
+  (renames every trip in the folder). At-home photos appear in
+  "Home · <month>" folders.
+- **Trips** show the place label, date range, photo count, and — for a
+  multi-leg trip — one labelled sub-grid per leg. `isHome` trips carry a
+  home icon.
+- **Per-photo curation.** Each trip has a select toggle: in select mode,
+  tapping photos picks them and a "Move to trip ▸" menu reassigns the
+  selection to another trip, a **new trip**, or **removes** it from every
+  trip. Outside select mode, tapping a photo marks it for deletion (as
+  before). An **"Unassigned"** section at the bottom lists photos in no
+  trip (never clustered, or pulled out) with an "Add to trip ▸" menu.
+- Cell click → detail view with the deletion toggle enabled.
+- Reassignments are client-side overlays on the clustering result; they
+  feed `CommitRequest.folder_for_id` at commit when the organize switch
+  is on.
 [Back] (→ S9), [Continue] (→ S11).
 
 **S11 — Commit summary.**
@@ -472,6 +488,10 @@ frontend/test/
 - The vision model download starts in the background on app start so it
   is usually finished by the time the junk pass is reached.
 - Bulk decisions exist only as per-step actions ([Keep all]/[Mark
-  all]/[Delete all]); there is no free-form multi-select.
-- The trips step is organizational: it shows spatiotemporal groups and
-  allows per-image decisions via the detail view, but no bulk actions.
+  all]/[Delete all]); there is no free-form multi-select — except on the
+  trips step, where a per-trip select mode drives photo reassignment.
+- The trips step is organizational: it shows home-anchored trips, lets the
+  user re-cluster, rename folders, and move photos between trips, and (via
+  the detail view) make per-image delete decisions. The effective trip
+  layout drives the committed folder structure when "Organize output into
+  trip folders" is on.

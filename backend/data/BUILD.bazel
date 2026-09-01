@@ -1,0 +1,11 @@
+package(default_visibility = ["//visibility:public"])
+
+# Trimmed GeoNames populated-places table (see backend/tools/trim_geonames.py).
+# The trips pass reverse-geocodes trip centroids to "City, Country" folder
+# names. Bundled into the server runfiles and the packaged app.
+exports_files(["cities.tsv"])
+
+filegroup(
+    name = "cities",
+    srcs = ["cities.tsv"],
+)

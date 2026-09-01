@@ -1,12 +1,14 @@
 #include "kustavi_service.h"
 
 #include "algorithm/append_range.h"
+#include "geo/place_index.h"
 #include "pass/trips.h"
 #include "paths.h"
 #include "store/store.h"
 
 #include <spdlog/spdlog.h>
 
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -51,10 +53,37 @@ auto kustavi_service::RunTripsPass(grpc::ServerContext *context,
   }
 
   // proto3 zeroes unset ints, so treat non-positive values as "use default".
-  const int max_gap_hours =
-      request->max_gap_hours() > 0 ? request->max_gap_hours() : 48;
-  const int max_distance_km =
-      request->max_distance_km() > 0 ? request->max_distance_km() : 300;
+  trips_params params;
+  if (request->max_gap_hours() > 0) {
+    params.max_gap_hours = request->max_gap_hours();
+  }
+  if (request->max_distance_km() > 0) {
+    params.max_distance_km = request->max_distance_km();
+  }
+  if (request->home_radius_km() > 0) {
+    params.home_radius_km = request->home_radius_km();
+  }
+  if (request->leg_radius_km() > 0) {
+    params.leg_radius_km = request->leg_radius_km();
+  }
+
+  // Reverse-geocoding table for folder names; optional (falls back to
+  // month-year folders when the bundled table is missing).
+  std::optional<geo::place_index> places;
+  if (const auto geo_path = config::geo_data_path(); !geo_path.empty()) {
+    auto loaded = geo::place_index::load(geo_path);
+    if (loaded) {
+      places = std::move(*loaded);
+      spdlog::info("trips: loaded {} places from {}", places->size(),
+                   geo_path.string());
+    } else {
+      spdlog::warn("trips: place table unusable ({}); folders fall back to "
+                   "month-year",
+                   loaded.error());
+    }
+  } else {
+    spdlog::warn("trips: no place table found; folders fall back to month-year");
+  }
 
   event_queue<trips_event> queue;
   std::stop_source stop_source;
@@ -64,17 +93,12 @@ auto kustavi_service::RunTripsPass(grpc::ServerContext *context,
       queue, stop_source, producer_error,
       [&](const std::stop_token &st) -> void {
         (void)st;
-        const auto result = find_trips(members, max_gap_hours, max_distance_km);
+        const auto result =
+            find_trips(members, params, places ? &*places : nullptr);
         queue.push(trips_progress_evt{.done = result.trips.size(),
                                       .total = result.trips.size()});
         for (const auto &trip : result.trips) {
-          queue.push(
-              trips_result_evt{.id = trip.id,
-                               .start_unix_ms = trip.start_unix_ms,
-                               .end_unix_ms = trip.end_unix_ms,
-                               .image_ids = trip.image_ids,
-                               .centroid_latitude = trip.centroid_latitude,
-                               .centroid_longitude = trip.centroid_longitude});
+          queue.push(trips_result_evt{.value = trip});
         }
         queue.push(trips_complete_evt{.trips = result.trips.size(),
                                       .unassigned = result.unassigned});
@@ -91,16 +115,35 @@ auto kustavi_service::RunTripsPass(grpc::ServerContext *context,
                 p->set_done(static_cast<uint32_t>(e.done));
                 p->set_total(static_cast<uint32_t>(e.total));
               } else if constexpr (std::is_same_v<evt, trips_result_evt>) {
+                const trip &src = e.value;
                 auto *t = proto.mutable_trip();
-                t->set_id(e.id);
-                t->set_start_unix_ms(e.start_unix_ms);
-                t->set_end_unix_ms(e.end_unix_ms);
-                append_range(t->mutable_image_ids(), e.image_ids);
-                if (e.centroid_latitude.has_value() &&
-                    e.centroid_longitude.has_value()) {
+                t->set_id(src.id);
+                t->set_start_unix_ms(src.start_unix_ms);
+                t->set_end_unix_ms(src.end_unix_ms);
+                append_range(t->mutable_image_ids(), src.image_ids);
+                if (src.centroid_latitude.has_value() &&
+                    src.centroid_longitude.has_value()) {
                   auto *centroid = t->mutable_centroid();
-                  centroid->set_latitude(*e.centroid_latitude);
-                  centroid->set_longitude(*e.centroid_longitude);
+                  centroid->set_latitude(*src.centroid_latitude);
+                  centroid->set_longitude(*src.centroid_longitude);
+                }
+                if (src.folder.has_value()) {
+                  t->set_folder(*src.folder);
+                }
+                t->set_folder_slug(src.folder_slug);
+                t->set_place_name(src.place_name);
+                t->set_is_home(src.is_home);
+                for (const auto &leg : src.legs) {
+                  auto *pleg = t->add_legs();
+                  pleg->set_place_name(leg.place_name);
+                  pleg->set_slug(leg.slug);
+                  append_range(pleg->mutable_image_ids(), leg.image_ids);
+                  if (leg.centroid_latitude.has_value() &&
+                      leg.centroid_longitude.has_value()) {
+                    auto *lc = pleg->mutable_centroid();
+                    lc->set_latitude(*leg.centroid_latitude);
+                    lc->set_longitude(*leg.centroid_longitude);
+                  }
                 }
               } else {
                 auto *c = proto.mutable_complete();

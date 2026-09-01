@@ -1,13 +1,22 @@
 #pragma once
 
+#include <cstdint>
 #include <cstdlib>
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <system_error>
+#include <vector>
+
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
 
 #if !defined(_WIN32)
 #include <pwd.h>
 #include <unistd.h>
+#else
+#include <windows.h>
 #endif
 
 namespace kustavi::config {
@@ -36,6 +45,40 @@ inline auto home_dir() -> std::optional<std::string> {
   }
 #endif
   return std::nullopt;
+}
+
+/** Directory containing the running executable, when the platform can report
+ * it. Used to locate assets bundled next to the binary (packaged app) or in
+ * the Bazel runfiles tree (`bazel run`). */
+inline auto executable_dir() -> std::optional<std::filesystem::path> {
+#if defined(__APPLE__)
+  std::uint32_t size = 0;
+  _NSGetExecutablePath(nullptr, &size);
+  std::string buf(size, '\0');
+  if (_NSGetExecutablePath(buf.data(), &size) != 0) {
+    return std::nullopt;
+  }
+  std::error_code ec;
+  const auto canonical = std::filesystem::canonical(buf, ec);
+  const std::filesystem::path exe = ec ? std::filesystem::path(buf) : canonical;
+  return exe.parent_path();
+#elif defined(_WIN32)
+  std::wstring buf(MAX_PATH, L'\0');
+  const DWORD len = ::GetModuleFileNameW(nullptr, buf.data(),
+                                         static_cast<DWORD>(buf.size()));
+  if (len == 0) {
+    return std::nullopt;
+  }
+  buf.resize(len);
+  return std::filesystem::path(buf).parent_path();
+#else
+  std::error_code ec;
+  const auto exe = std::filesystem::read_symlink("/proc/self/exe", ec);
+  if (ec) {
+    return std::nullopt;
+  }
+  return exe.parent_path();
+#endif
 }
 
 } // namespace detail
@@ -74,6 +117,41 @@ inline auto app_data_path() -> std::filesystem::path {
 /** Directory holding the downloaded vision-model GGUF files. */
 inline auto models_path() -> std::filesystem::path {
   return app_data_path() / "models";
+}
+
+/**
+ * @brief Locates the bundled GeoNames place table used by the trips pass to
+ * reverse-geocode trip centroids into folder names ("Rome, Italy").
+ *
+ * Search order: `$KUSTAVI_GEO_DATA`, then next to the executable (packaged
+ * app), then the Bazel runfiles layout (`bazel run` / smoke client), then a
+ * workspace-relative path (developer shell), then the app-data directory.
+ * Returns an empty path when no table is found; the trips pass then falls
+ * back to month-year folder names.
+ */
+inline auto geo_data_path() -> std::filesystem::path {
+  namespace fs = std::filesystem;
+  if (const auto override_path = detail::env("KUSTAVI_GEO_DATA")) {
+    return {*override_path};
+  }
+
+  std::vector<fs::path> candidates;
+  if (const auto exe = detail::executable_dir()) {
+    candidates.push_back(*exe / "cities.tsv");
+    candidates.push_back(*exe / "data" / "cities.tsv");
+    candidates.push_back(*exe / "backend" / "data" / "cities.tsv");
+  }
+  candidates.push_back(fs::path("backend") / "data" / "cities.tsv");
+  candidates.push_back(fs::path("data") / "cities.tsv");
+  candidates.push_back(app_data_path() / "geo" / "cities.tsv");
+
+  for (const auto &candidate : candidates) {
+    std::error_code ec;
+    if (fs::exists(candidate, ec) && !ec) {
+      return candidate;
+    }
+  }
+  return {};
 }
 
 /**

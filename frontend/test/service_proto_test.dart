@@ -165,10 +165,52 @@ void main() {
     test('RunTripsPassRequest carries thresholds', () {
       final request = RunTripsPassRequest()
         ..maxGapHours = 24
-        ..maxDistanceKm = 100;
+        ..maxDistanceKm = 100
+        ..homeRadiusKm = 12
+        ..legRadiusKm = 30;
       final decoded = RunTripsPassRequest.fromBuffer(request.writeToBuffer());
       expect(decoded.maxGapHours, 24);
       expect(decoded.maxDistanceKm, 100);
+      expect(decoded.homeRadiusKm, 12);
+      expect(decoded.legRadiusKm, 30);
+    });
+
+    test('Trip carries place name, slug, legs and the home flag', () {
+      final trip = Trip()
+        ..id = 3
+        ..startUnixMs = Int64(1000)
+        ..endUnixMs = Int64(5000)
+        ..imageIds.addAll(['a.jpg', 'b.jpg'])
+        ..folder = 'Italy · April 2026 (Rome, Florence)'
+        ..folderSlug = 'italy-2026-04'
+        ..placeName = 'Italy'
+        ..isHome = false
+        ..legs.addAll([
+          TripLeg()
+            ..placeName = 'Rome, Italy'
+            ..slug = 'rome'
+            ..imageIds.add('a.jpg'),
+          TripLeg()
+            ..placeName = 'Florence, Italy'
+            ..slug = 'florence'
+            ..imageIds.add('b.jpg'),
+        ]);
+      final decoded = Trip.fromBuffer(trip.writeToBuffer());
+      expect(decoded.folderSlug, 'italy-2026-04');
+      expect(decoded.placeName, 'Italy');
+      expect(decoded.isHome, isFalse);
+      expect(decoded.legs.map((l) => l.slug), ['rome', 'florence']);
+      expect(decoded.legs.first.imageIds, ['a.jpg']);
+    });
+
+    test('CommitRequest carries the per-image folder map', () {
+      final request = CommitRequest()
+        ..destination = '/out'
+        ..keepIds.addAll(['a.jpg', 'b.jpg'])
+        ..folderForId.addAll({'a.jpg': 'rome-2026-04', 'b.jpg': 'oslo-2026-05'});
+      final decoded = CommitRequest.fromBuffer(request.writeToBuffer());
+      expect(decoded.folderForId['a.jpg'], 'rome-2026-04');
+      expect(decoded.folderForId['b.jpg'], 'oslo-2026-05');
     });
   });
 }

@@ -37,14 +37,19 @@ auto commit_files(
       progress_callback(i + 1, sources.size(), source.path);
     }
 
-    std::error_code rel_ec;
-    const auto relative = fs::relative(source.path, session_folder, rel_ec);
-    if (rel_ec) {
-      summary.errors.push_back(source.id + ": " + rel_ec.message());
-      continue;
+    fs::path dest_path;
+    if (source.dest_subdir.empty()) {
+      std::error_code rel_ec;
+      const auto relative = fs::relative(source.path, session_folder, rel_ec);
+      if (rel_ec) {
+        summary.errors.push_back(source.id + ": " + rel_ec.message());
+        continue;
+      }
+      dest_path = destination / relative;
+    } else {
+      dest_path = destination / source.dest_subdir / source.path.filename();
     }
 
-    const auto dest_path = destination / relative;
     std::error_code dir_ec;
     fs::create_directories(dest_path.parent_path(), dir_ec);
     if (dir_ec) {
@@ -61,9 +66,25 @@ auto commit_files(
         summary.copied++;
         continue;
       }
-      summary.skipped++;
-      summary.errors.push_back(source.id + ": name conflict");
-      continue;
+      if (source.dest_subdir.empty()) {
+        summary.skipped++;
+        summary.errors.push_back(source.id + ": name conflict");
+        continue;
+      }
+      // Trip-folder layout can legitimately collide two different files with
+      // the same name (IMG_0001.jpg from two cameras): disambiguate.
+      const auto prefix = dest_path.stem().string() + "-";
+      const auto ext = dest_path.extension().string();
+      const auto dir = dest_path.parent_path();
+      fs::path candidate;
+      for (int n = 2;; ++n) {
+        candidate = dir / (prefix + std::to_string(n) + ext);
+        std::error_code exists_ec;
+        if (!fs::exists(candidate, exists_ec) || exists_ec) {
+          break;
+        }
+      }
+      dest_path = candidate;
     }
 
     std::error_code copy_ec;

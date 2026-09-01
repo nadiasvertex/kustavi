@@ -224,6 +224,7 @@ final class WizardTripsReview extends WizardPhase {
     required this.markedCount,
     required this.trips,
     required this.tripFolders,
+    this.unassignedCount = 0,
   });
 
   final int tripCount;
@@ -232,6 +233,9 @@ final class WizardTripsReview extends WizardPhase {
 
   /// Trips grouped into named folders (spec/frontend.md §6.2, §15).
   final List<TripFolderInfo> tripFolders;
+
+  /// Photos in no trip (never clustered, or pulled out by the user).
+  final int unassignedCount;
 
   @override
   int get stepIndex => WizardStep.trips.index;

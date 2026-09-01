@@ -8,10 +8,15 @@
 
 namespace kustavi {
 
-/** A file to copy: an image id plus its absolute source path. */
+/** A file to copy: an image id plus its absolute source path.
+ *
+ * When `dest_subdir` is set, the file lands at
+ * `<destination>/<dest_subdir>/<filename>` (trip/leg folder layout);
+ * otherwise its path relative to the session folder is preserved. */
 struct commit_source {
   std::string id;
   std::filesystem::path path;
+  std::filesystem::path dest_subdir; //! Relative; empty = preserve source tree.
 };
 
 /** Outcome of a commit run. */
@@ -21,13 +26,16 @@ struct commit_summary {
   std::vector<std::string> errors; //! "<id>: <reason>" per failure.
 };
 
-/** Copies `sources` into `destination`, preserving each file's path relative
- * to `session_folder` (subdirectories included).
+/** Copies `sources` into `destination`. Each file's path relative to
+ * `session_folder` is preserved, unless its `dest_subdir` is set (trip/leg
+ * folder layout).
  *
  * Collision policy: an existing destination file with the same size is
- * counted as copied (idempotent re-commits); a different size is skipped and
- * reported. Copy failures are reported per file and do not abort the run.
- * The session folder is never modified.
+ * counted as copied (idempotent re-commits). A different size in the
+ * source-tree layout is skipped and reported; in the `dest_subdir` layout it
+ * is instead written under a `-<n>` suffix, since distinct files sharing a
+ * name in one folder is expected there. Copy failures are reported per file
+ * and do not abort the run. The session folder is never modified.
  */
 auto commit_files(
     const std::filesystem::path &session_folder,

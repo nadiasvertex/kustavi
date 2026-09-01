@@ -6,6 +6,7 @@ cc_binary(
         "src/**/*.cpp",
         "include/**/*.h",
     ]),
+    data = ["//backend/data:cities"],
     includes = ["include"],
     deps = [
         "//proto:service_cc_grpc",
@@ -30,6 +31,23 @@ cc_binary(
     name = "llama_smoke",
     srcs = ["test/llama_smoke.cpp"],
     deps = ["@llama_cpp"],
+    visibility = ["//visibility:public"],
+)
+
+# Assertions for the trips clustering + reverse-geocoding. Run via
+# `just test-backend` (it also sets KUSTAVI_GEO_DATA so the geo checks run).
+cc_binary(
+    name = "trips_test",
+    srcs = [
+        "src/geo/place_index.cpp",
+        "src/pass/trips.cpp",
+        "test/trips_test.cpp",
+    ] + glob([
+        "include/geo/*.h",
+        "include/pass/trips.h",
+    ]),
+    data = ["//backend/data:cities"],
+    includes = ["include"],
     visibility = ["//visibility:public"],
 )
 
