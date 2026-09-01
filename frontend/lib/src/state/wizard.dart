@@ -678,7 +678,6 @@ class Wizard extends _$Wizard {
     if (state.value is! WizardQualityReview) {
       return;
     }
-    _junkFlags.clear();
     _returnPhase = state.value;
     _similarGroups.clear();
     state = const AsyncValue.data(WizardSimilarRunning());
@@ -690,6 +689,21 @@ class Wizard extends _$Wizard {
     );
   }
 
+  /// Duplicates review -> junk pass (or its model-download prep screen).
+  void continueFromSimilar() {
+    if (state.value is! WizardSimilarReview) {
+      return;
+    }
+    _returnPhase = state.value;
+    _junkFlags.clear();
+    if (_modelReady) {
+      _startJunkPass();
+    } else {
+      state = const AsyncValue.data(WizardJunkPrep());
+    }
+  }
+
+  /// Junk review -> trips pass.
   void continueFromJunk() {
     if (state.value is! WizardJunkReview) {
       return;
@@ -707,16 +721,13 @@ class Wizard extends _$Wizard {
     );
   }
 
+  /// Trips review -> commit summary (the last review step).
   void continueFromTrips() {
     if (state.value is! WizardTripsReview) {
       return;
     }
     _returnPhase = _tripsReviewPhase;
-    if (_modelReady) {
-      _startJunkPass();
-    } else {
-      state = const AsyncValue.data(WizardJunkPrep());
-    }
+    state = AsyncValue.data(_commitSummaryPhase);
   }
 
   void cancelTrips() {
@@ -724,7 +735,7 @@ class Wizard extends _$Wizard {
       return;
     }
     _cancelPass();
-    state = AsyncValue.data(_returnPhase ?? _similarReviewPhase);
+    state = AsyncValue.data(_returnPhase ?? _junkReviewPhase);
   }
 
   pb.RunTripsPassRequest _tripsRequest() {
@@ -740,7 +751,7 @@ class Wizard extends _$Wizard {
       return;
     }
     ref.read(modelStatusProvider.notifier).cancelDownload();
-    state = AsyncValue.data(_returnPhase ?? _qualityReviewPhase);
+    state = AsyncValue.data(_returnPhase ?? _similarReviewPhase);
   }
 
   void _startJunkPass() {
@@ -750,7 +761,37 @@ class Wizard extends _$Wizard {
     _junkLastDone = 0;
     state = const AsyncValue.data(WizardJunkRunning());
     final client = ref.read(kustaviClientProvider).requireValue;
-    _subscribe(client.runJunkPass(), _onJunkEvent, _onJunkDone);
+    _subscribe(
+      client.runJunkPass(skipImageIds: _deletedBeforeJunk()),
+      _onJunkEvent,
+      _onJunkDone,
+    );
+  }
+
+  /// Ids already marked for deletion by the quality or duplicates step, so
+  /// the junk pass can skip inference on them.
+  List<String> _deletedBeforeJunk() {
+    final plan = ref.read(deletionPlanProvider);
+    final keepers = similarKeeperMap(plan, _similarGroups);
+    final qualityFlagged = _qualityFlags.keys.toSet();
+    bool marked(String id) =>
+        isMarkedForDeletion(
+          plan,
+          id,
+          step: DeletionStep.quality,
+          qualityFlagged: qualityFlagged,
+          junkFlagged: const <String>{},
+          similarKeepers: keepers,
+        ) ||
+        isMarkedForDeletion(
+          plan,
+          id,
+          step: DeletionStep.similar,
+          qualityFlagged: qualityFlagged,
+          junkFlagged: const <String>{},
+          similarKeepers: keepers,
+        );
+    return _images.keys.where(marked).toList(growable: false);
   }
 
   WizardSimilarReview get _similarReviewPhase => WizardSimilarReview(
@@ -767,6 +808,33 @@ class Wizard extends _$Wizard {
       trips: trips,
       unassignedCount: unassignedTripImageIds.length,
     );
+  }
+
+  WizardCommitSummary get _commitSummaryPhase {
+    final plan = ref.read(deletionPlanProvider);
+    final keepers = similarKeeperMap(plan, _similarGroups);
+    final qualityFlagged = _qualityFlags.keys.toSet();
+    final junkFlagged = _junkFlags.keys.toSet();
+    bool deleted(String id) => DeletionStep.values.any(
+          (step) => isMarkedForDeletion(
+            plan,
+            id,
+            step: step,
+            qualityFlagged: qualityFlagged,
+            junkFlagged: junkFlagged,
+            similarKeepers: keepers,
+          ),
+        );
+    var keepCount = 0;
+    var keepBytes = 0;
+    for (final entry in _images.entries) {
+      if (deleted(entry.key)) {
+        continue;
+      }
+      keepCount++;
+      keepBytes += entry.value.sizeBytes;
+    }
+    return WizardCommitSummary(keepCount: keepCount, keepBytes: keepBytes);
   }
 
   int _tripsMarkedCount(List<TripInfo> trips) {
@@ -886,7 +954,7 @@ class Wizard extends _$Wizard {
       return;
     }
     _cancelPass();
-    state = AsyncValue.data(_returnPhase ?? _qualityReviewPhase);
+    state = AsyncValue.data(_returnPhase ?? _similarReviewPhase);
   }
 
   // --- S7 ----------------------------------------------------------------
@@ -895,7 +963,7 @@ class Wizard extends _$Wizard {
     if (state.value is! WizardJunkReview) {
       return;
     }
-    state = AsyncValue.data(_returnPhase ?? _qualityReviewPhase);
+    state = AsyncValue.data(_returnPhase ?? _similarReviewPhase);
   }
 
   void keepAllJunkFlagged() {
@@ -972,28 +1040,11 @@ class Wizard extends _$Wizard {
     state = AsyncValue.data(_returnPhase ?? _qualityReviewPhase);
   }
 
-  void continueFromSimilar() {
-    if (state.value is! WizardSimilarReview) {
-      return;
-    }
-    _returnPhase = state.value;
-    _tripResults.clear();
-    _tripSelections.clear();
-    _resetTripEdits();
-    state = const AsyncValue.data(WizardTripsRunning());
-    final client = ref.read(kustaviClientProvider).requireValue;
-    _subscribe(
-      client.runTripsPass(_tripsRequest()),
-      _onTripsEvent,
-      _onTripsDone,
-    );
-  }
-
   void backFromTrips() {
     if (state.value is! WizardTripsReview) {
       return;
     }
-    state = AsyncValue.data(_returnPhase ?? _similarReviewPhase);
+    state = AsyncValue.data(_returnPhase ?? _junkReviewPhase);
   }
 
   // --- step error (§10.2) -------------------------------------------------

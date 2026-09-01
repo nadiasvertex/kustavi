@@ -148,7 +148,12 @@ message ModelDownloadProgress {
   double speed_bps = 3;
 }
 
-message RunJunkPassRequest {}
+message RunJunkPassRequest {
+  // Image ids the user already marked for deletion in an earlier step
+  // (quality or duplicates). The junk pass counts them toward progress
+  // but never classifies them.
+  repeated string skip_image_ids = 1;
+}
 
 message JunkEvent {
   oneof event {

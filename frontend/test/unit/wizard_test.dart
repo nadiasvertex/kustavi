@@ -327,7 +327,7 @@ void main() {
       expect(phase.groupCount, 1);
     });
 
-    test('continue from similar → trips → junk pass → junk review', () async {
+    test('continue from similar → junk pass → junk review', () async {
       final client = FakeKustaviClient(
         scanEvents: [
           scanImage('a.jpg'),
@@ -360,18 +360,49 @@ void main() {
       container.read(wizardProvider.notifier).continueFromSimilar();
       await pumpUntil(
         container,
-        () => container.read(wizardProvider).value is WizardTripsReview,
-      );
-
-      container.read(wizardProvider.notifier).continueFromTrips();
-      await pumpUntil(
-        container,
         () => container.read(wizardProvider).value is WizardJunkReview,
       );
       expect(
         container.read(wizardProvider.notifier).junkFlags.keys,
         contains('b.jpg'),
       );
+    });
+
+    test('junk pass skips images already marked for deletion', () async {
+      final client = FakeKustaviClient(
+        scanEvents: [
+          scanImage('a.jpg'),
+          scanImage('b.jpg'),
+          scanComplete(images: 2),
+        ],
+        modelEvents: [modelReady()],
+        qualityEvents: [qualityFlag('a.jpg')],
+        similarEvents: const [],
+      );
+      container = makeContainer(client);
+      await reachConfirmFolder(container, client);
+      container.read(wizardProvider.notifier).continueFromConfirm();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardQualityReview,
+      );
+      // The quality-flagged image stays marked for deletion by default.
+      container.read(wizardProvider.notifier).continueFromQuality();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardSimilarReview,
+      );
+      await pumpUntil(
+        container,
+        () => container.read(modelStatusProvider).value is ModelPrepReady,
+      );
+      container.read(wizardProvider.notifier).continueFromSimilar();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardJunkReview,
+      );
+      expect(client.lastJunkSkipIds, contains('a.jpg'));
+      expect(client.lastJunkSkipIds, isNot(contains('b.jpg')));
     });
 
     test('continue from junk → trips → commit summary', () async {
@@ -407,12 +438,6 @@ void main() {
       container.read(wizardProvider.notifier).continueFromSimilar();
       await pumpUntil(
         container,
-        () => container.read(wizardProvider).value is WizardTripsReview,
-      );
-
-      container.read(wizardProvider.notifier).continueFromTrips();
-      await pumpUntil(
-        container,
         () => container.read(wizardProvider).value is WizardJunkReview,
       );
       expect(
@@ -424,6 +449,12 @@ void main() {
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardTripsReview,
+      );
+
+      container.read(wizardProvider.notifier).continueFromTrips();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardCommitSummary,
       );
     });
 
@@ -460,6 +491,9 @@ void main() {
       await pumpUntil(container,
           () => container.read(modelStatusProvider).value is ModelPrepReady);
       container.read(wizardProvider.notifier).continueFromSimilar();
+      await pumpUntil(container,
+          () => container.read(wizardProvider).value is WizardJunkReview);
+      container.read(wizardProvider.notifier).continueFromJunk();
       await pumpUntil(container,
           () => container.read(wizardProvider).value is WizardTripsReview);
 

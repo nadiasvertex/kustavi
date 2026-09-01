@@ -80,6 +80,7 @@ class FakeKustaviClient implements KustaviClient {
   RunQualityPassRequest? lastQualityRequest;
   CommitRequest? lastCommitRequest;
   RunTripsPassRequest? lastTripsRequest;
+  List<String> lastJunkSkipIds = const [];
   int shutdownCount = 0;
   int qualityPassCount = 0;
 
@@ -166,7 +167,10 @@ class FakeKustaviClient implements KustaviClient {
   }
 
   @override
-  Stream<JunkEvent> runJunkPass() => _script(junkEvents, junkError);
+  Stream<JunkEvent> runJunkPass({Iterable<String> skipImageIds = const []}) {
+    lastJunkSkipIds = skipImageIds.toList(growable: false);
+    return _script(junkEvents, junkError);
+  }
 
   @override
   Stream<SimilarEvent> runSimilarPass() =>

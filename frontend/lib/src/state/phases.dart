@@ -5,8 +5,8 @@ enum WizardStep {
   select('Select'),
   quality('Quality'),
   duplicates('Duplicates'),
-  trips('Trips'),
   junk('Junk'),
+  trips('Trips'),
   copy('Copy');
 
   const WizardStep(this.label);

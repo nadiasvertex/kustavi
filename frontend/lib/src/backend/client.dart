@@ -27,7 +27,7 @@ abstract interface class KustaviClient {
     required double overexposedThreshold,
   });
   Stream<ModelEvent> ensureModel();
-  Stream<JunkEvent> runJunkPass();
+  Stream<JunkEvent> runJunkPass({Iterable<String> skipImageIds});
   Stream<SimilarEvent> runSimilarPass();
   Stream<TripsEvent> runTripsPass(RunTripsPassRequest request);
   Stream<CommitEvent> commit(CommitRequest request);
@@ -101,8 +101,13 @@ class GrpcKustaviClient implements KustaviClient {
   }
 
   @override
-  Stream<JunkEvent> runJunkPass() {
-    return _pass(_client.runJunkPass(RunJunkPassRequest(), options: _options));
+  Stream<JunkEvent> runJunkPass({Iterable<String> skipImageIds = const []}) {
+    return _pass(
+      _client.runJunkPass(
+        RunJunkPassRequest(skipImageIds: skipImageIds),
+        options: _options,
+      ),
+    );
   }
 
   @override

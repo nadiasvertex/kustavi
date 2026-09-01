@@ -7,8 +7,9 @@ wizard over a folder of images:
 
 1. Select folder (with visual confirmation grid and automatic session recovery)
 2. Quality pass — blurry / poorly exposed images
-3. Junk pass — screenshots and non-photographs (local vision LLM: Moondream-3.1)
-4. Duplicates pass — similar-image groups, keep-one selection
+3. Duplicates pass — similar-image groups, keep-one selection
+4. Junk pass — screenshots and non-photographs (local vision LLM), skipping
+   images already marked for deletion above
 5. Trips pass — spatiotemporal grouping with user thresholds
 6. Commit — copy the kept images to a user-chosen destination
 
@@ -149,7 +150,7 @@ single source of truth for image metadata in the GUI.
 
 ### 6.1 Step indicator
 
-A top bar shows the six steps — Select, Quality, Junk, Duplicates, Trips,
+A top bar shows the six steps — Select, Quality, Duplicates, Junk, Trips,
 Copy — with the current step highlighted and completed steps checked.
 The indicator is display-only; navigation is via the bottom action bar
 ([Back] / [Cancel] / [Continue]-style buttons per step).

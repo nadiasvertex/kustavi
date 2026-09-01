@@ -168,7 +168,6 @@ auto kustavi_service::RunJunkPass(grpc::ServerContext *context,
                                   const RunJunkPassRequest *request,
                                   grpc::ServerWriter<JunkEvent> *writer)
     -> grpc::Status {
-  (void)request;
   if (!check_auth(context)) {
     return unauthenticated();
   }
@@ -201,6 +200,12 @@ auto kustavi_service::RunJunkPass(grpc::ServerContext *context,
   } catch (const std::exception &e) {
     return {grpc::StatusCode::INTERNAL,
             std::string("failed to read session: ") + e.what()};
+  }
+
+  // Images the user already marked for deletion during the quality or
+  // duplicates step: skip inference, but still count them toward progress.
+  for (const auto &id : request->skip_image_ids()) {
+    already_done.insert(id);
   }
 
   event_queue<junk_event> queue;

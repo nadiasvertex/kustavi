@@ -209,7 +209,9 @@ message ModelDownloadProgress {
   double speed_bps = 3;
 }
 
-message RunJunkPassRequest {}
+message RunJunkPassRequest {
+  repeated string skip_image_ids = 1; // already marked for deletion upstream
+}
 
 message JunkEvent {
   oneof event {
@@ -413,6 +415,10 @@ Preconditions: active session; model present (else `FAILED_PRECONDITION`
 - Runs the local vision LLM over every image and asks whether it is a
   real-world photograph. The prompt and model are the back end's
   concern; the GUI only consumes the results.
+- Skips any image whose id is in `skip_image_ids` (already marked for
+  deletion during the quality or duplicates step) and any image that
+  already carries a `junk_flags` row; both still count toward progress.
+  Runs after the quality and duplicates passes.
 - Emits `JunkFlag` for images classified as non-photographs, with a
   short `reason` (e.g. "screenshot", "scan", "meme", "non-photograph")
   and `confidence`, then `JunkComplete`.
