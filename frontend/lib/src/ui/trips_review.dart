@@ -540,46 +540,12 @@ class _TripWidgetState extends ConsumerState<_TripWidget> {
         if (image == null) return const SizedBox.shrink();
 
         if (_selecting) {
-          final picked = _selected.contains(imageId);
-          return Stack(
-            fit: StackFit.expand,
-            children: [
-              ImageCell(image: image, marked: false),
-              Positioned.fill(
-                child: GestureDetector(
-                  onTap: () => setState(() {
-                    if (!_selected.remove(imageId)) _selected.add(imageId);
-                  }),
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                        color: picked
-                            ? Theme.of(context).colorScheme.primary
-                            : Colors.transparent,
-                        width: 3,
-                      ),
-                      color: picked
-                          ? Theme.of(context).colorScheme.primary
-                                .withValues(alpha: 0.18)
-                          : Colors.transparent,
-                    ),
-                    child: picked
-                        ? Align(
-                            alignment: Alignment.topLeft,
-                            child: Padding(
-                              padding: const EdgeInsets.all(6),
-                              child: Icon(
-                                Icons.check_circle,
-                                color: Theme.of(context).colorScheme.primary,
-                              ),
-                            ),
-                          )
-                        : const SizedBox.shrink(),
-                  ),
-                ),
-              ),
-            ],
+          return _SelectableCell(
+            image: image,
+            picked: _selected.contains(imageId),
+            onTap: () => setState(() {
+              if (!_selected.remove(imageId)) _selected.add(imageId);
+            }),
           );
         }
 
@@ -605,11 +571,18 @@ class _UnassignedSection extends ConsumerStatefulWidget {
 }
 
 class _UnassignedSectionState extends ConsumerState<_UnassignedSection> {
+  bool _selecting = false;
   final Set<String> _selected = <String>{};
+
+  void _exitSelecting() {
+    setState(() {
+      _selecting = false;
+      _selected.clear();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
       child: ExpansionTile(
@@ -617,7 +590,22 @@ class _UnassignedSectionState extends ConsumerState<_UnassignedSection> {
         subtitle: const Text('Not in any trip (no GPS/timestamp, or removed)'),
         childrenPadding: const EdgeInsets.only(bottom: 8),
         children: [
-          if (_selected.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 8, 0),
+            child: Row(
+              children: [
+                const Spacer(),
+                TextButton.icon(
+                  onPressed: () => _selecting
+                      ? _exitSelecting()
+                      : setState(() => _selecting = true),
+                  icon: Icon(_selecting ? Icons.close : Icons.checklist),
+                  label: Text(_selecting ? 'Cancel' : 'Select photos'),
+                ),
+              ],
+            ),
+          ),
+          if (_selecting && _selected.isNotEmpty)
             _MoveBar(
               count: _selected.length,
               addVerb: 'Add',
@@ -631,11 +619,11 @@ class _UnassignedSectionState extends ConsumerState<_UnassignedSection> {
               ],
               onMove: (tripId) {
                 widget.wizard.moveImagesToTrip(Set.of(_selected), tripId);
-                setState(_selected.clear);
+                _exitSelecting();
               },
               onNewTrip: () {
                 widget.wizard.createTripFromImages(Set.of(_selected));
-                setState(_selected.clear);
+                _exitSelecting();
               },
             ),
           ImageGrid(
@@ -644,28 +632,70 @@ class _UnassignedSectionState extends ConsumerState<_UnassignedSection> {
               final id = widget.imageIds[index];
               final image = widget.wizard.images[id];
               if (image == null) return const SizedBox.shrink();
-              final picked = _selected.contains(id);
-              return GestureDetector(
+              if (!_selecting) return ImageCell(image: image, marked: false);
+              return _SelectableCell(
+                image: image,
+                picked: _selected.contains(id),
                 onTap: () => setState(() {
                   if (!_selected.remove(id)) _selected.add(id);
                 }),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: picked
-                          ? theme.colorScheme.primary
-                          : Colors.transparent,
-                      width: 3,
-                    ),
-                  ),
-                  child: ImageCell(image: image, marked: false),
-                ),
               );
             },
           ),
         ],
       ),
+    );
+  }
+}
+
+/// An [ImageCell] with a selection affordance drawn on top: a primary border,
+/// a translucent tint, and a check badge while [picked]. The overlay sits above
+/// the (opaque) cell so the selected state is always visible.
+class _SelectableCell extends StatelessWidget {
+  const _SelectableCell({
+    required this.image,
+    required this.picked,
+    required this.onTap,
+  });
+
+  final ImageInfo image;
+  final bool picked;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        ImageCell(image: image, marked: false),
+        Positioned.fill(
+          child: GestureDetector(
+            onTap: onTap,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: picked ? scheme.primary : Colors.transparent,
+                  width: 3,
+                ),
+                color: picked
+                    ? scheme.primary.withValues(alpha: 0.18)
+                    : Colors.transparent,
+              ),
+              child: picked
+                  ? Align(
+                      alignment: Alignment.topLeft,
+                      child: Padding(
+                        padding: const EdgeInsets.all(6),
+                        child: Icon(Icons.check_circle, color: scheme.primary),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }
