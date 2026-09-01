@@ -1,5 +1,14 @@
 common --enable_bzlmod
 
+# Auto-apply the build:linux / build:macos / build:windows configs below based
+# on the host OS. Lets us keep the Clang/GCC warning flags off MSVC.
+common --enable_platform_specific_config
+
+# Bazel 9 removed `cc_import` (and friends) from the BUILD-file global namespace.
+# rules_foreign_cc 0.15.1 still emits a bare `cc_import()` in its generated
+# Windows gettext_runtime BUILD file, so re-enable autoloading it from rules_cc.
+common --incompatible_autoload_externally=+cc_import
+
 # rules_flutter pulls rules_jvm_external, which needs a newer toolchain JDK
 common --tool_java_language_version=25
 common --tool_java_runtime_version=remotejdk_25
@@ -14,19 +23,35 @@ build --features=-parse_headers
 # SecureTransport but this keeps every platform on one code path.
 build --@curl//:ssl_lib=boringssl
 
+# --- Clang/GCC toolchains (Linux, macOS) -------------------------------------
+# These flag spellings are rejected by MSVC cl.exe, so they are scoped to the
+# platforms that actually use Clang/GCC. See the build:windows block below.
+
 # Ignore several warnings from packages we depend on
-build --per_file_copt=external/.*@-Wno-nullability-extension,-Wno-gcc-compat,-Wno-deprecated-declarations,-Wno-unused-function
+build:linux --per_file_copt=external/.*@-Wno-nullability-extension,-Wno-gcc-compat,-Wno-deprecated-declarations,-Wno-unused-function
+build:macos --per_file_copt=external/.*@-Wno-nullability-extension,-Wno-gcc-compat,-Wno-deprecated-declarations,-Wno-unused-function
 
 # Allow OpenCV to compile
-build --per_file_copt=external/.*@-Wno-error=ambiguous-reversed-operator
-build --per_file_copt=external/.*@-Wno-error=enum-compare
+build:linux --per_file_copt=external/.*@-Wno-error=ambiguous-reversed-operator
+build:linux --per_file_copt=external/.*@-Wno-error=enum-compare
+build:macos --per_file_copt=external/.*@-Wno-error=ambiguous-reversed-operator
+build:macos --per_file_copt=external/.*@-Wno-error=enum-compare
 
 # Apply the CoreGraphics bitwise flag ONLY to external files
-build --per_file_copt=external/.*@-Wno-error=enum-enum-conversion
+build:linux --per_file_copt=external/.*@-Wno-error=enum-enum-conversion
+build:macos --per_file_copt=external/.*@-Wno-error=enum-enum-conversion
 
 # Use C++26 standard
-build --cxxopt=-std=c++26
-build --host_cxxopt=-std=c++26
+build:linux --cxxopt=-std=c++26
+build:linux --host_cxxopt=-std=c++26
+build:macos --cxxopt=-std=c++26
+build:macos --host_cxxopt=-std=c++26
+
+# --- MSVC toolchain (Windows) ----------------------------------------------
+# cl.exe needs its own spellings; it does not require the -Wno-* suppressions
+# that Clang/GCC do for the external packages.
+build:windows --cxxopt=/std:c++latest
+build:windows --host_cxxopt=/std:c++latest
 
 # Optimize for local development (faster builds)
 build:debug --compilation_mode=dbg
