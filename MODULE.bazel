@@ -29,6 +29,11 @@ bazel_dep(name = "cli11", version = "2.6.2")
 bazel_dep(name = "spdlog", version = "1.17.0")
 bazel_dep(name = "sqlite3", version = "3.53.3")
 
+# HTTPS client for the vision-model download in EnsureModel. TLS backend is
+# pinned to boringssl (already pulled by gRPC) via .bazelrc so Linux gets HTTPS
+# without an OpenSSL dependency.
+bazel_dep(name = "curl", version = "8.21.0.bcr.1")
+
 bazel_dep(name = "opencv", version = "5.0.0.bcr.3")
 single_version_override(
     module_name = "opencv",

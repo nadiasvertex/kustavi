@@ -41,7 +41,9 @@ _COMMON_CACHE = {
     # foreign build; llama.cpp targets C++17 and miscompiles under C++26 on this
     # toolchain. Appended last, so it is the winning -std for llama's own TUs.
     # C sources (ggml) are unaffected — this only touches CMAKE_CXX_FLAGS.
-    "CMAKE_CXX_FLAGS": "-std=c++17",
+    # -UDEBUG: apple_support's fastbuild crosstool defines DEBUG, which collides
+    # with `constexpr bool DEBUG` in tools/mtmd/mtmd-audio.cpp.
+    "CMAKE_CXX_FLAGS": "-std=c++17 -UDEBUG",
     "LLAMA_BUILD_IS_DEV": "OFF",
     "LLAMA_BUILD_COMMON": "OFF",
     "LLAMA_BUILD_TESTS": "OFF",
@@ -51,6 +53,12 @@ _COMMON_CACHE = {
     "LLAMA_BUILD_APP": "OFF",
     "LLAMA_CURL": "OFF",
     "LLAMA_OPENSSL": "OFF",
+    # libmtmd (multimodal) for the vision junk pass. Builds standalone from
+    # tools/mtmd — links only ggml + llama, not llama-common — so TOOLS/COMMON
+    # stay off. MTMD_VIDEO off: we never feed video and it otherwise probes for
+    # an ffmpeg binary.
+    "LLAMA_BUILD_MTMD": "ON",
+    "MTMD_VIDEO": "OFF",
     "GGML_CCACHE": "OFF",
     "GGML_OPENMP": "OFF",
     "GGML_BUILD_TESTS": "OFF",
@@ -98,6 +106,7 @@ _CACHE_ENTRIES = select({
 # Shared libraries produced by the install step, per platform. ggml builds one
 # shared object per compute backend and links them into libggml.
 _MACOS_LIBS = [
+    "libmtmd.dylib",
     "libllama.dylib",
     "libggml.dylib",
     "libggml-base.dylib",
@@ -107,6 +116,7 @@ _MACOS_LIBS = [
 ]
 
 _LINUX_LIBS = [
+    "libmtmd.so",
     "libllama.so",
     "libggml.so",
     "libggml-base.so",

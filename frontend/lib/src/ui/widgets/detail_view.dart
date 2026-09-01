@@ -25,6 +25,7 @@ Future<T?> showImageDetail<T extends Object?>(
   double? sharpness,
   double? exposureScore,
   String? junkReason,
+  double? junkConfidence,
 }) {
     return showDialog<T>(
       context: context,
@@ -40,6 +41,7 @@ Future<T?> showImageDetail<T extends Object?>(
           sharpness: sharpness,
           exposureScore: exposureScore,
           junkReason: junkReason,
+          junkConfidence: junkConfidence,
         ),
       ),
     );
@@ -60,6 +62,7 @@ class DetailView extends ConsumerStatefulWidget {
     this.sharpness,
     this.exposureScore,
     this.junkReason,
+    this.junkConfidence,
   });
 
   final ImageInfo image;
@@ -71,6 +74,7 @@ class DetailView extends ConsumerStatefulWidget {
   final double? sharpness;
   final double? exposureScore;
   final String? junkReason;
+  final double? junkConfidence;
 
   @override
   ConsumerState<DetailView> createState() => _DetailViewState();
@@ -268,6 +272,12 @@ class _DetailViewState extends ConsumerState<DetailView>
           ),
         if (widget.junkReason != null)
           _metaRow(theme, 'Junk reason', widget.junkReason!),
+        if (widget.junkConfidence != null)
+          _metaRow(
+            theme,
+            'Confidence',
+            '${(widget.junkConfidence! * 100).round()}%',
+          ),
         const Spacer(),
         Row(
           children: [

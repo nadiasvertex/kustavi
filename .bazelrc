@@ -9,6 +9,11 @@ startup:windows --windows_enable_symlinks
 build --features=-layering_check
 build --features=-parse_headers
 
+# libcurl TLS backend: reuse the boringssl gRPC already vendors instead of a
+# separate OpenSSL. Gives HTTPS on Linux/Windows; macOS would default to
+# SecureTransport but this keeps every platform on one code path.
+build --@curl//:ssl_lib=boringssl
+
 # Ignore several warnings from packages we depend on
 build --per_file_copt=external/.*@-Wno-nullability-extension,-Wno-gcc-compat,-Wno-deprecated-declarations,-Wno-unused-function
 

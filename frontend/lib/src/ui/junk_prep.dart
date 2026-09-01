@@ -105,7 +105,7 @@ class JunkPrepScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Moondream-3.1 powers the junk pass and is required; '
+              'Moondream 2 powers the junk pass and is required; '
               'the download runs in the background.',
               style: theme.textTheme.bodySmall,
               textAlign: TextAlign.center,

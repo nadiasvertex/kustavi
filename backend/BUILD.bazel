@@ -9,6 +9,7 @@ cc_binary(
     includes = ["include"],
     deps = [
         "//proto:service_cc_grpc",
+        "@curl//:curl",
         "@grpc//:grpc++",
         "@llama_cpp",
         "@opencv//:core",

@@ -35,7 +35,15 @@ class FlaggedReview extends ConsumerWidget {
     final flaggedImages = wizard
         .orderedImages
         .where((image) => flaggedIds.contains(image.id))
-        .toList(growable: false);
+        .toList();
+    if (step == DeletionStep.junk) {
+      // Most-confident junk first so the clearest cuts are reviewed up top.
+      flaggedImages.sort((a, b) {
+        final ca = wizard.junkFlags[a.id]?.confidence ?? 0;
+        final cb = wizard.junkFlags[b.id]?.confidence ?? 0;
+        return cb.compareTo(ca);
+      });
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       child: Column(
@@ -100,7 +108,8 @@ class FlaggedReview extends ConsumerWidget {
         if (flag == null) {
           return const <Widget>[];
         }
-        return <Widget>[ReasonChip(flag.reason)];
+        final pct = (flag.confidence * 100).round();
+        return <Widget>[ReasonChip('${flag.reason} · $pct%')];
       case DeletionStep.similar:
         return const <Widget>[];
     }
@@ -119,6 +128,7 @@ class FlaggedReview extends ConsumerWidget {
       sharpness: quality?.sharpness,
       exposureScore: quality?.exposureScore,
       junkReason: junk?.reason,
+      junkConfidence: junk?.confidence,
     );
   }
 }

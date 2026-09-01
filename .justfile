@@ -36,6 +36,16 @@ test-backend:
 test-llama:
   bazel run //backend:llama_smoke
 
+# Vision (junk) pass end-to-end. Downloads the ~3.7 GB Moondream 2 weights on
+# the first run (cached in the OS app-data dir), then runs EnsureModel +
+# RunJunkPass against a copy of test/photos. Not part of `just test`.
+test-junk:
+  bazel build //backend:server //backend:smoke_client
+  tmp="$(mktemp -d)" && \
+  trap 'rm -rf "$tmp"' EXIT && \
+  cp -R test/photos "$tmp/photos" && \
+  bazel run //backend:smoke_client -- --folder "$tmp/photos" --junk-check
+
 test: test-backend test-llama test-gui
 
 proto:
@@ -76,7 +86,7 @@ package-server: build-server-release
   @# Bundle the llama.cpp shared libraries next to the binary and repoint the
   @# binary at them via an @loader_path rpath (Bazel's build rpath points into
   @# the sandbox and does not survive the copy).
-  find -L bazel-bin/backend/server.runfiles \( -name 'libllama*.dylib' -o -name 'libggml*.dylib' \) -type f \
+  find -L bazel-bin/backend/server.runfiles \( -name 'libllama*.dylib' -o -name 'libggml*.dylib' -o -name 'libmtmd*.dylib' \) -type f \
     -exec cp {} dist/ \;
   install_name_tool -add_rpath @loader_path dist/kustavi-backend 2>/dev/null || true
 
@@ -84,7 +94,7 @@ package-gui: build-gui
   unzip -q bazel-bin/frontend/kustavi_macos.zip -d "dist/"
   mv dist/kustavi-backend dist/Kustavi.app/Contents/MacOS/
   @# Move the bundled llama.cpp dylibs alongside the backend binary.
-  find dist -maxdepth 1 \( -name 'libllama*.dylib' -o -name 'libggml*.dylib' \) \
+  find dist -maxdepth 1 \( -name 'libllama*.dylib' -o -name 'libggml*.dylib' -o -name 'libmtmd*.dylib' \) \
     -exec mv {} dist/Kustavi.app/Contents/MacOS/ \;
 
 package: dist-clean package-server package-gui

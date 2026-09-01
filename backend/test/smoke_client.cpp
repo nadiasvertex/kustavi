@@ -50,6 +50,7 @@ struct options {
   bool shutdown = false;
   bool cancel_check = false;
   bool concurrency_check = false;
+  bool junk_check = false; // opt-in: downloads the ~3.7 GB vision model
 };
 
 auto parse_args(int argc, char **argv) -> options {
@@ -83,6 +84,8 @@ auto parse_args(int argc, char **argv) -> options {
       opts.cancel_check = true;
     } else if (arg == "--concurrency-check") {
       opts.concurrency_check = true;
+    } else if (arg == "--junk-check") {
+      opts.junk_check = true;
     } else {
       fail("unknown argument: " + arg);
     }
@@ -466,6 +469,10 @@ void run_scan(const options &opts) {
 void run_quality(const options &opts) {
   auto stub = k::Kustavi::NewStub(make_channel(opts));
   k::RunQualityPassRequest request;
+  // The server requires a positive blur threshold; mirror the GUI defaults.
+  request.set_blur_threshold(100.0);
+  request.set_underexposed_threshold(0.3);
+  request.set_overexposed_threshold(0.3);
   grpc::ClientContext context;
   add_auth_metadata(context, opts);
   auto reader = stub->RunQualityPass(&context, request);
@@ -514,6 +521,78 @@ void run_similar(const options &opts) {
          " vs complete " + std::to_string(complete_groups));
   }
   std::println("ok: RunSimilarPass groups={}", groups);
+}
+
+// Opt-in (`--junk-check`): exercise the vision pipeline. EnsureModel downloads
+// the Moondream 2 GGUF weights (~3.7 GB, cached in the OS app-data dir on the
+// first run), then RunJunkPass classifies every scanned image.
+void run_ensure_model(const options &opts) {
+  auto stub = k::Kustavi::NewStub(make_channel(opts));
+  k::EnsureModelRequest request;
+  grpc::ClientContext context;
+  add_auth_metadata(context, opts);
+  auto reader = stub->EnsureModel(&context, request);
+  k::ModelEvent event;
+  bool ready = false;
+  std::uint64_t last_logged = 0;
+  while (reader->Read(&event)) {
+    if (event.has_ready()) {
+      ready = true;
+      std::println("ok: EnsureModel ready model={} size={}",
+                   event.ready().model_name(), event.ready().size_bytes());
+    } else if (event.has_progress()) {
+      const auto done = event.progress().done_bytes();
+      const auto total = event.progress().total_bytes();
+      if (done >= last_logged + (128ULL << 20) || (total > 0 && done == total)) {
+        last_logged = done;
+        std::println("   EnsureModel {} / {} bytes", done, total);
+      }
+    }
+  }
+  const auto status = reader->Finish();
+  if (!status.ok()) {
+    fail("EnsureModel: " + status.error_message());
+  }
+  if (!ready) {
+    fail("EnsureModel: stream ended without a ready event");
+  }
+}
+
+void run_junk(const options &opts) {
+  auto stub = k::Kustavi::NewStub(make_channel(opts));
+  k::RunJunkPassRequest request;
+  grpc::ClientContext context;
+  add_auth_metadata(context, opts);
+  auto reader = stub->RunJunkPass(&context, request);
+  k::JunkEvent event;
+  std::size_t flags = 0;
+  uint32_t complete_flagged = 0;
+  uint32_t complete_total = 0;
+  bool saw_complete = false;
+  while (reader->Read(&event)) {
+    if (event.has_flag()) {
+      flags++;
+      if (event.flag().image_id().empty()) {
+        fail("JunkFlag with empty image_id");
+      }
+    } else if (event.has_complete()) {
+      saw_complete = true;
+      complete_flagged = event.complete().flagged();
+      complete_total = event.complete().total();
+    }
+  }
+  const auto status = reader->Finish();
+  if (!status.ok()) {
+    fail("RunJunkPass: " + status.error_message());
+  }
+  if (!saw_complete) {
+    fail("RunJunkPass: stream ended without a complete event");
+  }
+  if (flags != complete_flagged) {
+    fail("junk flag count mismatch: streamed " + std::to_string(flags) +
+         " vs complete " + std::to_string(complete_flagged));
+  }
+  std::println("ok: RunJunkPass flagged={} total={}", flags, complete_total);
 }
 
 void run_trips(const options &opts) {
@@ -596,6 +675,9 @@ void run_commit(const options &opts) {
 void run_concurrency_check(const options &opts) {
   auto stub = k::Kustavi::NewStub(make_channel(opts));
   k::RunQualityPassRequest q_request;
+  q_request.set_blur_threshold(100.0);
+  q_request.set_underexposed_threshold(0.3);
+  q_request.set_overexposed_threshold(0.3);
   grpc::ClientContext q_context;
   add_auth_metadata(q_context, opts);
   auto q_reader = stub->RunQualityPass(&q_context, q_request);
@@ -755,6 +837,10 @@ auto main(int argc, char **argv) -> int {
     check_get_info(opts, false);
     if (!opts.folder.empty()) {
       run_scan(opts);
+      if (opts.junk_check) {
+        run_ensure_model(opts);
+        run_junk(opts);
+      }
       run_quality(opts);
       run_similar(opts);
       run_trips(opts);

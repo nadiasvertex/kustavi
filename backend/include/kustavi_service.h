@@ -10,9 +10,11 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <exception>
 #include <filesystem>
 #include <functional>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -25,7 +27,7 @@ namespace kustavi {
 inline constexpr std::string_view k_auth_token_header = "x-kustavi-auth-token";
 
 /// Vision model reported by `GetInfo` (junk pass placeholder).
-inline constexpr std::string_view k_model_name = "moondream";
+inline constexpr std::string_view k_model_name = "moondream2";
 
 // --- per-pass streaming events --------------------------------------------
 // Carried by event_queue between the pass worker and the gRPC writer thread.
@@ -61,6 +63,33 @@ struct quality_complete_evt {
 };
 using quality_event =
     std::variant<quality_progress_evt, quality_flag_evt, quality_complete_evt>;
+
+struct model_progress_evt {
+  std::uint64_t done_bytes = 0;
+  std::uint64_t total_bytes = 0;
+  double speed_bps = 0.0;
+};
+struct model_ready_evt {
+  std::string model_name;
+  std::uint64_t size_bytes = 0;
+};
+using model_event = std::variant<model_progress_evt, model_ready_evt>;
+
+struct junk_progress_evt {
+  std::size_t done = 0;
+  std::size_t total = 0;
+};
+struct junk_flag_evt {
+  std::string image_id;
+  std::string reason;
+  double confidence = 0.0;
+};
+struct junk_complete_evt {
+  std::size_t flagged = 0;
+  std::size_t total = 0;
+};
+using junk_event =
+    std::variant<junk_progress_evt, junk_flag_evt, junk_complete_evt>;
 
 struct similar_progress_evt {
   std::size_t done = 0;
@@ -135,7 +164,7 @@ private:
 template <class QueueEvent, class Fn>
 auto run_producer(event_queue<QueueEvent> &queue, std::stop_source &stop_source,
                   std::exception_ptr &error, Fn fn) -> std::thread {
-  return std::thread([&queue, &stop_source, &error, &fn] {
+  return std::thread([&queue, &stop_source, &error, fn = std::move(fn)] {
     try {
       fn(stop_source.get_token());
     } catch (...) {
@@ -254,6 +283,12 @@ private:
   database session_db_;
   std::atomic<bool> pass_active_{false};
   std::atomic<bool> shutdown_requested_{false};
+
+  // Serializes EnsureModel (which is exempt from the single-pass lock and may
+  // run alongside ingestion). `model_ready_` caches a verified on-disk model
+  // for the process lifetime.
+  std::mutex model_mutex_;
+  bool model_ready_ = false;
 };
 
 } // namespace kustavi

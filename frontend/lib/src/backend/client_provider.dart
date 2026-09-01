@@ -48,7 +48,7 @@ class FakeKustaviClient implements KustaviClient {
   static GetInfoResponse _defaultInfo() {
     return GetInfoResponse()
       ..version = 'fake'
-      ..modelName = 'moondream-3.1';
+      ..modelName = 'moondream2';
   }
 
   /// Back end version/model metadata returned by `GetInfo`.
