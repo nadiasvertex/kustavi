@@ -8,6 +8,7 @@ refresh_compile_commands(
     # For example, specify a dict of targets and any flags required to build.
     targets = {
       "//backend:server": "--cxxopt=-Wno-missing-sysroot",
+      "//backend:llama_smoke": "--cxxopt=-Wno-missing-sysroot",
     },
     exclude_external_sources = True,
 )

@@ -1,0 +1,148 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_foreign_cc//foreign_cc:defs.bzl", "cmake")
+
+package(default_visibility = ["//visibility:public"])
+
+filegroup(
+    name = "all_srcs",
+    srcs = glob(["**"]),
+)
+
+# ---------------------------------------------------------------------------
+# GPU backend opt-in.
+#
+#   bazel build //backend:server --define=llama_gpu=vulkan
+#   bazel build //backend:server --define=llama_gpu=cuda
+#
+# Default (no --define) builds the CPU backend everywhere and additionally
+# Metal on macOS.
+# ---------------------------------------------------------------------------
+config_setting(
+    name = "gpu_vulkan",
+    values = {"define": "llama_gpu=vulkan"},
+)
+
+config_setting(
+    name = "gpu_cuda",
+    values = {"define": "llama_gpu=cuda"},
+)
+
+# Options shared by every platform. Trim everything we do not link against so
+# the foreign build stays as small as possible.
+_COMMON_CACHE = {
+    "BUILD_SHARED_LIBS": "ON",
+    "CMAKE_BUILD_TYPE": "Release",
+    "CMAKE_POSITION_INDEPENDENT_CODE": "ON",
+    # Drop the versioned SONAME/install_name (libllama.0.dylib, libggml.0.dylib)
+    # that llama.cpp stamps via SOVERSION. rules_foreign_cc installs only the
+    # unversioned file, so the versioned reference would fail to load at runtime.
+    "CMAKE_PLATFORM_NO_VERSIONED_SONAME": "ON",
+    # rules_foreign_cc forwards this repo's -std=c++26 (from .bazelrc) into the
+    # foreign build; llama.cpp targets C++17 and miscompiles under C++26 on this
+    # toolchain. Appended last, so it is the winning -std for llama's own TUs.
+    # C sources (ggml) are unaffected — this only touches CMAKE_CXX_FLAGS.
+    "CMAKE_CXX_FLAGS": "-std=c++17",
+    "LLAMA_BUILD_IS_DEV": "OFF",
+    "LLAMA_BUILD_COMMON": "OFF",
+    "LLAMA_BUILD_TESTS": "OFF",
+    "LLAMA_BUILD_EXAMPLES": "OFF",
+    "LLAMA_BUILD_TOOLS": "OFF",
+    "LLAMA_BUILD_SERVER": "OFF",
+    "LLAMA_BUILD_APP": "OFF",
+    "LLAMA_CURL": "OFF",
+    "LLAMA_OPENSSL": "OFF",
+    "GGML_CCACHE": "OFF",
+    "GGML_OPENMP": "OFF",
+    "GGML_BUILD_TESTS": "OFF",
+    "GGML_BUILD_EXAMPLES": "OFF",
+}
+
+# macOS: Metal GPU + Accelerate/BLAS. The Metal shader library is embedded in
+# libggml-metal so there is no default.metallib to ship. GGML_NATIVE matches
+# the -mcpu=apple-m1 baseline already in .bazelrc (config:release-macos).
+_MACOS_CACHE = {
+    "GGML_METAL": "ON",
+    "GGML_METAL_EMBED_LIBRARY": "ON",
+    "GGML_ACCELERATE": "ON",
+    "GGML_BLAS": "ON",
+    "GGML_BLAS_VENDOR": "Apple",
+    "GGML_NATIVE": "ON",
+}
+
+# Linux / Windows: portable optimized CPU build. GGML_NATIVE=OFF keeps the
+# artifact machine-independent; the explicit SIMD flags give an x86-64-v3-ish
+# baseline (AVX2 + FMA + F16C). AVX-512 stays off for portability. On arm64
+# these x86 knobs are ignored and NEON/dotprod are detected automatically.
+_CPU_CACHE = {
+    "GGML_METAL": "OFF",
+    "GGML_NATIVE": "OFF",
+    "GGML_CPU": "ON",
+    "GGML_SSE42": "ON",
+    "GGML_AVX": "ON",
+    "GGML_AVX2": "ON",
+    "GGML_FMA": "ON",
+    "GGML_F16C": "ON",
+    "GGML_AVX512": "OFF",
+}
+
+# The GPU opt-in is folded into this single select (Starlark forbids
+# `select() + select()`). --define=llama_gpu=... is intended for Linux/Windows;
+# combining it with a macOS build is unsupported.
+_CACHE_ENTRIES = select({
+    "@platforms//os:macos": _COMMON_CACHE | _MACOS_CACHE,
+    ":gpu_vulkan": _COMMON_CACHE | _CPU_CACHE | {"GGML_VULKAN": "ON"},
+    ":gpu_cuda": _COMMON_CACHE | _CPU_CACHE | {"GGML_CUDA": "ON"},
+    "//conditions:default": _COMMON_CACHE | _CPU_CACHE,
+})
+
+# Shared libraries produced by the install step, per platform. ggml builds one
+# shared object per compute backend and links them into libggml.
+_MACOS_LIBS = [
+    "libllama.dylib",
+    "libggml.dylib",
+    "libggml-base.dylib",
+    "libggml-cpu.dylib",
+    "libggml-blas.dylib",
+    "libggml-metal.dylib",
+]
+
+_LINUX_LIBS = [
+    "libllama.so",
+    "libggml.so",
+    "libggml-base.so",
+    "libggml-cpu.so",
+]
+
+_LINUX_VULKAN_LIBS = _LINUX_LIBS + ["libggml-vulkan.so"]
+
+_LINUX_CUDA_LIBS = _LINUX_LIBS + ["libggml-cuda.so"]
+
+cmake(
+    name = "llama_cpp_build",
+    cache_entries = _CACHE_ENTRIES,
+    generate_args = ["-GNinja"],
+    lib_source = ":all_srcs",
+    out_shared_libs = select({
+        "@platforms//os:macos": _MACOS_LIBS,
+        ":gpu_vulkan": _LINUX_VULKAN_LIBS,
+        ":gpu_cuda": _LINUX_CUDA_LIBS,
+        "//conditions:default": _LINUX_LIBS,
+    }),
+)
+
+# Public target. The ggml backend dylibs already carry their own system
+# framework / library dependencies (Metal, Foundation, Accelerate on macOS),
+# so consumers only need extra link flags on Linux.
+cc_library(
+    name = "llama_cpp",
+    linkopts = select({
+        "@platforms//os:linux": [
+            "-lpthread",
+            "-ldl",
+            "-lm",
+        ],
+        "//conditions:default": [],
+    }),
+    visibility = ["//visibility:public"],
+    deps = [":llama_cpp_build"],
+)

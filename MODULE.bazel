@@ -13,11 +13,13 @@ git_override(
 )
 
 git_repository = use_repo_rule("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 
 # Core Bazel utility rules
 bazel_dep(name = "apple_support", version = "2.8.0")
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "rules_cc", version = "0.2.22")
+bazel_dep(name = "rules_foreign_cc", version = "0.15.1")
 bazel_dep(name = "rules_proto", version = "7.1.0")
 bazel_dep(name = "rules_proto_grpc", version = "5.8.0")
 bazel_dep(name = "rules_proto_grpc_cpp", version = "5.8.0")
@@ -41,6 +43,19 @@ git_repository(
     remote = "https://github.com/NVIDIA/stdexec.git",
     commit = "e92245d53dfc37f9bc2a7ef0cc44d570bb7b3386",
     build_file = "//third_party:stdexec.BUILD.bazel",
+)
+
+# llama.cpp — local LLM inference engine for the vision (junk) pass.
+# Built from source via rules_foreign_cc so llama.cpp's own CMake selects the
+# optimal compute backend per OS (Metal on macOS, optimized CPU elsewhere;
+# Vulkan/CUDA are opt-in via --define=llama_gpu=...). See
+# third_party/llama_cpp.BUILD.bazel.
+http_archive(
+    name = "llama_cpp",
+    build_file = "//third_party:llama_cpp.BUILD.bazel",
+    sha256 = "07de784d07b346647da6bd8796a42127304c7508dd007a21f63ab74da21a13cf",
+    strip_prefix = "llama.cpp-b10733",
+    url = "https://github.com/ggml-org/llama.cpp/archive/refs/tags/b10733.tar.gz",
 )
 
 # Flutter support

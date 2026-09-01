@@ -31,7 +31,12 @@ test-backend:
   cp -R test/photos "$tmp/photos" && \
   bazel run //backend:smoke_client -- --folder "$tmp/photos" --destination "$tmp/committed" --concurrency-check --cancel-check
 
-test: test-backend test-gui
+# llama.cpp smoke test: links the vendored llama.cpp and prints the compute
+# devices the platform backend discovered (Metal GPU on macOS).
+test-llama:
+  bazel run //backend:llama_smoke
+
+test: test-backend test-llama test-gui
 
 proto:
   mkdir -p frontend/lib/src/generated && \
@@ -68,10 +73,19 @@ dist-clean:
 package-server: build-server-release
   @# Copy the backend binary → kustavi-backend
   cp bazel-bin/backend/server dist/kustavi-backend
+  @# Bundle the llama.cpp shared libraries next to the binary and repoint the
+  @# binary at them via an @loader_path rpath (Bazel's build rpath points into
+  @# the sandbox and does not survive the copy).
+  find -L bazel-bin/backend/server.runfiles \( -name 'libllama*.dylib' -o -name 'libggml*.dylib' \) -type f \
+    -exec cp {} dist/ \;
+  install_name_tool -add_rpath @loader_path dist/kustavi-backend 2>/dev/null || true
 
 package-gui: build-gui
   unzip -q bazel-bin/frontend/kustavi_macos.zip -d "dist/"
   mv dist/kustavi-backend dist/Kustavi.app/Contents/MacOS/
+  @# Move the bundled llama.cpp dylibs alongside the backend binary.
+  find dist -maxdepth 1 \( -name 'libllama*.dylib' -o -name 'libggml*.dylib' \) \
+    -exec mv {} dist/Kustavi.app/Contents/MacOS/ \;
 
 package: dist-clean package-server package-gui
 

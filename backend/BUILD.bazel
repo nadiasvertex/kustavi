@@ -10,6 +10,7 @@ cc_binary(
     deps = [
         "//proto:service_cc_grpc",
         "@grpc//:grpc++",
+        "@llama_cpp",
         "@opencv//:core",
         "@opencv//:imgproc",
         "@opencv//:imgcodecs",
@@ -19,6 +20,15 @@ cc_binary(
         "@cli11",
         "@spdlog",
     ],
+    visibility = ["//visibility:public"],
+)
+
+# Smoke test: confirm llama.cpp links and reports an accelerated compute
+# backend (Metal on macOS, optimized CPU elsewhere). Run via `just test-llama`.
+cc_binary(
+    name = "llama_smoke",
+    srcs = ["test/llama_smoke.cpp"],
+    deps = ["@llama_cpp"],
     visibility = ["//visibility:public"],
 )
 
