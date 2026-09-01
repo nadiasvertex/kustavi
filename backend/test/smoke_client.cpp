@@ -493,20 +493,31 @@ void run_quality(const options &opts) {
   std::println("ok: RunQualityPass flagged={} total={}", flags, total);
 }
 
-void run_similar(const options &opts) {
+// Runs RunSimilarPass, optionally excluding `skip_id`. Returns every image id
+// that appeared in some emitted group.
+std::vector<std::string> similar_pass_once(const options &opts,
+                                           const std::string &skip_id,
+                                           std::size_t &groups_out) {
   auto stub = k::Kustavi::NewStub(make_channel(opts));
   k::RunSimilarPassRequest request;
+  if (!skip_id.empty()) {
+    request.add_skip_image_ids(skip_id);
+  }
   grpc::ClientContext context;
   add_auth_metadata(context, opts);
   auto reader = stub->RunSimilarPass(&context, request);
   k::SimilarEvent event;
   std::size_t groups = 0;
   uint32_t complete_groups = 0;
+  std::vector<std::string> members;
   while (reader->Read(&event)) {
     if (event.has_group()) {
       groups++;
       if (event.group().image_ids_size() < 2) {
         fail("similar group with fewer than 2 members");
+      }
+      for (const auto &id : event.group().image_ids()) {
+        members.push_back(id);
       }
     } else if (event.has_complete()) {
       complete_groups = event.complete().groups();
@@ -520,7 +531,31 @@ void run_similar(const options &opts) {
     fail("similar group count mismatch: streamed " + std::to_string(groups) +
          " vs complete " + std::to_string(complete_groups));
   }
+  groups_out = groups;
+  return members;
+}
+
+void run_similar(const options &opts) {
+  std::size_t groups = 0;
+  const auto members = similar_pass_once(opts, "", groups);
   std::println("ok: RunSimilarPass groups={}", groups);
+
+  if (members.empty()) {
+    return; // nothing grouped in this folder; skip the exclusion check
+  }
+
+  // Re-run excluding one grouped image; it must not reappear, and every
+  // emitted group must still have >= 2 members (enforced above).
+  const std::string &skip_id = members.front();
+  std::size_t groups_after = 0;
+  const auto after = similar_pass_once(opts, skip_id, groups_after);
+  for (const auto &id : after) {
+    if (id == skip_id) {
+      fail("skipped image " + skip_id + " reappeared in a similar group");
+    }
+  }
+  std::println("ok: RunSimilarPass skip_image_ids honored (groups {} -> {})",
+               groups, groups_after);
 }
 
 // Opt-in (`--junk-check`): exercise the vision pipeline. EnsureModel downloads

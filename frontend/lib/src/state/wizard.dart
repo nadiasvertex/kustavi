@@ -700,10 +700,27 @@ class Wizard extends _$Wizard {
     state = const AsyncValue.data(WizardSimilarRunning());
     final client = ref.read(kustaviClientProvider).requireValue;
     _subscribe(
-      client.runSimilarPass(),
+      client.runSimilarPass(skipImageIds: _deletedBeforeSimilar()),
       _onSimilarEvent,
       _onSimilarDone,
     );
+  }
+
+  /// Ids marked for deletion by the quality step, so the duplicate pass never
+  /// scores them or picks them as a group keeper. Only the quality step has
+  /// run at this point.
+  List<String> _deletedBeforeSimilar() {
+    final plan = ref.read(deletionPlanProvider);
+    final qualityFlagged = _qualityFlags.keys.toSet();
+    bool marked(String id) => isMarkedForDeletion(
+          plan,
+          id,
+          step: DeletionStep.quality,
+          qualityFlagged: qualityFlagged,
+          junkFlagged: const <String>{},
+          similarKeepers: const <String, String>{},
+        );
+    return _images.keys.where(marked).toList(growable: false);
   }
 
   /// Duplicates review -> junk pass (or its model-download prep screen).

@@ -154,6 +154,54 @@ inline auto geo_data_path() -> std::filesystem::path {
   return {};
 }
 
+namespace detail {
+
+/**
+ * Locate a small data file bundled next to the executable / in the Bazel
+ * runfiles tree / in a workspace-relative `backend/data` directory. Mirrors
+ * the search order of `geo_data_path`. `env_override`, when set and non-empty,
+ * wins outright. Returns an empty path when nothing is found.
+ */
+inline auto bundled_data_path(const char *filename, const char *env_override)
+    -> std::filesystem::path {
+  namespace fs = std::filesystem;
+  if (const auto override_path = env(env_override)) {
+    return {*override_path};
+  }
+
+  std::vector<fs::path> candidates;
+  if (const auto exe = executable_dir()) {
+    candidates.push_back(*exe / filename);
+    candidates.push_back(*exe / "data" / filename);
+    candidates.push_back(*exe / "backend" / "data" / filename);
+  }
+  candidates.push_back(fs::path("backend") / "data" / filename);
+  candidates.push_back(fs::path("data") / filename);
+  candidates.push_back(app_data_path() / "models" / filename);
+
+  for (const auto &candidate : candidates) {
+    std::error_code ec;
+    if (fs::exists(candidate, ec) && !ec) {
+      return candidate;
+    }
+  }
+  return {};
+}
+
+} // namespace detail
+
+/**
+ * @brief Locates the bundled YuNet face-detector ONNX model used by the
+ * similar pass to score keeper "bestness" by face quality (faces present and
+ * in focus, eyes open, no red-eye). Search order matches `geo_data_path`;
+ * `$KUSTAVI_FACE_MODEL` overrides. Empty when absent (the similar pass then
+ * falls back to sharpness + color-balance scoring only).
+ */
+inline auto face_model_path() -> std::filesystem::path {
+  return detail::bundled_data_path("face_detection_yunet.onnx",
+                                   "KUSTAVI_FACE_MODEL");
+}
+
 /**
  * @brief Returns the path to the Kustavi cache directory based on the provided
  * base directory.

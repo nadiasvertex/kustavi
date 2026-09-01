@@ -222,7 +222,9 @@ message JunkComplete {
 
 // --- pass 4: similar -----------------------------------------------------------
 
-message RunSimilarPassRequest {}
+message RunSimilarPassRequest {
+  repeated string skip_image_ids = 1; // already marked for deletion upstream
+}
 
 message SimilarEvent {
   oneof event {
@@ -350,6 +352,18 @@ Precondition: Vision LLM weights verified. Interrogates the Moondream-3.1 engine
 
 ### RunSimilarPass
 Precondition: Active session. Compares assets for duplicates using perceptual indices. To scale performance efficiently to 50,000 images without running an \(O(N^2)\) brute force wall, the backend must organize comparison hashes via high-speed tree architectures (such as a **VP-Tree** or **BK-Tree**). Matches are recorded into `similar_groups`.
+
+Images whose id is in `skip_image_ids` (marked for deletion in the quality
+step) are excluded from grouping, scoring, and keeper selection; a group left
+with fewer than 2 members is dropped. For each surviving group the recommended
+keeper is the member with the highest composite "bestness" score: the
+normalized sharpness term (Laplacian variance from the quality pass) blended
+with per-image signals from `pass/keeper_signals` — gray-world color-balance
+neutrality, and, when faces are present (YuNet ONNX,
+`backend/data/face_detection_yunet.onnx` via `config::face_model_path()`),
+largest-face focus, face count, a landmark-anchored eyes-open proxy, and a
+red-eye score. The blend degrades to sharpness + color-balance when the face
+model is absent. `member_scores` carries the composite score, best-first.
 
 ### RunTripsPass
 Home-anchored clustering over in-memory database records. Detects recurring

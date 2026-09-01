@@ -81,6 +81,7 @@ class FakeKustaviClient implements KustaviClient {
   CommitRequest? lastCommitRequest;
   RunTripsPassRequest? lastTripsRequest;
   List<String> lastJunkSkipIds = const [];
+  List<String> lastSimilarSkipIds = const [];
   int shutdownCount = 0;
   int qualityPassCount = 0;
 
@@ -173,8 +174,10 @@ class FakeKustaviClient implements KustaviClient {
   }
 
   @override
-  Stream<SimilarEvent> runSimilarPass() =>
-      _script(similarEvents, similarError);
+  Stream<SimilarEvent> runSimilarPass({Iterable<String> skipImageIds = const []}) {
+    lastSimilarSkipIds = skipImageIds.toList(growable: false);
+    return _script(similarEvents, similarError);
+  }
 
   @override
   Stream<TripsEvent> runTripsPass(RunTripsPassRequest request) {

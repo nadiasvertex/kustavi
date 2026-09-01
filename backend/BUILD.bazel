@@ -6,7 +6,10 @@ cc_binary(
         "src/**/*.cpp",
         "include/**/*.h",
     ]),
-    data = ["//backend/data:cities"],
+    data = [
+        "//backend/data:cities",
+        "//backend/data:keeper_models",
+    ],
     includes = ["include"],
     deps = [
         "//proto:service_cc_grpc",
@@ -17,6 +20,7 @@ cc_binary(
         "@opencv//:imgproc",
         "@opencv//:imgcodecs",
         "@opencv//:objdetect",
+        "@opencv//:dnn",
         "@sqlite3",
         "@stdexec",
         "@cli11",
@@ -48,6 +52,28 @@ cc_binary(
     ]),
     data = ["//backend/data:cities"],
     includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+
+cc_binary(
+    name = "keeper_signals_test",
+    srcs = [
+        "src/pass/keeper_signals.cpp",
+        "test/keeper_signals_test.cpp",
+    ] + glob([
+        "include/pass/keeper_signals.h",
+        "include/paths.h",
+    ]),
+    data = ["//backend/data:keeper_models"],
+    includes = ["include"],
+    deps = [
+        "@opencv//:core",
+        "@opencv//:imgproc",
+        "@opencv//:imgcodecs",
+        "@opencv//:objdetect",
+        "@opencv//:dnn",
+        "@spdlog",
+    ],
     visibility = ["//visibility:public"],
 )
 

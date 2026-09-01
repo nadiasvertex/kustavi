@@ -130,6 +130,17 @@ void main() {
       expect(decoded.exposureScore, closeTo(0.9, 1e-9));
     });
 
+    test('RunSimilarPassRequest carries skip_image_ids', () {
+      final request = RunSimilarPassRequest()
+        ..skipImageIds.addAll(['b.jpg', 'c.jpg']);
+      final decoded = RunSimilarPassRequest.fromBuffer(request.writeToBuffer());
+      expect(decoded.skipImageIds, ['b.jpg', 'c.jpg']);
+
+      final bare = RunSimilarPassRequest();
+      expect(RunSimilarPassRequest.fromBuffer(bare.writeToBuffer()).skipImageIds,
+          isEmpty);
+    });
+
     test('SimilarGroup members stay parallel to scores', () {
       final group = SimilarGroup()
         ..id = 7

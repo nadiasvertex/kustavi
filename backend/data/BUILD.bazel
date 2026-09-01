@@ -3,9 +3,20 @@ package(default_visibility = ["//visibility:public"])
 # Trimmed GeoNames populated-places table (see backend/tools/trim_geonames.py).
 # The trips pass reverse-geocodes trip centroids to "City, Country" folder
 # names. Bundled into the server runfiles and the packaged app.
-exports_files(["cities.tsv"])
+exports_files([
+    "cities.tsv",
+    "face_detection_yunet.onnx",
+])
 
 filegroup(
     name = "cities",
     srcs = ["cities.tsv"],
+)
+
+# Face detector (YuNet ONNX, OpenCV Zoo 2023mar). The similar pass runs it on
+# grouped candidates to score keeper "bestness" by face quality and red-eye /
+# closed-eye detection. Small enough to commit next to cities.tsv; no download.
+filegroup(
+    name = "keeper_models",
+    srcs = ["face_detection_yunet.onnx"],
 )

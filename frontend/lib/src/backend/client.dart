@@ -28,7 +28,7 @@ abstract interface class KustaviClient {
   });
   Stream<ModelEvent> ensureModel();
   Stream<JunkEvent> runJunkPass({Iterable<String> skipImageIds});
-  Stream<SimilarEvent> runSimilarPass();
+  Stream<SimilarEvent> runSimilarPass({Iterable<String> skipImageIds});
   Stream<TripsEvent> runTripsPass(RunTripsPassRequest request);
   Stream<CommitEvent> commit(CommitRequest request);
 }
@@ -111,9 +111,12 @@ class GrpcKustaviClient implements KustaviClient {
   }
 
   @override
-  Stream<SimilarEvent> runSimilarPass() {
+  Stream<SimilarEvent> runSimilarPass({Iterable<String> skipImageIds = const []}) {
     return _pass(
-      _client.runSimilarPass(RunSimilarPassRequest(), options: _options),
+      _client.runSimilarPass(
+        RunSimilarPassRequest(skipImageIds: skipImageIds),
+        options: _options,
+      ),
     );
   }
 

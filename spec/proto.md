@@ -239,7 +239,9 @@ message JunkComplete {
 
 // --- pass 4: similar -----------------------------------------------------------
 
-message RunSimilarPassRequest {}
+message RunSimilarPassRequest {
+  repeated string skip_image_ids = 1; // already marked for deletion upstream
+}
 
 message SimilarEvent {
   oneof event {
@@ -429,13 +431,18 @@ Preconditions: active session; model present (else `FAILED_PRECONDITION`
 
 Preconditions: active session; no pass running.
 
+- Skips any image whose id is in `skip_image_ids` (already marked for
+  deletion in the quality step): it is excluded from grouping, scoring,
+  and keeper selection. A group left with fewer than 2 members after the
+  exclusion is not emitted.
 - Groups near-duplicate images (size ≥ 2) using perceptual similarity
   (perceptual hashing and/or color histograms; feature matching for
   borderline cases — algorithm is the back end's concern).
 - For each group, selects the recommended keeper by a composite "best"
-  score combining sharpness (Laplacian), color-balance/contrast, and
-  face quality (e.g. eyes open) when faces are present. `member_scores`
-  are these composite scores, best-first, parallel to `image_ids`.
+  score combining sharpness (Laplacian), color-balance (gray-world white
+  balance neutrality), and face quality (faces present and in focus,
+  eyes open, no red-eye) when faces are present. `member_scores` are
+  these composite scores, best-first, parallel to `image_ids`.
 - Emits one `SimilarGroup` per group, then `SimilarComplete`.
 - Deterministic: re-running produces the same groups and scores.
 

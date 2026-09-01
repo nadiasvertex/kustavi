@@ -181,7 +181,11 @@ message JunkComplete {
 
 // --- pass 4: similar -----------------------------------------------------------
 
-message RunSimilarPassRequest {}
+message RunSimilarPassRequest {
+  // Image ids the user already marked for deletion in an earlier step
+  // (quality). Excluded from grouping, scoring, and keeper selection.
+  repeated string skip_image_ids = 1;
+}
 
 message SimilarEvent {
   oneof event {
