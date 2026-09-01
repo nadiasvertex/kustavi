@@ -13,10 +13,10 @@ import 'package:kustavi/src/generated/kustavi/service.pb.dart' as pb;
 class InactiveBackendProcess extends BackendProcess {
   @override
   FutureOr<BackendEndpoint> build() => BackendEndpoint(
-        handle: ProcessHandle.inactive(token: 'test', port: 0),
-        token: 'test',
-        port: 0,
-      );
+    handle: ProcessHandle.inactive(token: 'test', port: 0),
+    token: 'test',
+    port: 0,
+  );
 }
 
 pb.ScanEvent scanImage(
@@ -65,12 +65,13 @@ pb.QualityEvent qualityFlag(
       ..exposureScore = exposure);
 }
 
-pb.ModelEvent modelReady(
-        {String model = 'qwen2.5-vl-3b', int sizeBytes = 1100000000}) =>
-    pb.ModelEvent()
-      ..ready = (pb.ModelReady()
-        ..modelName = model
-        ..sizeBytes = Int64(sizeBytes));
+pb.ModelEvent modelReady({
+  String model = 'qwen2.5-vl-3b',
+  int sizeBytes = 1100000000,
+}) => pb.ModelEvent()
+  ..ready = (pb.ModelReady()
+    ..modelName = model
+    ..sizeBytes = Int64(sizeBytes));
 
 pb.ModelEvent modelProgress({
   int doneBytes = 600000000,
@@ -96,11 +97,7 @@ pb.JunkEvent junkFlag(
       ..confidence = confidence);
 }
 
-pb.SimilarEvent similarGroup(
-  int id,
-  List<String> ids,
-  String keepId,
-) {
+pb.SimilarEvent similarGroup(int id, List<String> ids, String keepId) {
   return pb.SimilarEvent()
     ..group = (pb.SimilarGroup()
       ..id = id
@@ -142,12 +139,16 @@ pb.TripsEvent tripEvent(
   List<String> imageIds, {
   String? folder,
   String? folderSlug,
+  String? placeName,
   int? startMs,
   int? endMs,
 }) {
   final trip = pb.Trip()
     ..id = id
     ..imageIds.addAll(imageIds);
+  if (placeName != null && placeName.isNotEmpty) {
+    trip.placeName = placeName;
+  }
   if (startMs != null) {
     trip.startUnixMs = Int64(startMs);
   }

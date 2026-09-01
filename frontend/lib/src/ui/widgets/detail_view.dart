@@ -26,25 +26,27 @@ Future<T?> showImageDetail<T extends Object?>(
   double? exposureScore,
   String? junkReason,
   double? junkConfidence,
+  Map<String, String> mappings = const <String, String>{},
 }) {
-    return showDialog<T>(
-      context: context,
-      barrierColor: Colors.black,
-      builder: (context) => Material(
-        child: DetailView(
-          image: image,
-          canToggleDeletion: canToggleDeletion,
-          step: step,
-          qualityFlagged: qualityFlagged,
-          junkFlagged: junkFlagged,
-          similarKeepers: similarKeepers,
-          sharpness: sharpness,
-          exposureScore: exposureScore,
-          junkReason: junkReason,
-          junkConfidence: junkConfidence,
-        ),
+  return showDialog<T>(
+    context: context,
+    barrierColor: Colors.black,
+    builder: (context) => Material(
+      child: DetailView(
+        image: image,
+        canToggleDeletion: canToggleDeletion,
+        step: step,
+        qualityFlagged: qualityFlagged,
+        junkFlagged: junkFlagged,
+        similarKeepers: similarKeepers,
+        sharpness: sharpness,
+        exposureScore: exposureScore,
+        junkReason: junkReason,
+        junkConfidence: junkConfidence,
+        mappings: mappings,
       ),
-    );
+    ),
+  );
 }
 
 /// Modal: the working preview shows instantly; the full-resolution master is
@@ -63,6 +65,7 @@ class DetailView extends ConsumerStatefulWidget {
     this.exposureScore,
     this.junkReason,
     this.junkConfidence,
+    this.mappings = const <String, String>{},
   });
 
   final ImageInfo image;
@@ -75,6 +78,10 @@ class DetailView extends ConsumerStatefulWidget {
   final double? exposureScore;
   final String? junkReason;
   final double? junkConfidence;
+
+  /// Extra label → value rows (trip, leg, place, group…) shown in the
+  /// metadata panel (spec/frontend.md §7.2 "group/trip metadata mappings").
+  final Map<String, String> mappings;
 
   @override
   ConsumerState<DetailView> createState() => _DetailViewState();
@@ -188,14 +195,9 @@ class _DetailViewState extends ConsumerState<DetailView>
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  SizedBox(
-                    width: 320,
-                    child: _metadataPanel(theme, marked),
-                  ),
+                  SizedBox(width: 320, child: _metadataPanel(theme, marked)),
                   const SizedBox(width: 24),
-                  Expanded(
-                    child: Center(child: _viewport()),
-                  ),
+                  Expanded(child: Center(child: _viewport())),
                 ],
               ),
             ),
@@ -265,11 +267,7 @@ class _DetailViewState extends ConsumerState<DetailView>
         if (widget.sharpness != null)
           _metaRow(theme, 'Sharpness', widget.sharpness!.toStringAsFixed(1)),
         if (widget.exposureScore != null)
-          _metaRow(
-            theme,
-            'Exposure',
-            widget.exposureScore!.toStringAsFixed(2),
-          ),
+          _metaRow(theme, 'Exposure', widget.exposureScore!.toStringAsFixed(2)),
         if (widget.junkReason != null)
           _metaRow(theme, 'Junk reason', widget.junkReason!),
         if (widget.junkConfidence != null)
@@ -278,6 +276,8 @@ class _DetailViewState extends ConsumerState<DetailView>
             'Confidence',
             '${(widget.junkConfidence! * 100).round()}%',
           ),
+        for (final entry in widget.mappings.entries)
+          if (entry.value.isNotEmpty) _metaRow(theme, entry.key, entry.value),
         const Spacer(),
         Row(
           children: [
@@ -285,9 +285,8 @@ class _DetailViewState extends ConsumerState<DetailView>
             Switch(
               value: marked,
               onChanged: widget.canToggleDeletion
-                  ? (value) => ref
-                      .read(deletionPlanProvider.notifier)
-                      .toggle(image.id)
+                  ? (value) =>
+                        ref.read(deletionPlanProvider.notifier).toggle(image.id)
                   : null,
             ),
           ],
@@ -310,8 +309,9 @@ class _DetailViewState extends ConsumerState<DetailView>
         children: [
           Text(
             label.toUpperCase(),
-            style: theme.textTheme.labelSmall
-                ?.copyWith(color: theme.colorScheme.outline),
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.outline,
+            ),
           ),
           const SizedBox(height: 2),
           Text(

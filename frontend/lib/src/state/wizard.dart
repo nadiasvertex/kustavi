@@ -37,7 +37,6 @@ class Wizard extends _$Wizard {
   DateTime? _junkLastEventAt;
   int _junkLastDone = 0;
   final List<TripInfo> _tripResults = [];
-  final Map<int, Set<String>> _tripSelections = {};
   final Map<int, String> _tripFolderNames = {};
 
   /// Per-image trip reassignment applied on top of the clustering result.
@@ -134,8 +133,6 @@ class Wizard extends _$Wizard {
     return List<TripInfo>.unmodifiable(trips);
   }
 
-  Map<int, Set<String>> get tripSelections => _tripSelections;
-
   bool get organizeIntoTripFolders => _organizeIntoTripFolders;
   set organizeIntoTripFolders(bool value) {
     _organizeIntoTripFolders = value;
@@ -212,17 +209,20 @@ class Wizard extends _$Wizard {
     if (onlyRemovals && base.legs.length > 1) {
       final legs = <TripLegInfo>[];
       for (final leg in base.legs) {
-        final kept =
-            leg.memberIds.where(idSet.contains).toList(growable: false);
+        final kept = leg.memberIds
+            .where(idSet.contains)
+            .toList(growable: false);
         if (kept.isEmpty) {
           continue;
         }
-        legs.add(TripLegInfo(
-          placeName: leg.placeName,
-          slug: leg.slug,
-          memberIds: List<String>.unmodifiable(kept),
-          centroid: leg.centroid,
-        ));
+        legs.add(
+          TripLegInfo(
+            placeName: leg.placeName,
+            slug: leg.slug,
+            memberIds: List<String>.unmodifiable(kept),
+            centroid: leg.centroid,
+          ),
+        );
       }
       return base.copyWith(
         start: first ?? base.start,
@@ -264,10 +264,7 @@ class Wizard extends _$Wizard {
     }
     final sortedNames = List<String>.from(byFolder.keys)..sort();
     return sortedNames
-        .map((name) => TripFolderInfo(
-              name: name,
-              trips: byFolder[name]!,
-            ))
+        .map((name) => TripFolderInfo(name: name, trips: byFolder[name]!))
         .toList(growable: false);
   }
 
@@ -294,27 +291,77 @@ class Wizard extends _$Wizard {
 
   /// Creates a new trip seeded with [imageIds]; returns its id.
   int createTripFromImages(Iterable<String> imageIds) {
+    final ids = imageIds.toList(growable: false);
     final id = _nextUserTripId++;
     DateTime? first;
-    for (final imgId in imageIds) {
+    for (final imgId in ids) {
       final taken = _images[imgId]?.taken;
       if (taken != null && (first == null || taken.isBefore(first))) {
         first = taken;
       }
     }
     final anchor = first ?? DateTime.now();
-    _userTrips.add(TripInfo(
-      id: id,
-      start: anchor,
-      end: anchor,
-      memberIds: const <String>[],
-      folder: first != null ? 'Trip · ${_monthYear(anchor)}' : 'New trip',
-    ));
-    for (final imgId in imageIds) {
+
+    // The front end has no geo table; borrow a place name from the back end's
+    // original clustering when the seed photos came from a geocoded trip/leg.
+    final place = _dominantKnownPlace(ids);
+    final String folder;
+    if (place != null) {
+      folder = '$place · ${_monthYear(anchor)}';
+    } else if (first != null) {
+      folder = 'Trip · ${_monthYear(anchor)}';
+    } else {
+      folder = 'New trip';
+    }
+
+    _userTrips.add(
+      TripInfo(
+        id: id,
+        start: anchor,
+        end: anchor,
+        memberIds: const <String>[],
+        folder: folder,
+        placeName: place ?? '',
+      ),
+    );
+    for (final imgId in ids) {
       _tripMembership[imgId] = id;
     }
     _publishTripsReviewPhase();
     return id;
+  }
+
+  /// The place name most of [imageIds] were originally clustered under (the
+  /// leg's when known, else the trip's), or null when none were geocoded.
+  String? _dominantKnownPlace(List<String> imageIds) {
+    final counts = <String, int>{};
+    for (final imgId in imageIds) {
+      final place = _knownPlaceOf(imgId);
+      if (place != null) {
+        counts.update(place, (n) => n + 1, ifAbsent: () => 1);
+      }
+    }
+    if (counts.isEmpty) {
+      return null;
+    }
+    return counts.entries.reduce((a, b) => b.value > a.value ? b : a).key;
+  }
+
+  /// The geocoded place [imageId] was clustered under by the trips pass: its
+  /// leg's place when the trip has legs, otherwise the trip's. Empty when the
+  /// pass ran without a place table or the photo was never clustered.
+  String? _knownPlaceOf(String imageId) {
+    for (final trip in _tripResults) {
+      for (final leg in trip.legs) {
+        if (leg.placeName.isNotEmpty && leg.memberIds.contains(imageId)) {
+          return leg.placeName;
+        }
+      }
+      if (trip.placeName.isNotEmpty && trip.memberIds.contains(imageId)) {
+        return trip.placeName;
+      }
+    }
+    return null;
   }
 
   /// Per-image destination sub-path for `CommitRequest.folderForId`, built
@@ -332,8 +379,8 @@ class Wizard extends _$Wizard {
       final tripSlug = renamed
           ? _slugify(_tripFolderNames[trip.id]!)
           : (trip.folderSlug.isNotEmpty
-              ? trip.folderSlug
-              : _slugify(_effectiveFolderOf(trip)));
+                ? trip.folderSlug
+                : _slugify(_effectiveFolderOf(trip)));
       if (tripSlug.isEmpty) {
         continue;
       }
@@ -354,8 +401,18 @@ class Wizard extends _$Wizard {
 
   static String _monthYear(DateTime d) {
     const months = [
-      'January', 'February', 'March', 'April', 'May', 'June', 'July',
-      'August', 'September', 'October', 'November', 'December',
+      'January',
+      'February',
+      'March',
+      'April',
+      'May',
+      'June',
+      'July',
+      'August',
+      'September',
+      'October',
+      'November',
+      'December',
     ];
     return '${months[d.month - 1]} ${d.year}';
   }
@@ -364,8 +421,8 @@ class Wizard extends _$Wizard {
     final buffer = StringBuffer();
     var pendingSep = false;
     for (final rune in text.toLowerCase().runes) {
-      final isAlnum = (rune >= 0x30 && rune <= 0x39) ||
-          (rune >= 0x61 && rune <= 0x7a);
+      final isAlnum =
+          (rune >= 0x30 && rune <= 0x39) || (rune >= 0x61 && rune <= 0x7a);
       if (isAlnum) {
         if (pendingSep && buffer.isNotEmpty) buffer.write('-');
         pendingSep = false;
@@ -403,7 +460,6 @@ class Wizard extends _$Wizard {
     _tripLegRadiusKm = legRadiusKm ?? _tripLegRadiusKm;
     _resetTripEdits();
     _tripResults.clear();
-    _tripSelections.clear();
     state = const AsyncValue.data(WizardTripsRunning());
     final client = ref.read(kustaviClientProvider).requireValue;
     _subscribe(
@@ -427,10 +483,10 @@ class Wizard extends _$Wizard {
   }
 
   WizardQualityReview get _qualityReviewPhase => WizardQualityReview(
-        flaggedCount: _qualityFlags.length,
-        totalImages: _images.length,
-        rerunEnabled: _hasThresholdChanges,
-      );
+    flaggedCount: _qualityFlags.length,
+    totalImages: _images.length,
+    rerunEnabled: _hasThresholdChanges,
+  );
 
   bool get _hasThresholdChanges {
     if (!_hasLastRunThresholds) {
@@ -442,9 +498,9 @@ class Wizard extends _$Wizard {
   }
 
   WizardJunkReview get _junkReviewPhase => WizardJunkReview(
-        flaggedCount: _junkFlags.length,
-        totalImages: _images.length,
-      );
+    flaggedCount: _junkFlags.length,
+    totalImages: _images.length,
+  );
 
   @override
   FutureOr<WizardPhase> build() async {
@@ -470,18 +526,18 @@ class Wizard extends _$Wizard {
     state = AsyncValue.data(WizardScanning(folder: folder));
     final client = ref.read(kustaviClientProvider);
     if (client case AsyncData<KustaviClient>(:final value)) {
-      final request = pb.ScanFolderRequest()..folder = folder..recursive = true;
-      _subscribe(
-        value.scanFolder(request),
-        _onScanEvent,
-        _onScanDone,
-      );
+      final request = pb.ScanFolderRequest()
+        ..folder = folder
+        ..recursive = true;
+      _subscribe(value.scanFolder(request), _onScanEvent, _onScanDone);
     } else if (client case AsyncError(:final error, :final stackTrace)) {
       state = AsyncValue.error(error, stackTrace);
     } else {
       state = AsyncValue.error(
         BackendRpc(
-          const GrpcError.unavailable('Back end is still starting up. Please wait a moment.'),
+          const GrpcError.unavailable(
+            'Back end is still starting up. Please wait a moment.',
+          ),
         ),
         StackTrace.current,
       );
@@ -502,31 +558,31 @@ class Wizard extends _$Wizard {
       return;
     }
     switch (event.whichEvent()) {
-        case pb.ScanEvent_Event.progress:
-          state = AsyncValue.data(
-            phase.copyWith(
-              filesSeen: event.progress.filesSeen,
-              imagesFound: event.progress.imagesFound,
-              currentPath: event.progress.currentPath,
-            ),
-          );
-        case pb.ScanEvent_Event.image:
-          final meta = event.image;
-          if (!_images.containsKey(meta.id)) {
-            _orderedIds.add(meta.id);
-          }
-          _images[meta.id] = ImageInfo.fromMeta(meta);
-          state = AsyncValue.data(
-            phase.copyWith(
-              imagesFound: _orderedIds.length,
-              currentPath: meta.name,
-            ),
-          );
-        case pb.ScanEvent_Event.complete:
-          _pendingScanComplete = event.complete;
-        case pb.ScanEvent_Event.notSet:
-          break;
-      }
+      case pb.ScanEvent_Event.progress:
+        state = AsyncValue.data(
+          phase.copyWith(
+            filesSeen: event.progress.filesSeen,
+            imagesFound: event.progress.imagesFound,
+            currentPath: event.progress.currentPath,
+          ),
+        );
+      case pb.ScanEvent_Event.image:
+        final meta = event.image;
+        if (!_images.containsKey(meta.id)) {
+          _orderedIds.add(meta.id);
+        }
+        _images[meta.id] = ImageInfo.fromMeta(meta);
+        state = AsyncValue.data(
+          phase.copyWith(
+            imagesFound: _orderedIds.length,
+            currentPath: meta.name,
+          ),
+        );
+      case pb.ScanEvent_Event.complete:
+        _pendingScanComplete = event.complete;
+      case pb.ScanEvent_Event.notSet:
+        break;
+    }
   }
 
   void _onScanDone() {
@@ -753,13 +809,13 @@ class Wizard extends _$Wizard {
     final plan = ref.read(deletionPlanProvider);
     final qualityFlagged = _qualityFlags.keys.toSet();
     bool marked(String id) => isMarkedForDeletion(
-          plan,
-          id,
-          step: DeletionStep.quality,
-          qualityFlagged: qualityFlagged,
-          junkFlagged: const <String>{},
-          similarKeepers: const <String, String>{},
-        );
+      plan,
+      id,
+      step: DeletionStep.quality,
+      qualityFlagged: qualityFlagged,
+      junkFlagged: const <String>{},
+      similarKeepers: const <String, String>{},
+    );
     return _images.keys.where(marked).toList(growable: false);
   }
 
@@ -784,7 +840,6 @@ class Wizard extends _$Wizard {
     }
     _returnPhase = state.value;
     _tripResults.clear();
-    _tripSelections.clear();
     _resetTripEdits();
     state = const AsyncValue.data(WizardTripsRunning());
     final client = ref.read(kustaviClientProvider).requireValue;
@@ -869,20 +924,24 @@ class Wizard extends _$Wizard {
   }
 
   WizardSimilarReview get _similarReviewPhase => WizardSimilarReview(
-        groupCount: _similarGroups.length,
-        markedCount: _similarMarkedCount(),
-      );
+    groupCount: _similarGroups.length,
+    markedCount: _similarMarkedCount(),
+  );
 
   WizardTripsReview get _tripsReviewPhase {
     final trips = tripResults;
     return WizardTripsReview(
       tripCount: trips.length,
       tripFolders: tripFolders,
-      markedCount: _tripsMarkedCount(trips),
+      markedCount: _tripsMarkedCount(),
       trips: trips,
       unassignedCount: unassignedTripImageIds.length,
     );
   }
+
+  /// Re-publishes S10 after the deletion plan changed under it (e.g. a photo
+  /// toggled for deletion from the detail view).
+  void refreshTripsReview() => _publishTripsReviewPhase();
 
   /// Image ids marked for deletion by any step (quality, junk, similar) or
   /// explicitly by the user. These are excluded from the trips panel and from
@@ -893,15 +952,15 @@ class Wizard extends _$Wizard {
     final qualityFlagged = _qualityFlags.keys.toSet();
     final junkFlagged = _junkFlags.keys.toSet();
     bool deleted(String id) => DeletionStep.values.any(
-          (step) => isMarkedForDeletion(
-            plan,
-            id,
-            step: step,
-            qualityFlagged: qualityFlagged,
-            junkFlagged: junkFlagged,
-            similarKeepers: keepers,
-          ),
-        );
+      (step) => isMarkedForDeletion(
+        plan,
+        id,
+        step: step,
+        qualityFlagged: qualityFlagged,
+        junkFlagged: junkFlagged,
+        similarKeepers: keepers,
+      ),
+    );
     return _images.keys.where(deleted).toSet();
   }
 
@@ -931,8 +990,9 @@ class Wizard extends _$Wizard {
 
   /// The destination that a commit would use: the user's field value, or the
   /// suggested default when they have not typed one.
-  String get _effectiveCommitDestination =>
-      _commitDestination.isNotEmpty ? _commitDestination : _suggestedDestination();
+  String get _effectiveCommitDestination => _commitDestination.isNotEmpty
+      ? _commitDestination
+      : _suggestedDestination();
 
   WizardCommitSummary get _commitSummaryPhase {
     final keepIds = _keepIds();
@@ -948,15 +1008,18 @@ class Wizard extends _$Wizard {
     );
   }
 
-  int _tripsMarkedCount(List<TripInfo> trips) {
-    int count = 0;
-    for (final trip in trips) {
-      final selections = _tripSelections[trip.id];
-      if (selections != null) {
-        count += selections.length;
-      }
+  /// Photos the back end clustered into a trip that the user has since marked
+  /// for deletion (by any step). Shown as the S10 "marked" stat.
+  int _tripsMarkedCount() {
+    final deleted = _deletedImageIds();
+    if (deleted.isEmpty) {
+      return 0;
     }
-    return count;
+    final clustered = <String>{};
+    for (final base in _tripResults) {
+      clustered.addAll(base.memberIds);
+    }
+    return clustered.intersection(deleted).length;
   }
 
   void _onSimilarDone() {
@@ -996,8 +1059,6 @@ class Wizard extends _$Wizard {
     state = AsyncValue.data(_tripsReviewPhase);
   }
 
-
-
   // --- S6 ----------------------------------------------------------------
 
   void _onJunkEvent(pb.JunkEvent event) {
@@ -1029,8 +1090,12 @@ class Wizard extends _$Wizard {
             secondsPerImage = elapsedMs / 1000 / measured;
             final remaining = total - done;
             estimatedCompletion = remaining > 0
-                ? now.add(Duration(
-                    milliseconds: (secondsPerImage * remaining * 1000).round()))
+                ? now.add(
+                    Duration(
+                      milliseconds: (secondsPerImage * remaining * 1000)
+                          .round(),
+                    ),
+                  )
                 : now;
           }
         }
@@ -1091,7 +1156,6 @@ class Wizard extends _$Wizard {
     ref.read(deletionPlanProvider.notifier).markAll(_junkFlags.keys);
   }
 
-
   // --- S8 ----------------------------------------------------------------
 
   void _onSimilarEvent(pb.SimilarEvent event) {
@@ -1121,15 +1185,14 @@ class Wizard extends _$Wizard {
     return _similarGroups
         .expand((group) => group.memberIds)
         .where(
-          (id) =>
-              isMarkedForDeletion(
-                plan,
-                id,
-                step: DeletionStep.similar,
-                qualityFlagged: _qualityFlags.keys.toSet(),
-                junkFlagged: _junkFlags.keys.toSet(),
-                similarKeepers: keepers,
-              ),
+          (id) => isMarkedForDeletion(
+            plan,
+            id,
+            step: DeletionStep.similar,
+            qualityFlagged: _qualityFlags.keys.toSet(),
+            junkFlagged: _junkFlags.keys.toSet(),
+            similarKeepers: keepers,
+          ),
         )
         .length;
   }
@@ -1337,7 +1400,6 @@ class Wizard extends _$Wizard {
     _junkFlags.clear();
     _similarGroups.clear();
     _tripResults.clear();
-    _tripSelections.clear();
     _resetTripEdits();
     _commitDestination = '';
     _commitKeepIds = const <String>[];

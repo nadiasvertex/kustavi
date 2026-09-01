@@ -5,6 +5,7 @@ import '../state/decisions.dart';
 import '../state/domain.dart';
 import '../state/wizard.dart';
 import 'format.dart';
+import 'widgets/detail_view.dart';
 import 'widgets/image_cell.dart';
 import 'widgets/image_grid.dart';
 
@@ -124,14 +125,38 @@ class _ClusteringControlsState extends State<_ClusteringControls> {
         title: const Text('Clustering settings'),
         childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
         children: [
-          _slider('Max time gap', _gap, 1, 168, 'h',
-              (v) => setState(() => _gap = v)),
-          _slider('Max trip drift', _distance, 10, 1000, 'km',
-              (v) => setState(() => _distance = v)),
-          _slider('Away-from-home distance', _homeRadius, 1, 100, 'km',
-              (v) => setState(() => _homeRadius = v)),
-          _slider('New-leg distance', _legRadius, 1, 200, 'km',
-              (v) => setState(() => _legRadius = v)),
+          _slider(
+            'Max time gap',
+            _gap,
+            1,
+            168,
+            'h',
+            (v) => setState(() => _gap = v),
+          ),
+          _slider(
+            'Max trip drift',
+            _distance,
+            10,
+            1000,
+            'km',
+            (v) => setState(() => _distance = v),
+          ),
+          _slider(
+            'Away-from-home distance',
+            _homeRadius,
+            1,
+            100,
+            'km',
+            (v) => setState(() => _homeRadius = v),
+          ),
+          _slider(
+            'New-leg distance',
+            _legRadius,
+            1,
+            200,
+            'km',
+            (v) => setState(() => _legRadius = v),
+          ),
           Row(
             children: [
               Expanded(
@@ -157,14 +182,17 @@ class _ClusteringControlsState extends State<_ClusteringControls> {
     );
   }
 
-  Widget _slider(String label, double value, double min, double max,
-      String unit, ValueChanged<double> onChanged) {
+  Widget _slider(
+    String label,
+    double value,
+    double min,
+    double max,
+    String unit,
+    ValueChanged<double> onChanged,
+  ) {
     return Row(
       children: [
-        SizedBox(
-          width: 190,
-          child: Text('$label: ${value.round()} $unit'),
-        ),
+        SizedBox(width: 190, child: Text('$label: ${value.round()} $unit')),
         Expanded(
           child: Slider(
             value: value.clamp(min, max),
@@ -297,8 +325,11 @@ class _FolderSectionState extends ConsumerState<_FolderSection> {
                   ),
                 ),
                 const SizedBox(width: 4),
-                Icon(_editing ? Icons.check : Icons.edit,
-                    size: 16, color: theme.colorScheme.onSurfaceVariant),
+                Icon(
+                  _editing ? Icons.check : Icons.edit,
+                  size: 16,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ],
             ),
           ),
@@ -345,26 +376,58 @@ class _TripWidgetState extends ConsumerState<_TripWidget> {
     });
   }
 
-  void _toggleDeletionMark(String imageId) {
-    final selections = widget.wizard.tripSelections
-        .putIfAbsent(widget.trip.id, () => <String>{});
-    if (!selections.remove(imageId)) {
-      selections.add(imageId);
+  /// Opens the image detail modal (metadata panel + deletion toggle), passing
+  /// the photo's trip / leg / place mappings (spec/frontend.md §7.2). A mark
+  /// toggled inside the modal drops the photo from the panel on close.
+  void _openDetail(String imageId, TripLegInfo? leg) {
+    final wizard = widget.wizard;
+    final image = wizard.images[imageId];
+    if (image == null) {
+      return;
     }
-    ref.read(wizardProvider);
-    setState(() {});
+    final trip = widget.trip;
+    final tripLabel = trip.isHome
+        ? 'Home'
+        : (trip.placeName.isNotEmpty
+              ? trip.placeName
+              : (trip.folder ?? 'Trip'));
+    final dates =
+        '${trip.start.toIso8601String().substring(0, 10)} – '
+        '${trip.end.toIso8601String().substring(0, 10)}';
+    final quality = wizard.qualityFlags[imageId];
+    final junk = wizard.junkFlags[imageId];
+    showImageDetail(
+      context,
+      image: image,
+      canToggleDeletion: true,
+      qualityFlagged: wizard.qualityFlags.keys.toSet(),
+      junkFlagged: wizard.junkFlags.keys.toSet(),
+      sharpness: quality?.sharpness,
+      exposureScore: quality?.exposureScore,
+      junkReason: junk?.reason,
+      junkConfidence: junk?.confidence,
+      mappings: <String, String>{
+        'Trip': '$tripLabel · $dates',
+        if (leg != null && leg.placeName.isNotEmpty) 'Leg': leg.placeName,
+        if (trip.placeName.isNotEmpty) 'Place': trip.placeName,
+      },
+    ).then((_) {
+      if (mounted) {
+        widget.wizard.refreshTripsReview();
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final trip = widget.trip;
-    final selections =
-        widget.wizard.tripSelections[trip.id] ?? const <String>{};
 
     final label = trip.isHome
         ? 'Home'
-        : (trip.placeName.isNotEmpty ? trip.placeName : (trip.folder ?? 'Trip'));
+        : (trip.placeName.isNotEmpty
+              ? trip.placeName
+              : (trip.folder ?? 'Trip'));
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
@@ -384,45 +447,50 @@ class _TripWidgetState extends ConsumerState<_TripWidget> {
                   '$label  ·  '
                   '${trip.start.toIso8601String().substring(0, 10)}'
                   ' – ${trip.end.toIso8601String().substring(0, 10)}',
-                  style: theme.textTheme.bodyMedium
-                      ?.copyWith(fontWeight: FontWeight.w500),
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
               Text(
                 '${trip.memberIds.length} photos · '
                 '${formatDuration(trip.start, trip.end)}',
-                style: theme.textTheme.labelSmall
-                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
               IconButton(
                 tooltip: _selecting ? 'Cancel selection' : 'Select photos',
                 visualDensity: VisualDensity.compact,
                 icon: Icon(_selecting ? Icons.close : Icons.checklist),
-                onPressed: () => _selecting ? _exitSelecting() : setState(
-                    () => _selecting = true),
+                onPressed: () => _selecting
+                    ? _exitSelecting()
+                    : setState(() => _selecting = true),
               ),
             ],
           ),
           if (trip.legs.length <= 1)
-            _grid(trip.memberIds)
+            _grid(trip.memberIds, null)
           else
-            ...trip.legs.map((leg) => Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
-                      child: Text(
-                        leg.placeName.isNotEmpty
-                            ? leg.placeName
-                            : 'Leg (${leg.memberIds.length})',
-                        style: theme.textTheme.labelMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
+            ...trip.legs.map(
+              (leg) => Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+                    child: Text(
+                      leg.placeName.isNotEmpty
+                          ? leg.placeName
+                          : 'Leg (${leg.memberIds.length})',
+                      style: theme.textTheme.labelMedium?.copyWith(
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                     ),
-                    _grid(leg.memberIds),
-                  ],
-                )),
+                  ),
+                  _grid(leg.memberIds, leg),
+                ],
+              ),
+            ),
           if (_selecting && _selected.isNotEmpty)
             _MoveBar(
               count: _selected.length,
@@ -435,15 +503,6 @@ class _TripWidgetState extends ConsumerState<_TripWidget> {
                 widget.wizard.createTripFromImages(Set.of(_selected));
                 _exitSelecting();
               },
-            )
-          else if (!_selecting && selections.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(left: 16, top: 4),
-              child: Text(
-                '${selections.length} selected for deletion',
-                style: theme.textTheme.bodySmall
-                    ?.copyWith(color: theme.colorScheme.error),
-              ),
             ),
         ],
       ),
@@ -451,25 +510,25 @@ class _TripWidgetState extends ConsumerState<_TripWidget> {
   }
 
   List<_MoveTarget> _moveTargets() {
-    final targets = <_MoveTarget>[
-      const _MoveTarget(null, 'Remove from trips'),
-    ];
+    final targets = <_MoveTarget>[const _MoveTarget(null, 'Remove from trips')];
     for (final other in widget.wizard.tripResults) {
       if (other.id == widget.trip.id) continue;
       final name = other.isHome
           ? 'Home'
           : (other.placeName.isNotEmpty
-              ? other.placeName
-              : (other.folder ?? 'Trip'));
-      targets.add(_MoveTarget(
-        other.id,
-        '$name · ${other.start.toIso8601String().substring(0, 10)}',
-      ));
+                ? other.placeName
+                : (other.folder ?? 'Trip'));
+      targets.add(
+        _MoveTarget(
+          other.id,
+          '$name · ${other.start.toIso8601String().substring(0, 10)}',
+        ),
+      );
     }
     return targets;
   }
 
-  Widget _grid(List<String> ids) {
+  Widget _grid(List<String> ids, TripLegInfo? leg) {
     return ImageGrid(
       count: ids.length,
       builder: (context, index) {
@@ -480,15 +539,12 @@ class _TripWidgetState extends ConsumerState<_TripWidget> {
         final image = widget.wizard.images[imageId];
         if (image == null) return const SizedBox.shrink();
 
-        final selections =
-            widget.wizard.tripSelections[widget.trip.id] ?? const <String>{};
-
         if (_selecting) {
           final picked = _selected.contains(imageId);
           return Stack(
             fit: StackFit.expand,
             children: [
-              ImageCell(image: image, marked: selections.contains(imageId)),
+              ImageCell(image: image, marked: false),
               Positioned.fill(
                 child: GestureDetector(
                   onTap: () => setState(() {
@@ -504,10 +560,8 @@ class _TripWidgetState extends ConsumerState<_TripWidget> {
                         width: 3,
                       ),
                       color: picked
-                          ? Theme.of(context)
-                              .colorScheme
-                              .primary
-                              .withValues(alpha: 0.18)
+                          ? Theme.of(context).colorScheme.primary
+                                .withValues(alpha: 0.18)
                           : Colors.transparent,
                     ),
                     child: picked
@@ -517,8 +571,7 @@ class _TripWidgetState extends ConsumerState<_TripWidget> {
                               padding: const EdgeInsets.all(6),
                               child: Icon(
                                 Icons.check_circle,
-                                color:
-                                    Theme.of(context).colorScheme.primary,
+                                color: Theme.of(context).colorScheme.primary,
                               ),
                             ),
                           )
@@ -532,8 +585,8 @@ class _TripWidgetState extends ConsumerState<_TripWidget> {
 
         return ImageCell(
           image: image,
-          marked: selections.contains(imageId),
-          onTap: () => _toggleDeletionMark(imageId),
+          marked: false,
+          onTap: () => _openDetail(imageId, leg),
         );
       },
     );

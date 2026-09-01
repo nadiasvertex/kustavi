@@ -22,9 +22,7 @@ Future<void> pumpUntil(
 
 ProviderContainer makeContainer(FakeKustaviClient client) {
   return ProviderContainer(
-    overrides: [
-      kustaviClientProvider.overrideWith((ref) => client),
-    ],
+    overrides: [kustaviClientProvider.overrideWith((ref) => client)],
   );
 }
 
@@ -62,8 +60,7 @@ void main() {
       container = makeContainer(client);
       await reachConfirmFolder(container, client);
 
-      final phase = container.read(wizardProvider).value
-          as WizardConfirmFolder;
+      final phase = container.read(wizardProvider).value as WizardConfirmFolder;
       expect(phase.imageCount, 2);
       expect(phase.folder, '/photos');
       expect(client.lastScanRequest?.recursive, isTrue);
@@ -74,9 +71,7 @@ void main() {
     });
 
     test('zero-image scan → no-images phase', () async {
-      final client = FakeKustaviClient(
-        scanEvents: [scanComplete(images: 0)],
-      );
+      final client = FakeKustaviClient(scanEvents: [scanComplete(images: 0)]);
       container = makeContainer(client);
       await pumpUntil(
         container,
@@ -128,8 +123,7 @@ void main() {
         container,
         () => container.read(wizardProvider).value is WizardQualityReview,
       );
-      final phase = container.read(wizardProvider).value
-          as WizardQualityReview;
+      final phase = container.read(wizardProvider).value as WizardQualityReview;
       expect(phase.flaggedCount, 1);
       expect(phase.totalImages, 2);
       expect(
@@ -140,10 +134,7 @@ void main() {
 
     test('keep-all / mark-all update the deletion plan', () async {
       final client = FakeKustaviClient(
-        scanEvents: [
-          scanImage('a.jpg'),
-          scanComplete(images: 1),
-        ],
+        scanEvents: [scanImage('a.jpg'), scanComplete(images: 1)],
         qualityEvents: [qualityFlag('a.jpg')],
       );
       container = makeContainer(client);
@@ -167,10 +158,7 @@ void main() {
 
     test('quality RPC error → wizard error state (§10.2)', () async {
       final client = FakeKustaviClient(
-        scanEvents: [
-          scanImage('a.jpg'),
-          scanComplete(images: 1),
-        ],
+        scanEvents: [scanImage('a.jpg'), scanComplete(images: 1)],
         qualityError: rpcBoom('quality exploded'),
       );
       container = makeContainer(client);
@@ -183,108 +171,105 @@ void main() {
             container.read(wizardProvider) is AsyncError<Object?> &&
             container.read(wizardProvider).value == null,
       );
-      final error = (container.read(wizardProvider)
-          as AsyncError<Object?>)
-          .error;
+      final error =
+          (container.read(wizardProvider) as AsyncError<Object?>).error;
       expect(error, isA<BackendRpc>());
       expect((error as BackendRpc).message, 'quality exploded');
 
       // [Back] on the error screen returns to the pre-pass phase (S2).
       container.read(wizardProvider.notifier).goBackFromError();
-      expect(
-        container.read(wizardProvider).value,
-        isA<WizardConfirmFolder>(),
-      );
+      expect(container.read(wizardProvider).value, isA<WizardConfirmFolder>());
     });
 
-    test('threshold change republishes the review phase (notifies, reruns)',
-        () async {
-      final client = FakeKustaviClient(
-        scanEvents: [
-          scanImage('a.jpg'),
-          scanImage('b.jpg'),
-          scanComplete(images: 2),
-        ],
-        qualityEvents: [qualityFlag('a.jpg')],
-      );
-      container = makeContainer(client);
-      await reachConfirmFolder(container, client);
-      container.read(wizardProvider.notifier).continueFromConfirm();
-      await pumpUntil(
-        container,
-        () => container.read(wizardProvider).value is WizardQualityReview,
-      );
+    test(
+      'threshold change republishes the review phase (notifies, reruns)',
+      () async {
+        final client = FakeKustaviClient(
+          scanEvents: [
+            scanImage('a.jpg'),
+            scanImage('b.jpg'),
+            scanComplete(images: 2),
+          ],
+          qualityEvents: [qualityFlag('a.jpg')],
+        );
+        container = makeContainer(client);
+        await reachConfirmFolder(container, client);
+        container.read(wizardProvider.notifier).continueFromConfirm();
+        await pumpUntil(
+          container,
+          () => container.read(wizardProvider).value is WizardQualityReview,
+        );
 
-      final wizard = container.read(wizardProvider.notifier);
-      final before = container.read(wizardProvider).value
-          as WizardQualityReview;
-      expect(before.rerunEnabled, isFalse);
+        final wizard = container.read(wizardProvider.notifier);
+        final before =
+            container.read(wizardProvider).value as WizardQualityReview;
+        expect(before.rerunEnabled, isFalse);
 
-      var notifications = 0;
-      container.listen(wizardProvider, (_, _) => notifications++);
+        var notifications = 0;
+        container.listen(wizardProvider, (_, _) => notifications++);
 
-      wizard.setBlurThreshold(250);
-      expect(notifications, 1);
-      final after = container.read(wizardProvider).value
-          as WizardQualityReview;
-      expect(identical(before, after), isFalse);
-      expect(after.rerunEnabled, isTrue);
-      // The republished phase keeps the review's counts.
-      expect(after.flaggedCount, before.flaggedCount);
-      expect(after.totalImages, before.totalImages);
+        wizard.setBlurThreshold(250);
+        expect(notifications, 1);
+        final after =
+            container.read(wizardProvider).value as WizardQualityReview;
+        expect(identical(before, after), isFalse);
+        expect(after.rerunEnabled, isTrue);
+        // The republished phase keeps the review's counts.
+        expect(after.flaggedCount, before.flaggedCount);
+        expect(after.totalImages, before.totalImages);
 
-      // A write with an unchanged value publishes nothing.
-      wizard.setBlurThreshold(250);
-      expect(notifications, 1);
-      expect(identical(container.read(wizardProvider).value, after), isTrue);
-    });
+        // A write with an unchanged value publishes nothing.
+        wizard.setBlurThreshold(250);
+        expect(notifications, 1);
+        expect(identical(container.read(wizardProvider).value, after), isTrue);
+      },
+    );
 
-    test('rerunQualityPass keeps the image index and applies new thresholds',
-        () async {
-      final client = FakeKustaviClient(
-        scanEvents: [
-          scanImage('a.jpg'),
-          scanImage('b.jpg'),
-          scanComplete(images: 2),
-        ],
-        qualityEvents: [qualityFlag('a.jpg')],
-      );
-      container = makeContainer(client);
-      await reachConfirmFolder(container, client);
-      final wizard = container.read(wizardProvider.notifier);
-      wizard.continueFromConfirm();
-      await pumpUntil(
-        container,
-        () => container.read(wizardProvider).value is WizardQualityReview,
-      );
+    test(
+      'rerunQualityPass keeps the image index and applies new thresholds',
+      () async {
+        final client = FakeKustaviClient(
+          scanEvents: [
+            scanImage('a.jpg'),
+            scanImage('b.jpg'),
+            scanComplete(images: 2),
+          ],
+          qualityEvents: [qualityFlag('a.jpg')],
+        );
+        container = makeContainer(client);
+        await reachConfirmFolder(container, client);
+        final wizard = container.read(wizardProvider.notifier);
+        wizard.continueFromConfirm();
+        await pumpUntil(
+          container,
+          () => container.read(wizardProvider).value is WizardQualityReview,
+        );
 
-      wizard.setBlurThreshold(250);
-      wizard.setUnderexposedThreshold(0.5);
-      wizard.rerunQualityPass();
+        wizard.setBlurThreshold(250);
+        wizard.setUnderexposedThreshold(0.5);
+        wizard.rerunQualityPass();
 
-      await pumpUntil(
-        container,
-        () => container.read(wizardProvider).value is WizardQualityReview,
-      );
-      final phase = container.read(wizardProvider).value
-          as WizardQualityReview;
-      expect(client.qualityPassCount, 2);
-      // The index survived the rerun: the header total and the S2 grid
-      // (via [backFromQuality]) stay valid.
-      expect(phase.flaggedCount, 1);
-      expect(phase.totalImages, 2);
-      expect(wizard.images, hasLength(2));
-      // The pass ran with the adjusted thresholds.
-      expect(client.lastQualityRequest?.blurThreshold, 250);
-      expect(client.lastQualityRequest?.underexposedThreshold, 0.5);
-    });
+        await pumpUntil(
+          container,
+          () => container.read(wizardProvider).value is WizardQualityReview,
+        );
+        final phase =
+            container.read(wizardProvider).value as WizardQualityReview;
+        expect(client.qualityPassCount, 2);
+        // The index survived the rerun: the header total and the S2 grid
+        // (via [backFromQuality]) stay valid.
+        expect(phase.flaggedCount, 1);
+        expect(phase.totalImages, 2);
+        expect(wizard.images, hasLength(2));
+        // The pass ran with the adjusted thresholds.
+        expect(client.lastQualityRequest?.blurThreshold, 250);
+        expect(client.lastQualityRequest?.underexposedThreshold, 0.5);
+      },
+    );
 
     test('rerunQualityPass without threshold changes is a no-op', () async {
       final client = FakeKustaviClient(
-        scanEvents: [
-          scanImage('a.jpg'),
-          scanComplete(images: 1),
-        ],
+        scanEvents: [scanImage('a.jpg'), scanComplete(images: 1)],
         qualityEvents: [qualityFlag('a.jpg')],
       );
       container = makeContainer(client);
@@ -308,7 +293,9 @@ void main() {
           scanImage('b.jpg'),
           scanComplete(images: 2),
         ],
-        similarEvents: [similarGroup(1, ['a.jpg', 'b.jpg'], 'a.jpg')],
+        similarEvents: [
+          similarGroup(1, ['a.jpg', 'b.jpg'], 'a.jpg'),
+        ],
       );
       container = makeContainer(client);
       await reachConfirmFolder(container, client);
@@ -322,8 +309,7 @@ void main() {
         container,
         () => container.read(wizardProvider).value is WizardSimilarReview,
       );
-      final phase = container.read(wizardProvider).value
-          as WizardSimilarReview;
+      final phase = container.read(wizardProvider).value as WizardSimilarReview;
       expect(phase.groupCount, 1);
     });
 
@@ -335,7 +321,9 @@ void main() {
           scanComplete(images: 2),
         ],
         modelEvents: [modelReady()],
-        similarEvents: [similarGroup(1, ['a.jpg', 'b.jpg'], 'a.jpg')],
+        similarEvents: [
+          similarGroup(1, ['a.jpg', 'b.jpg'], 'a.jpg'),
+        ],
         junkEvents: [junkFlag('b.jpg', reason: 'meme')],
       );
       container = makeContainer(client);
@@ -353,8 +341,7 @@ void main() {
 
       await pumpUntil(
         container,
-        () =>
-            container.read(modelStatusProvider).value is ModelPrepReady,
+        () => container.read(modelStatusProvider).value is ModelPrepReady,
       );
 
       container.read(wizardProvider.notifier).continueFromSimilar();
@@ -413,7 +400,9 @@ void main() {
           scanComplete(images: 2),
         ],
         modelEvents: [modelReady()],
-        similarEvents: [similarGroup(1, ['a.jpg', 'b.jpg'], 'a.jpg')],
+        similarEvents: [
+          similarGroup(1, ['a.jpg', 'b.jpg'], 'a.jpg'),
+        ],
         junkEvents: [junkFlag('b.jpg', reason: 'meme')],
       );
       container = makeContainer(client);
@@ -431,8 +420,7 @@ void main() {
 
       await pumpUntil(
         container,
-        () =>
-            container.read(modelStatusProvider).value is ModelPrepReady,
+        () => container.read(modelStatusProvider).value is ModelPrepReady,
       );
 
       container.read(wizardProvider.notifier).continueFromSimilar();
@@ -477,22 +465,34 @@ void main() {
       await reachConfirmFolder(container, client);
       final wizard = container.read(wizardProvider.notifier);
       wizard.continueFromConfirm();
-      await pumpUntil(container,
-          () => container.read(wizardProvider).value is WizardQualityReview);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardQualityReview,
+      );
       wizard.continueFromQuality();
-      await pumpUntil(container,
-          () => container.read(wizardProvider).value is WizardSimilarReview);
-      await pumpUntil(container,
-          () => container.read(modelStatusProvider).value is ModelPrepReady);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardSimilarReview,
+      );
+      await pumpUntil(
+        container,
+        () => container.read(modelStatusProvider).value is ModelPrepReady,
+      );
       wizard.continueFromSimilar();
-      await pumpUntil(container,
-          () => container.read(wizardProvider).value is WizardJunkReview);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardJunkReview,
+      );
       wizard.continueFromJunk();
-      await pumpUntil(container,
-          () => container.read(wizardProvider).value is WizardTripsReview);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardTripsReview,
+      );
       wizard.continueFromTrips();
-      await pumpUntil(container,
-          () => container.read(wizardProvider).value is WizardCommitSummary);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardCommitSummary,
+      );
 
       // The suggested destination is a `<source-name>-kept` sibling.
       final summary =
@@ -524,10 +524,7 @@ void main() {
 
     test('cancel committing returns to the commit summary', () async {
       final client = FakeKustaviClient(
-        scanEvents: [
-          scanImage('a.jpg'),
-          scanComplete(images: 1),
-        ],
+        scanEvents: [scanImage('a.jpg'), scanComplete(images: 1)],
         modelEvents: [modelReady()],
         similarEvents: const [],
         commitEvents: [commitProgress(done: 0, total: 1)],
@@ -536,33 +533,41 @@ void main() {
       await reachConfirmFolder(container, client);
       final wizard = container.read(wizardProvider.notifier);
       wizard.continueFromConfirm();
-      await pumpUntil(container,
-          () => container.read(wizardProvider).value is WizardQualityReview);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardQualityReview,
+      );
       wizard.continueFromQuality();
-      await pumpUntil(container,
-          () => container.read(wizardProvider).value is WizardSimilarReview);
-      await pumpUntil(container,
-          () => container.read(modelStatusProvider).value is ModelPrepReady);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardSimilarReview,
+      );
+      await pumpUntil(
+        container,
+        () => container.read(modelStatusProvider).value is ModelPrepReady,
+      );
       wizard.continueFromSimilar();
-      await pumpUntil(container,
-          () => container.read(wizardProvider).value is WizardJunkReview);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardJunkReview,
+      );
       wizard.continueFromJunk();
-      await pumpUntil(container,
-          () => container.read(wizardProvider).value is WizardTripsReview);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardTripsReview,
+      );
       wizard.continueFromTrips();
-      await pumpUntil(container,
-          () => container.read(wizardProvider).value is WizardCommitSummary);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardCommitSummary,
+      );
 
       wizard.startCommit();
       wizard.cancelCommit();
-      expect(
-        container.read(wizardProvider).value,
-        isA<WizardCommitSummary>(),
-      );
+      expect(container.read(wizardProvider).value, isA<WizardCommitSummary>());
     });
 
-    test('trips review: move photos between trips, create, unassign, rerun',
-        () async {
+    test('trips review: move photos between trips, create, unassign, rerun', () async {
       final client = FakeKustaviClient(
         scanEvents: [
           scanImage('a.jpg'),
@@ -573,32 +578,50 @@ void main() {
         modelEvents: [modelReady()],
         similarEvents: const [],
         tripsEvents: [
-          tripEvent(0, ['a.jpg', 'b.jpg'],
-              folder: 'Rome, Italy · April 2026',
-              startMs: 1000,
-              endMs: 2000),
-          tripEvent(1, ['c.jpg'],
-              folder: 'Oslo, Norway · May 2026',
-              startMs: 9000,
-              endMs: 9000),
+          tripEvent(
+            0,
+            ['a.jpg', 'b.jpg'],
+            folder: 'Rome, Italy · April 2026',
+            placeName: 'Rome, Italy',
+            startMs: 1000,
+            endMs: 2000,
+          ),
+          tripEvent(
+            1,
+            ['c.jpg'],
+            folder: 'Oslo, Norway · May 2026',
+            placeName: 'Oslo, Norway',
+            startMs: 9000,
+            endMs: 9000,
+          ),
         ],
       );
       container = makeContainer(client);
       await reachConfirmFolder(container, client);
       container.read(wizardProvider.notifier).continueFromConfirm();
-      await pumpUntil(container,
-          () => container.read(wizardProvider).value is WizardQualityReview);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardQualityReview,
+      );
       container.read(wizardProvider.notifier).continueFromQuality();
-      await pumpUntil(container,
-          () => container.read(wizardProvider).value is WizardSimilarReview);
-      await pumpUntil(container,
-          () => container.read(modelStatusProvider).value is ModelPrepReady);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardSimilarReview,
+      );
+      await pumpUntil(
+        container,
+        () => container.read(modelStatusProvider).value is ModelPrepReady,
+      );
       container.read(wizardProvider.notifier).continueFromSimilar();
-      await pumpUntil(container,
-          () => container.read(wizardProvider).value is WizardJunkReview);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardJunkReview,
+      );
       container.read(wizardProvider.notifier).continueFromJunk();
-      await pumpUntil(container,
-          () => container.read(wizardProvider).value is WizardTripsReview);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardTripsReview,
+      );
 
       final wizard = container.read(wizardProvider.notifier);
       expect(wizard.tripResults.map((t) => t.id), [0, 1]);
@@ -606,8 +629,9 @@ void main() {
 
       // Move b.jpg from trip 0 into trip 1.
       wizard.moveImagesToTrip(['b.jpg'], 1);
-      expect(wizard.tripResults.firstWhere((t) => t.id == 0).memberIds,
-          ['a.jpg']);
+      expect(wizard.tripResults.firstWhere((t) => t.id == 0).memberIds, [
+        'a.jpg',
+      ]);
       expect(
         wizard.tripResults.firstWhere((t) => t.id == 1).memberIds,
         containsAll(<String>['b.jpg', 'c.jpg']),
@@ -622,11 +646,19 @@ void main() {
       final newId = wizard.createTripFromImages(['a.jpg']);
       expect(wizard.tripResults.any((t) => t.id == newId), isTrue);
       expect(wizard.unassignedTripImageIds, isNot(contains('a.jpg')));
+      // a.jpg was clustered under trip 0 ("Rome, Italy"), so the hand-made
+      // trip borrows that place name rather than a bare "Trip · <month>".
+      expect(
+        wizard.tripResults.firstWhere((t) => t.id == newId).folder,
+        contains('Rome, Italy'),
+      );
 
       // Re-clustering sends the slider values and drops hand edits.
       wizard.rerunTripsPass(homeRadiusKm: 7, legRadiusKm: 40);
-      await pumpUntil(container,
-          () => container.read(wizardProvider).value is WizardTripsReview);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardTripsReview,
+      );
       expect(client.lastTripsRequest!.homeRadiusKm, 7);
       expect(client.lastTripsRequest!.legRadiusKm, 40);
       expect(wizard.tripResults.map((t) => t.id), [0, 1]);
@@ -642,34 +674,50 @@ void main() {
         modelEvents: [modelReady()],
         similarEvents: const [],
         tripsEvents: [
-          tripEvent(0, ['a.jpg'],
-              folder: 'Rome, Italy · April 2026',
-              folderSlug: 'rome-italy-2026-04',
-              startMs: 1000,
-              endMs: 2000),
-          tripEvent(1, ['b.jpg'],
-              folder: 'Oslo, Norway · May 2026',
-              folderSlug: 'oslo-norway-2026-05',
-              startMs: 9000,
-              endMs: 9000),
+          tripEvent(
+            0,
+            ['a.jpg'],
+            folder: 'Rome, Italy · April 2026',
+            folderSlug: 'rome-italy-2026-04',
+            startMs: 1000,
+            endMs: 2000,
+          ),
+          tripEvent(
+            1,
+            ['b.jpg'],
+            folder: 'Oslo, Norway · May 2026',
+            folderSlug: 'oslo-norway-2026-05',
+            startMs: 9000,
+            endMs: 9000,
+          ),
         ],
       );
       container = makeContainer(client);
       await reachConfirmFolder(container, client);
       container.read(wizardProvider.notifier).continueFromConfirm();
-      await pumpUntil(container,
-          () => container.read(wizardProvider).value is WizardQualityReview);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardQualityReview,
+      );
       container.read(wizardProvider.notifier).continueFromQuality();
-      await pumpUntil(container,
-          () => container.read(wizardProvider).value is WizardSimilarReview);
-      await pumpUntil(container,
-          () => container.read(modelStatusProvider).value is ModelPrepReady);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardSimilarReview,
+      );
+      await pumpUntil(
+        container,
+        () => container.read(modelStatusProvider).value is ModelPrepReady,
+      );
       container.read(wizardProvider.notifier).continueFromSimilar();
-      await pumpUntil(container,
-          () => container.read(wizardProvider).value is WizardJunkReview);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardJunkReview,
+      );
       container.read(wizardProvider.notifier).continueFromJunk();
-      await pumpUntil(container,
-          () => container.read(wizardProvider).value is WizardTripsReview);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardTripsReview,
+      );
 
       final wizard = container.read(wizardProvider.notifier);
       final plan = wizard.commitFolderPlan();
@@ -681,101 +729,107 @@ void main() {
       expect(wizard.commitFolderPlan()['a.jpg'], 'italy-trip');
     });
 
-    test('trips review: photos marked for deletion drop out of the panel',
-        () async {
-      final client = FakeKustaviClient(
-        scanEvents: [
-          scanImage('a.jpg'),
-          scanImage('b.jpg'),
-          scanImage('c.jpg'),
-          scanComplete(images: 3),
-        ],
-        modelEvents: [modelReady()],
-        similarEvents: const [],
-        tripsEvents: [
-          tripEvent(0, ['a.jpg', 'b.jpg'],
-              folder: 'Rome, Italy · April 2026', startMs: 1000, endMs: 2000),
-          tripEvent(1, ['c.jpg'],
-              folder: 'Oslo, Norway · May 2026', startMs: 9000, endMs: 9000),
-        ],
-      );
-      container = makeContainer(client);
-      await reachConfirmFolder(container, client);
-      container.read(wizardProvider.notifier).continueFromConfirm();
-      await pumpUntil(container,
-          () => container.read(wizardProvider).value is WizardQualityReview);
-      container.read(wizardProvider.notifier).continueFromQuality();
-      await pumpUntil(container,
-          () => container.read(wizardProvider).value is WizardSimilarReview);
-      await pumpUntil(container,
-          () => container.read(modelStatusProvider).value is ModelPrepReady);
-      container.read(wizardProvider.notifier).continueFromSimilar();
-      await pumpUntil(container,
-          () => container.read(wizardProvider).value is WizardJunkReview);
-      container.read(wizardProvider.notifier).continueFromJunk();
-      await pumpUntil(container,
-          () => container.read(wizardProvider).value is WizardTripsReview);
+    test(
+      'trips review: photos marked for deletion drop out of the panel',
+      () async {
+        final client = FakeKustaviClient(
+          scanEvents: [
+            scanImage('a.jpg'),
+            scanImage('b.jpg'),
+            scanImage('c.jpg'),
+            scanComplete(images: 3),
+          ],
+          modelEvents: [modelReady()],
+          similarEvents: const [],
+          tripsEvents: [
+            tripEvent(
+              0,
+              ['a.jpg', 'b.jpg'],
+              folder: 'Rome, Italy · April 2026',
+              startMs: 1000,
+              endMs: 2000,
+            ),
+            tripEvent(
+              1,
+              ['c.jpg'],
+              folder: 'Oslo, Norway · May 2026',
+              startMs: 9000,
+              endMs: 9000,
+            ),
+          ],
+        );
+        container = makeContainer(client);
+        await reachConfirmFolder(container, client);
+        container.read(wizardProvider.notifier).continueFromConfirm();
+        await pumpUntil(
+          container,
+          () => container.read(wizardProvider).value is WizardQualityReview,
+        );
+        container.read(wizardProvider.notifier).continueFromQuality();
+        await pumpUntil(
+          container,
+          () => container.read(wizardProvider).value is WizardSimilarReview,
+        );
+        await pumpUntil(
+          container,
+          () => container.read(modelStatusProvider).value is ModelPrepReady,
+        );
+        container.read(wizardProvider.notifier).continueFromSimilar();
+        await pumpUntil(
+          container,
+          () => container.read(wizardProvider).value is WizardJunkReview,
+        );
+        container.read(wizardProvider.notifier).continueFromJunk();
+        await pumpUntil(
+          container,
+          () => container.read(wizardProvider).value is WizardTripsReview,
+        );
 
-      final wizard = container.read(wizardProvider.notifier);
-      expect(wizard.tripResults.first.memberIds, ['a.jpg', 'b.jpg']);
+        final wizard = container.read(wizardProvider.notifier);
+        expect(wizard.tripResults.first.memberIds, ['a.jpg', 'b.jpg']);
 
-      // Mark b.jpg for deletion: it leaves the trip and is not "unassigned".
-      container.read(deletionPlanProvider.notifier).mark('b.jpg');
-      expect(wizard.tripResults.firstWhere((t) => t.id == 0).memberIds,
-          ['a.jpg']);
-      expect(wizard.unassignedTripImageIds, isNot(contains('b.jpg')));
+        // Mark b.jpg for deletion: it leaves the trip and is not "unassigned".
+        container.read(deletionPlanProvider.notifier).mark('b.jpg');
+        expect(wizard.tripResults.firstWhere((t) => t.id == 0).memberIds, [
+          'a.jpg',
+        ]);
+        expect(wizard.unassignedTripImageIds, isNot(contains('b.jpg')));
 
-      // Marking every member removes the trip entirely.
-      container.read(deletionPlanProvider.notifier).mark('c.jpg');
-      expect(wizard.tripResults.map((t) => t.id), [0]);
-    });
+        // Marking every member removes the trip entirely.
+        container.read(deletionPlanProvider.notifier).mark('c.jpg');
+        expect(wizard.tripResults.map((t) => t.id), [0]);
+      },
+    );
 
     test('back from confirm discards results (fresh session → S0)', () async {
       final client = FakeKustaviClient(
-        scanEvents: [
-          scanImage('a.jpg'),
-          scanComplete(images: 1),
-        ],
+        scanEvents: [scanImage('a.jpg'), scanComplete(images: 1)],
       );
       container = makeContainer(client);
       await reachConfirmFolder(container, client);
 
       container.read(wizardProvider.notifier).backFromConfirm();
-      expect(
-        container.read(wizardProvider).value,
-        isA<WizardStart>(),
-      );
-      expect(
-        container.read(wizardProvider.notifier).imageIds,
-        isEmpty,
-      );
+      expect(container.read(wizardProvider).value, isA<WizardStart>());
+      expect(container.read(wizardProvider.notifier).imageIds, isEmpty);
     });
 
     test('resetToStart clears the deletion plan (S13 start over)', () async {
       final client = FakeKustaviClient(
-        scanEvents: [
-          scanImage('a.jpg'),
-          scanComplete(images: 1),
-        ],
+        scanEvents: [scanImage('a.jpg'), scanComplete(images: 1)],
       );
       container = makeContainer(client);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardStart,
       );
-      container
-          .read(deletionPlanProvider.notifier)
-          .mark('a.jpg');
+      container.read(deletionPlanProvider.notifier).mark('a.jpg');
       expect(
         container.read(deletionPlanProvider).explicitDeleted,
         contains('a.jpg'),
       );
 
       container.read(wizardProvider.notifier).resetToStart();
-      expect(
-        container.read(deletionPlanProvider).explicitDeleted,
-        isEmpty,
-      );
+      expect(container.read(deletionPlanProvider).explicitDeleted, isEmpty);
     });
   });
 }

@@ -42,8 +42,9 @@ void main() {
   }
 
   group('detail view (§7.2, §12 progressive swap)', () {
-    testWidgets('swaps the working preview for the decoded master',
-        (tester) async {
+    testWidgets('swaps the working preview for the decoded master', (
+      tester,
+    ) async {
       final image = makeImage();
       final container = ProviderContainer();
       addTearDown(container.dispose);
@@ -76,8 +77,9 @@ void main() {
       expect(find.byKey(const ValueKey('working')), findsNothing);
     });
 
-    testWidgets('metadata panel shows name, size, and dimensions',
-        (tester) async {
+    testWidgets('metadata panel shows name, size, and dimensions', (
+      tester,
+    ) async {
       final image = makeImage();
       final container = ProviderContainer();
       addTearDown(container.dispose);
@@ -100,8 +102,9 @@ void main() {
       expect(switchWidget.onChanged, isNull);
     });
 
-    testWidgets('toggling in review mode updates the deletion plan',
-        (tester) async {
+    testWidgets('toggling in review mode updates the deletion plan', (
+      tester,
+    ) async {
       final image = makeImage();
       final container = ProviderContainer();
       addTearDown(container.dispose);
@@ -142,6 +145,39 @@ void main() {
         container.read(deletionPlanProvider).explicitKept,
         contains('a.jpg'),
       );
+    });
+
+    testWidgets('metadata panel shows trip/place mappings', (tester) async {
+      final image = makeImage();
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: Scaffold(
+              body: DetailView(
+                image: image,
+                canToggleDeletion: false,
+                mappings: const <String, String>{
+                  'Trip': 'Rome, Italy · 2026-04-03 – 2026-04-09',
+                  'Leg': 'Rome, Italy',
+                  'Place': '',
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('TRIP'), findsOneWidget);
+      expect(
+        find.text('Rome, Italy · 2026-04-03 – 2026-04-09'),
+        findsOneWidget,
+      );
+      expect(find.text('LEG'), findsOneWidget);
+      // Empty values are skipped.
+      expect(find.text('PLACE'), findsNothing);
     });
 
     testWidgets('flagged images default to marked', (tester) async {

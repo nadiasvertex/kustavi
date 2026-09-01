@@ -258,8 +258,12 @@ drift 300 km, away-from-home 15 km, new-leg 25 km).
 - **Per-photo curation.** Each trip has a select toggle: in select mode,
   tapping photos picks them and a "Move to trip ▸" menu reassigns the
   selection to another trip, a **new trip**, or **removes** it from every
-  trip. Outside select mode, tapping a photo marks it for deletion (as
-  before). An **"Unassigned"** section at the bottom lists photos in no
+  trip. A hand-made trip inherits its place name from the source photos'
+  original cluster when they were geocoded. Outside select mode, tapping a
+  photo opens the detail view (metadata panel shows the trip / leg / place
+  mappings; the deletion toggle is enabled). Photos marked for deletion by
+  any step drop out of the panel. An **"Unassigned"** section at the bottom
+  lists photos in no
   trip (never clustered, or pulled out) with an "Add to trip ▸" menu.
 - Cell click → detail view with the deletion toggle enabled.
 - Reassignments are client-side overlays on the clustering result; they
