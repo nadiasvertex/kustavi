@@ -121,9 +121,10 @@ class Wizard extends _$Wizard {
   /// per-image reassignments applied, sorted chronologically. Empty trips
   /// (all members moved away) are dropped.
   List<TripInfo> get tripResults {
+    final deleted = _deletedImageIds();
     final trips = <TripInfo>[];
     for (final base in [..._tripResults, ..._userTrips]) {
-      final ids = _effectiveMemberIds(base);
+      final ids = _effectiveMemberIds(base, deleted);
       if (ids.isEmpty) {
         continue;
       }
@@ -146,15 +147,18 @@ class Wizard extends _$Wizard {
   int get tripHomeRadiusKm => _tripHomeRadiusKm;
   int get tripLegRadiusKm => _tripLegRadiusKm;
 
-  List<String> _effectiveMemberIds(TripInfo base) {
+  List<String> _effectiveMemberIds(TripInfo base, Set<String> deleted) {
     final ids = <String>{};
     for (final id in base.memberIds) {
+      if (deleted.contains(id)) {
+        continue;
+      }
       if ((_tripMembership[id] ?? base.id) == base.id) {
         ids.add(id);
       }
     }
     _tripMembership.forEach((id, tid) {
-      if (tid == base.id) {
+      if (tid == base.id && !deleted.contains(id)) {
         ids.add(id);
       }
     });
@@ -171,9 +175,10 @@ class Wizard extends _$Wizard {
   }
 
   TripInfo _rebuildTrip(TripInfo base, List<String> ids) {
+    final idSet = ids.toSet();
     // Untouched trip: keep the back end's start/end/centroid/legs verbatim.
-    if (ids.length == base.memberIds.length &&
-        ids.toSet().containsAll(base.memberIds)) {
+    if (idSet.length == base.memberIds.length &&
+        idSet.containsAll(base.memberIds)) {
       return base;
     }
     DateTime? first;
@@ -198,18 +203,48 @@ class Wizard extends _$Wizard {
         gps++;
       }
     }
+    final centroid = gps > 0 ? (latSum / gps, lonSum / gps) : null;
+
+    // Members were only removed (photos marked for deletion, or pulled out of
+    // the trip): keep the back end's leg split and its geocoded place names,
+    // just dropping the removed ids from each leg.
+    final onlyRemovals = base.memberIds.toSet().containsAll(idSet);
+    if (onlyRemovals && base.legs.length > 1) {
+      final legs = <TripLegInfo>[];
+      for (final leg in base.legs) {
+        final kept =
+            leg.memberIds.where(idSet.contains).toList(growable: false);
+        if (kept.isEmpty) {
+          continue;
+        }
+        legs.add(TripLegInfo(
+          placeName: leg.placeName,
+          slug: leg.slug,
+          memberIds: List<String>.unmodifiable(kept),
+          centroid: leg.centroid,
+        ));
+      }
+      return base.copyWith(
+        start: first ?? base.start,
+        end: last ?? base.end,
+        memberIds: List<String>.unmodifiable(ids),
+        centroid: centroid,
+        legs: legs,
+      );
+    }
+
     return base.copyWith(
       start: first ?? base.start,
       end: last ?? base.end,
       memberIds: List<String>.unmodifiable(ids),
-      centroid: gps > 0 ? (latSum / gps, lonSum / gps) : null,
+      centroid: centroid,
       // Hand edits invalidate the back end's leg split; collapse to one leg.
       legs: <TripLegInfo>[
         TripLegInfo(
           placeName: base.placeName,
           slug: base.folderSlug.isNotEmpty ? base.folderSlug : 'leg-1',
           memberIds: List<String>.unmodifiable(ids),
-          centroid: gps > 0 ? (latSum / gps, lonSum / gps) : null,
+          centroid: centroid,
         ),
       ],
     );
@@ -239,14 +274,13 @@ class Wizard extends _$Wizard {
   /// Image ids not in any effective trip and not already marked for deletion
   /// (never-clustered photos plus any the user pulled out of a trip).
   List<String> get unassignedTripImageIds {
+    final deleted = _deletedImageIds();
     final assigned = <String>{};
     for (final trip in tripResults) {
       assigned.addAll(trip.memberIds);
     }
-    final plan = ref.read(deletionPlanProvider);
     return _orderedIds
-        .where((id) =>
-            !assigned.contains(id) && !plan.explicitDeleted.contains(id))
+        .where((id) => !assigned.contains(id) && !deleted.contains(id))
         .toList(growable: false);
   }
 
@@ -291,9 +325,15 @@ class Wizard extends _$Wizard {
     }
     final plan = <String, String>{};
     for (final trip in tripResults) {
-      final folderName = _effectiveFolderOf(trip);
-      final tripSlug = _slugify(
-          folderName.isNotEmpty ? folderName : trip.folderSlug);
+      // Prefer the back end's geocoded slug ("rome-italy-2026-04"); only fall
+      // back to slugifying the display label when the user renamed the folder
+      // or the trips pass had no place table.
+      final renamed = _tripFolderNames.containsKey(trip.id);
+      final tripSlug = renamed
+          ? _slugify(_tripFolderNames[trip.id]!)
+          : (trip.folderSlug.isNotEmpty
+              ? trip.folderSlug
+              : _slugify(_effectiveFolderOf(trip)));
       if (tripSlug.isEmpty) {
         continue;
       }
@@ -844,9 +884,10 @@ class Wizard extends _$Wizard {
     );
   }
 
-  /// Image ids to copy at commit: every scanned image not marked for deletion
-  /// by any step, in scan order.
-  List<String> _keepIds() {
+  /// Image ids marked for deletion by any step (quality, junk, similar) or
+  /// explicitly by the user. These are excluded from the trips panel and from
+  /// the commit copy set.
+  Set<String> _deletedImageIds() {
     final plan = ref.read(deletionPlanProvider);
     final keepers = similarKeeperMap(plan, _similarGroups);
     final qualityFlagged = _qualityFlags.keys.toSet();
@@ -861,7 +902,16 @@ class Wizard extends _$Wizard {
             similarKeepers: keepers,
           ),
         );
-    return _orderedIds.where((id) => !deleted(id)).toList(growable: false);
+    return _images.keys.where(deleted).toSet();
+  }
+
+  /// Image ids to copy at commit: every scanned image not marked for deletion
+  /// by any step, in scan order.
+  List<String> _keepIds() {
+    final deleted = _deletedImageIds();
+    return _orderedIds
+        .where((id) => !deleted.contains(id))
+        .toList(growable: false);
   }
 
   /// The suggested default destination: a sibling of the source folder named

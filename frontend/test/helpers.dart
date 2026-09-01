@@ -141,6 +141,7 @@ pb.TripsEvent tripEvent(
   int id,
   List<String> imageIds, {
   String? folder,
+  String? folderSlug,
   int? startMs,
   int? endMs,
 }) {
@@ -155,6 +156,9 @@ pb.TripsEvent tripEvent(
   }
   if (folder != null && folder.isNotEmpty) {
     trip.folder = folder;
+  }
+  if (folderSlug != null && folderSlug.isNotEmpty) {
+    trip.folderSlug = folderSlug;
   }
   return pb.TripsEvent()..trip = trip;
 }

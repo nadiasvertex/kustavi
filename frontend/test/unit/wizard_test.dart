@@ -632,6 +632,104 @@ void main() {
       expect(wizard.tripResults.map((t) => t.id), [0, 1]);
     });
 
+    test('trips review: commit folder plan uses the geocoded slug', () async {
+      final client = FakeKustaviClient(
+        scanEvents: [
+          scanImage('a.jpg'),
+          scanImage('b.jpg'),
+          scanComplete(images: 2),
+        ],
+        modelEvents: [modelReady()],
+        similarEvents: const [],
+        tripsEvents: [
+          tripEvent(0, ['a.jpg'],
+              folder: 'Rome, Italy · April 2026',
+              folderSlug: 'rome-italy-2026-04',
+              startMs: 1000,
+              endMs: 2000),
+          tripEvent(1, ['b.jpg'],
+              folder: 'Oslo, Norway · May 2026',
+              folderSlug: 'oslo-norway-2026-05',
+              startMs: 9000,
+              endMs: 9000),
+        ],
+      );
+      container = makeContainer(client);
+      await reachConfirmFolder(container, client);
+      container.read(wizardProvider.notifier).continueFromConfirm();
+      await pumpUntil(container,
+          () => container.read(wizardProvider).value is WizardQualityReview);
+      container.read(wizardProvider.notifier).continueFromQuality();
+      await pumpUntil(container,
+          () => container.read(wizardProvider).value is WizardSimilarReview);
+      await pumpUntil(container,
+          () => container.read(modelStatusProvider).value is ModelPrepReady);
+      container.read(wizardProvider.notifier).continueFromSimilar();
+      await pumpUntil(container,
+          () => container.read(wizardProvider).value is WizardJunkReview);
+      container.read(wizardProvider.notifier).continueFromJunk();
+      await pumpUntil(container,
+          () => container.read(wizardProvider).value is WizardTripsReview);
+
+      final wizard = container.read(wizardProvider.notifier);
+      final plan = wizard.commitFolderPlan();
+      expect(plan['a.jpg'], 'rome-italy-2026-04');
+      expect(plan['b.jpg'], 'oslo-norway-2026-05');
+
+      // A user rename overrides the geocoded slug.
+      wizard.renameTripFolder(0, 'Italy Trip');
+      expect(wizard.commitFolderPlan()['a.jpg'], 'italy-trip');
+    });
+
+    test('trips review: photos marked for deletion drop out of the panel',
+        () async {
+      final client = FakeKustaviClient(
+        scanEvents: [
+          scanImage('a.jpg'),
+          scanImage('b.jpg'),
+          scanImage('c.jpg'),
+          scanComplete(images: 3),
+        ],
+        modelEvents: [modelReady()],
+        similarEvents: const [],
+        tripsEvents: [
+          tripEvent(0, ['a.jpg', 'b.jpg'],
+              folder: 'Rome, Italy · April 2026', startMs: 1000, endMs: 2000),
+          tripEvent(1, ['c.jpg'],
+              folder: 'Oslo, Norway · May 2026', startMs: 9000, endMs: 9000),
+        ],
+      );
+      container = makeContainer(client);
+      await reachConfirmFolder(container, client);
+      container.read(wizardProvider.notifier).continueFromConfirm();
+      await pumpUntil(container,
+          () => container.read(wizardProvider).value is WizardQualityReview);
+      container.read(wizardProvider.notifier).continueFromQuality();
+      await pumpUntil(container,
+          () => container.read(wizardProvider).value is WizardSimilarReview);
+      await pumpUntil(container,
+          () => container.read(modelStatusProvider).value is ModelPrepReady);
+      container.read(wizardProvider.notifier).continueFromSimilar();
+      await pumpUntil(container,
+          () => container.read(wizardProvider).value is WizardJunkReview);
+      container.read(wizardProvider.notifier).continueFromJunk();
+      await pumpUntil(container,
+          () => container.read(wizardProvider).value is WizardTripsReview);
+
+      final wizard = container.read(wizardProvider.notifier);
+      expect(wizard.tripResults.first.memberIds, ['a.jpg', 'b.jpg']);
+
+      // Mark b.jpg for deletion: it leaves the trip and is not "unassigned".
+      container.read(deletionPlanProvider.notifier).mark('b.jpg');
+      expect(wizard.tripResults.firstWhere((t) => t.id == 0).memberIds,
+          ['a.jpg']);
+      expect(wizard.unassignedTripImageIds, isNot(contains('b.jpg')));
+
+      // Marking every member removes the trip entirely.
+      container.read(deletionPlanProvider.notifier).mark('c.jpg');
+      expect(wizard.tripResults.map((t) => t.id), [0]);
+    });
+
     test('back from confirm discards results (fresh session → S0)', () async {
       final client = FakeKustaviClient(
         scanEvents: [
