@@ -150,12 +150,24 @@ final class WizardJunkPrep extends WizardPhase {
   int get stepIndex => WizardStep.junk.index;
 }
 
-/// S6 — junk pass running (Moondream LLM).
+/// S6 — junk pass running (local vision LLM).
 final class WizardJunkRunning extends WizardPhase {
-  const WizardJunkRunning({this.done = 0, this.total = 0});
+  const WizardJunkRunning({
+    this.done = 0,
+    this.total = 0,
+    this.secondsPerImage,
+    this.estimatedCompletion,
+  });
 
   final int done;
   final int total;
+
+  /// Measured wall-clock cost per image on this machine, once enough images
+  /// have been classified to estimate it. Null while still profiling.
+  final double? secondsPerImage;
+
+  /// Projected local time the pass finishes. Null while still profiling.
+  final DateTime? estimatedCompletion;
 
   @override
   int get stepIndex => WizardStep.junk.index;

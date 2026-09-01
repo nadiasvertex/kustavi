@@ -18,7 +18,7 @@ class PassProgressScreen extends StatelessWidget {
   final int done;
   final int total;
 
-  /// Expectation-setting copy, e.g. the Moondream speed note.
+  /// Expectation-setting copy, e.g. the vision-model timing note.
   final String? caption;
   final String? currentFile;
 

@@ -26,6 +26,15 @@ class Wizard extends _$Wizard {
   final Map<String, QualityFlagInfo> _qualityFlags = {};
   final Map<String, JunkFlagInfo> _junkFlags = {};
   final List<SimilarGroupInfo> _similarGroups = [];
+
+  // Junk-pass timing profile: the vision model's per-image cost is unknown
+  // until measured on this machine. Profiling starts at the first progress
+  // event that follows a real inference gap (resume bursts for already-
+  // classified images arrive back-to-back and are skipped).
+  DateTime? _junkProfileStart;
+  int? _junkProfileBaseDone;
+  DateTime? _junkLastEventAt;
+  int _junkLastDone = 0;
   final List<TripInfo> _tripResults = [];
   final Map<int, Set<String>> _tripSelections = {};
   final Map<int, String> _tripFolderNames = {};
@@ -484,6 +493,10 @@ class Wizard extends _$Wizard {
   }
 
   void _startJunkPass() {
+    _junkProfileStart = null;
+    _junkProfileBaseDone = null;
+    _junkLastEventAt = null;
+    _junkLastDone = 0;
     state = const AsyncValue.data(WizardJunkRunning());
     final client = ref.read(kustaviClientProvider).requireValue;
     _subscribe(client.runJunkPass(), _onJunkEvent, _onJunkDone);
@@ -559,10 +572,41 @@ class Wizard extends _$Wizard {
     }
     switch (event.whichEvent()) {
       case pb.JunkEvent_Event.progress:
+        final done = event.progress.done;
+        final total = event.progress.total;
+        final now = DateTime.now();
+
+        // Begin (or extend) the profile once an event follows a real gap —
+        // i.e. the vision model actually spent time on an image.
+        if (_junkLastEventAt != null &&
+            now.difference(_junkLastEventAt!).inMilliseconds >= 250) {
+          _junkProfileStart ??= _junkLastEventAt;
+          _junkProfileBaseDone ??= _junkLastDone;
+        }
+        _junkLastEventAt = now;
+        _junkLastDone = done;
+
+        double? secondsPerImage;
+        DateTime? estimatedCompletion;
+        if (_junkProfileStart != null && _junkProfileBaseDone != null) {
+          final measured = done - _junkProfileBaseDone!;
+          final elapsedMs = now.difference(_junkProfileStart!).inMilliseconds;
+          if (measured > 0 && elapsedMs > 0) {
+            secondsPerImage = elapsedMs / 1000 / measured;
+            final remaining = total - done;
+            estimatedCompletion = remaining > 0
+                ? now.add(Duration(
+                    milliseconds: (secondsPerImage * remaining * 1000).round()))
+                : now;
+          }
+        }
+
         state = AsyncValue.data(
           WizardJunkRunning(
-            done: event.progress.done,
-            total: event.progress.total,
+            done: done,
+            total: total,
+            secondsPerImage: secondsPerImage,
+            estimatedCompletion: estimatedCompletion,
           ),
         );
       case pb.JunkEvent_Event.flag:

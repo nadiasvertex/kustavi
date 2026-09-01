@@ -11,6 +11,7 @@ import '../state/phases.dart';
 import '../state/wizard.dart';
 import 'confirm_folder.dart';
 import 'errors.dart';
+import 'format.dart';
 import 'junk_prep.dart';
 import 'junk_review.dart';
 import 'placeholder.dart';
@@ -137,13 +138,17 @@ class _WizardShellState extends ConsumerState<WizardShell> {
             rerunEnabled: rerunEnabled,
           ),
         WizardJunkPrep() => const JunkPrepScreen(),
-        WizardJunkRunning(:final done, :final total) => PassProgressScreen(
+        WizardJunkRunning(
+              :final done,
+              :final total,
+              :final secondsPerImage,
+              :final estimatedCompletion,
+            ) =>
+          PassProgressScreen(
             title: 'Classifying images',
             done: done,
             total: total,
-            caption:
-                'The vision model takes about 1–3 seconds per image — expect '
-                'this pass to be slow.',
+            caption: junkTimingCaption(secondsPerImage, estimatedCompletion),
           ),
         WizardJunkReview(:final flaggedCount, :final totalImages) =>
           JunkReviewScreen(
