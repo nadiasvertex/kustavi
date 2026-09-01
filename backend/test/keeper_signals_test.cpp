@@ -93,9 +93,42 @@ void test_analyzer_load_and_no_face() {
   fs::remove(flat);
 }
 
+// `keeper_signals_test <image> [image...]` — print metrics for each path
+// instead of running the assertions. Handy for tuning the eye/face heuristics.
+int dump(int argc, char **argv) {
+  const fs::path model = kustavi::config::face_model_path();
+  auto loaded = kustavi::image::keeper_analyzer::load(model);
+  if (!loaded) {
+    std::printf("load(%s) failed: %s\n", model.string().c_str(),
+                loaded.error().c_str());
+    return EXIT_FAILURE;
+  }
+  for (int i = 1; i < argc; ++i) {
+    const auto m = loaded->analyze(fs::path(argv[i]));
+    // Mirrors the blend in similar_pass.cpp (sharpness term omitted; it is
+    // per-image and identical across a burst). Higher = better keeper.
+    const double face_focus = m.face_count > 0 ? m.largest_face_focus : 0.0;
+    const double group_shot = std::min(m.face_count, 3) / 3.0;
+    const double keeper_delta = (0.15 * face_focus) + (0.10 * group_shot) +
+                                (0.10 * m.color_balance) -
+                                (0.25 * (1.0 - m.eyes_open_ratio)) -
+                                (0.20 * m.redeye_ratio);
+    std::printf("%s\n"
+                "  valid=%d face_count=%d largest_face_focus=%.4f\n"
+                "  eyes_open_ratio=%.4f redeye_ratio=%.4f color_balance=%.4f\n"
+                "  keeper_delta(no sharpness)=%.4f\n",
+                argv[i], m.valid, m.face_count, m.largest_face_focus,
+                m.eyes_open_ratio, m.redeye_ratio, m.color_balance, keeper_delta);
+  }
+  return EXIT_SUCCESS;
+}
+
 } // namespace
 
-int main() {
+int main(int argc, char **argv) {
+  if (argc > 1) {
+    return dump(argc, argv);
+  }
   test_color_balance();
   test_analyzer_load_and_no_face();
 

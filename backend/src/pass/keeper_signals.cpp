@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <utility>
 
 namespace kustavi::image {
@@ -19,14 +20,18 @@ namespace {
 // A face smaller than this fraction of the image's short edge is counted but
 // not judged for eyes-open / red-eye (too little pixel data to be reliable).
 constexpr double k_min_face_frac = 0.05;
+// YuNet loses recall on multi-megapixel phone photos; detect on a copy whose
+// long edge is at most this, then scale detections back to full resolution.
+constexpr int k_detect_long_edge = 1024;
+// YuNet score threshold. Lower than the library default (0.9) to keep
+// slightly off-angle / partially-lit faces in bursts.
+constexpr float k_face_score = 0.6F;
+// An eye is treated as shut when its openness score falls below this.
+constexpr double k_eye_open_threshold = 0.45;
 // Red-eye: an eye patch is flagged when its mean red channel exceeds this
 // multiple of the brighter of green/blue and is itself reasonably bright.
 constexpr double k_redeye_ratio = 1.5;
 constexpr double k_redeye_min_red = 60.0;
-// Eyes-open proxy: an eye ROI counts as "likely closed" only when it is both
-// low-contrast and has almost no dark (iris/pupil/lash) pixels.
-constexpr double k_closed_max_stddev = 18.0;
-constexpr double k_closed_max_dark_frac = 0.03;
 // Gray-world cast at which color_balance hits 0.
 constexpr double k_cast_full_penalty = 0.15;
 // Ignore near-clipped pixels when estimating the cast.
@@ -100,45 +105,90 @@ auto clamp_rect(const cv::Rect &r, const cv::Size &bounds) -> cv::Rect {
   return r & cv::Rect(0, 0, bounds.width, bounds.height);
 }
 
-// Returns {evaluable, likely_open} for one eye ROI. `evaluable` is false when
-// the patch is empty or too dark/bright to judge; callers then assume open.
-auto eye_open_state(const cv::Mat &bgr, cv::Point2f center, int half)
-    -> std::pair<bool, bool> {
+auto keeper_debug_enabled() -> bool {
+  const char *v = std::getenv("KUSTAVI_KEEPER_DEBUG");
+  return v != nullptr && *v != '\0' && *v != '0';
+}
+
+// Openness score in [0, 1] for one eye, cropped from `bgr` around `center`
+// with the eye box sized from the interocular distance. Higher == more open.
+//
+// Key idea: an OPEN eye exposes sclera and iris — desaturated, near-neutral
+// pixels that facial skin never produces — while a CLOSED eye is entirely
+// warm, saturated eyelid skin plus a thin lash line. So the discriminator is
+// the fraction of low-saturation pixels in the window, the bright (sclera)
+// share of them, and how many rows they span. These hold up across a burst's
+// identical lighting, which is all the similar pass needs.
+auto eye_openness(const cv::Mat &bgr, cv::Point2f center, double interocular,
+                  bool debug) -> std::pair<bool, double> {
+  const int half_w = std::max(6, cvRound(0.20 * interocular));
+  const int half_h = std::max(4, cvRound(0.13 * interocular));
   const cv::Rect roi = clamp_rect(
-      cv::Rect(cvRound(center.x) - half, cvRound(center.y) - half, half * 2,
-               half * 2),
+      cv::Rect(cvRound(center.x) - half_w, cvRound(center.y) - half_h,
+               half_w * 2, half_h * 2),
       bgr.size());
-  if (roi.width < 4 || roi.height < 4) {
-    return {false, true};
+  if (roi.width < 8 || roi.height < 6) {
+    return {false, 1.0};
   }
 
-  cv::Mat gray;
-  cv::cvtColor(bgr(roi), gray, cv::COLOR_BGR2GRAY);
-  cv::Scalar mean_s;
-  cv::Scalar stddev_s;
-  cv::meanStdDev(gray, mean_s, stddev_s);
-  const double mean = mean_s[0];
-  const double stddev = stddev_s[0];
-  if (mean < 25.0 || mean > 235.0) {
-    return {false, true}; // ROI washed out / in shadow: cannot judge
-  }
-
-  const double dark_cutoff = std::max(35.0, 0.45 * mean);
-  int dark = 0;
-  for (int y = 0; y < gray.rows; ++y) {
-    const auto *row = gray.ptr<uchar>(y);
-    for (int x = 0; x < gray.cols; ++x) {
-      if (row[x] < dark_cutoff) {
-        ++dark;
-      }
+  if (debug) {
+    const char *dir = std::getenv("KUSTAVI_EYE_DUMP");
+    if (dir != nullptr && *dir != '\0') {
+      cv::Mat big;
+      cv::resize(bgr(roi), big, cv::Size(), 3, 3, cv::INTER_NEAREST);
+      cv::imwrite(std::string(dir) + "/eye_" + std::to_string(cvRound(center.x)) +
+                      "_" + std::to_string(cvRound(center.y)) + ".png",
+                  big);
     }
   }
-  const double dark_frac =
-      static_cast<double>(dark) / static_cast<double>(gray.total());
 
-  const bool likely_closed = stddev < k_closed_max_stddev &&
-                             dark_frac < k_closed_max_dark_frac;
-  return {true, !likely_closed};
+  cv::Mat hsv;
+  cv::cvtColor(bgr(roi), hsv, cv::COLOR_BGR2HSV);
+  cv::Mat blurred;
+  cv::GaussianBlur(hsv, blurred, cv::Size(3, 3), 0);
+
+  int lowsat = 0;
+  int sclera = 0;
+  int lowsat_rows = 0;
+  for (int y = 0; y < blurred.rows; ++y) {
+    const auto *r = blurred.ptr<cv::Vec3b>(y);
+    int row_lowsat = 0;
+    for (int x = 0; x < blurred.cols; ++x) {
+      const int s = r[x][1];
+      const int v = r[x][2];
+      if (s < 65 && v > 40) {
+        ++lowsat;
+        ++row_lowsat;
+        if (v > 135) {
+          ++sclera;
+        }
+      }
+    }
+    if (row_lowsat > blurred.cols / 6) {
+      ++lowsat_rows;
+    }
+  }
+  const auto total = static_cast<double>(blurred.total());
+  const double lowsat_frac = static_cast<double>(lowsat) / total;
+  const double sclera_frac = static_cast<double>(sclera) / total;
+  const double lowsat_row_frac =
+      static_cast<double>(lowsat_rows) / static_cast<double>(blurred.rows);
+
+  // Cues mapped to ~[0,1] then blended. Calibrated on labelled blink/open
+  // bursts: closed eyes ~0.0-0.2, open eyes ~0.7-1.0.
+  const double s_low = std::clamp((lowsat_frac - 0.05) / 0.30, 0.0, 1.0);
+  const double s_scl = std::clamp((sclera_frac - 0.01) / 0.12, 0.0, 1.0);
+  const double s_rows = std::clamp((lowsat_row_frac - 0.10) / 0.45, 0.0, 1.0);
+  const double openness = std::clamp(
+      (0.45 * s_low) + (0.35 * s_scl) + (0.20 * s_rows), 0.0, 1.0);
+
+  if (debug) {
+    spdlog::info("    eye@({:.0f},{:.0f}) roi={}x{} lowsat_frac={:.3f} "
+                 "sclera_frac={:.3f} lowsat_row_frac={:.3f} -> openness={:.3f}",
+                 center.x, center.y, roi.width, roi.height, lowsat_frac,
+                 sclera_frac, lowsat_row_frac, openness);
+  }
+  return {true, openness};
 }
 
 } // namespace
@@ -167,7 +217,7 @@ auto keeper_analyzer::load(const std::filesystem::path &yunet_onnx)
   keeper_analyzer analyzer;
   try {
     analyzer.impl_->detector = cv::FaceDetectorYN::create(
-        yunet_onnx.string(), "", cv::Size(320, 320), 0.7F, 0.3F, 5000);
+        yunet_onnx.string(), "", cv::Size(320, 320), k_face_score, 0.3F, 5000);
   } catch (const cv::Exception &e) {
     return std::unexpected(std::string("failed to load face model: ") +
                            e.what());
@@ -189,10 +239,24 @@ auto keeper_analyzer::analyze(const std::filesystem::path &image_path)
   m.valid = true;
   m.color_balance = color_balance_from_bgr(bgr);
 
+  const bool debug = keeper_debug_enabled();
+
+  // Detect on a downscaled copy, then map detections back to full resolution.
+  const double det_scale =
+      std::min(1.0, static_cast<double>(k_detect_long_edge) /
+                        std::max(bgr.cols, bgr.rows));
+  cv::Mat det_img;
+  if (det_scale < 1.0) {
+    cv::resize(bgr, det_img, cv::Size(), det_scale, det_scale, cv::INTER_AREA);
+  } else {
+    det_img = bgr;
+  }
+  const auto up = static_cast<float>(det_scale < 1.0 ? 1.0 / det_scale : 1.0);
+
   cv::Mat faces;
   try {
-    impl_->detector->setInputSize(bgr.size());
-    impl_->detector->detect(bgr, faces);
+    impl_->detector->setInputSize(det_img.size());
+    impl_->detector->detect(det_img, faces);
   } catch (const cv::Exception &e) {
     spdlog::debug("keeper_analyzer: face detect failed on {}: {}",
                   image_path.string(), e.what());
@@ -200,6 +264,11 @@ auto keeper_analyzer::analyze(const std::filesystem::path &image_path)
   }
 
   m.face_count = faces.rows;
+  if (debug) {
+    spdlog::info("keeper_analyzer: {} ({}x{}, det {}x{}) faces={}",
+                 image_path.string(), bgr.cols, bgr.rows, det_img.cols,
+                 det_img.rows, faces.rows);
+  }
   if (faces.rows == 0) {
     return m;
   }
@@ -215,10 +284,10 @@ auto keeper_analyzer::analyze(const std::filesystem::path &image_path)
   int redeye_eyes = 0;
 
   for (int i = 0; i < faces.rows; ++i) {
-    const float fx = faces.at<float>(i, 0);
-    const float fy = faces.at<float>(i, 1);
-    const float fw = faces.at<float>(i, 2);
-    const float fh = faces.at<float>(i, 3);
+    const float fx = faces.at<float>(i, 0) * up;
+    const float fy = faces.at<float>(i, 1) * up;
+    const float fw = faces.at<float>(i, 2) * up;
+    const float fh = faces.at<float>(i, 3) * up;
     const cv::Rect face_roi = clamp_rect(
         cv::Rect(cvRound(fx), cvRound(fy), cvRound(fw), cvRound(fh)), bgr.size());
     if (face_roi.empty()) {
@@ -232,24 +301,47 @@ auto keeper_analyzer::analyze(const std::filesystem::path &image_path)
     }
 
     if (fw < min_face || fh < min_face) {
+      if (debug) {
+        spdlog::info("  face {} {}x{} below min {:.0f}px; not judged", i,
+                     cvRound(fw), cvRound(fh), min_face);
+      }
       continue; // counted, but too small to judge eyes
     }
     ++usable_faces;
 
-    const cv::Point2f right_eye(faces.at<float>(i, 4), faces.at<float>(i, 5));
-    const cv::Point2f left_eye(faces.at<float>(i, 6), faces.at<float>(i, 7));
-    const double interocular = cv::norm(right_eye - left_eye);
-    const int eye_half = std::max(
-        4, cvRound((interocular > 1.0 ? 0.22 * interocular : 0.18 * fw)));
+    const cv::Point2f right_eye(faces.at<float>(i, 4) * up,
+                                faces.at<float>(i, 5) * up);
+    const cv::Point2f left_eye(faces.at<float>(i, 6) * up,
+                               faces.at<float>(i, 7) * up);
+    const double interocular =
+        std::max(4.0, cv::norm(right_eye - left_eye));
 
-    int closed = 0;
+    double face_open = 0.0;
+    int face_eyes = 0;
     for (const auto &eye : {right_eye, left_eye}) {
-      const auto [evaluable, open] = eye_open_state(bgr, eye, eye_half);
-      if (evaluable && !open) {
-        ++closed;
+      const auto [evaluable, openness] =
+          eye_openness(bgr, eye, interocular, debug);
+      if (evaluable) {
+        face_open += openness;
+        ++face_eyes;
       }
     }
-    open_sum += 1.0 - (static_cast<double>(closed) / 2.0);
+    // Raw per-face openness: mean of the eyes we could score, or "open" (1.0)
+    // when neither eye was judgeable. Then a calibration ramp centered on the
+    // open/blink decision point so a clear blink lands near 0 and a clearly
+    // open face near 1.
+    const double raw = face_eyes > 0 ? face_open / face_eyes : 1.0;
+    const double face_open_conf =
+        face_eyes > 0
+            ? std::clamp((raw - (k_eye_open_threshold - 0.18)) / 0.36, 0.0, 1.0)
+            : 1.0;
+    open_sum += face_open_conf;
+    if (debug) {
+      spdlog::info("  face {} interocular={:.0f} eyes_scored={} raw={:.3f} "
+                   "open_conf={:.3f}{}",
+                   i, interocular, face_eyes, raw, face_open_conf,
+                   raw < k_eye_open_threshold ? " [BLINK]" : "");
+    }
 
     // Red-eye: sample a patch around each eye landmark.
     const int patch = std::max(2, cvRound(fw * 0.06));
