@@ -24,35 +24,35 @@ namespace fs = std::filesystem;
 // ---------------------------------------------------------------------------
 // Pass 3: model download (EnsureModel) + vision junk classification (RunJunkPass)
 //
-// Model: Moondream 2 (SigLIP + Phi-1.5, llava-style) from the ggml-org test
-// repo. The spec names "Moondream-3.1", but Moondream 3 has no llama.cpp/mtmd
-// projector; Moondream 2 is the supported vision model.
+// Model: Qwen2.5-VL-3B-Instruct (ViT + Qwen2.5 3B) from the ggml-org GGUF repo.
+// The spec names "Moondream-3.1"; Moondream 3 has no llama.cpp/mtmd projector
+// and Moondream 2 (1.6B) misclassifies too many ordinary photos, so the junk
+// pass runs on Qwen2.5-VL, which shares the same mtmd code path.
 // ---------------------------------------------------------------------------
 
 namespace {
 
-constexpr std::string_view k_model_display_name = "moondream2";
+constexpr std::string_view k_model_display_name = "qwen2.5-vl-3b";
 constexpr std::string_view k_hf_base =
-    "https://huggingface.co/ggml-org/moondream2-20250414-GGUF/resolve/main/";
+    "https://huggingface.co/ggml-org/Qwen2.5-VL-3B-Instruct-GGUF/resolve/main/";
 
 auto text_model_asset() -> net::remote_asset {
   return {
-      .url = std::string(k_hf_base) +
-             "moondream2-text-model-f16_ct-vicuna.gguf",
-      .dest = config::models_path() / "moondream2-text-model-f16.gguf",
+      .url = std::string(k_hf_base) + "Qwen2.5-VL-3B-Instruct-Q4_K_M.gguf",
+      .dest = config::models_path() / "qwen2.5-vl-3b-instruct-q4_k_m.gguf",
       .sha256_hex =
-          "925bcb666baf69ed747e26121af287b16ae7764483be9548b1382f29783689a5",
-      .size_bytes = 2'839'535'072ULL,
+          "d02fe9b69ad8cadbbd228e387667af66612c44bed29ffc8eb1e7caf9ac486c12",
+      .size_bytes = 1'929'901'056ULL,
   };
 }
 
 auto mmproj_asset() -> net::remote_asset {
   return {
-      .url = std::string(k_hf_base) + "moondream2-mmproj-f16-20250414.gguf",
-      .dest = config::models_path() / "moondream2-mmproj-f16.gguf",
+      .url = std::string(k_hf_base) + "mmproj-Qwen2.5-VL-3B-Instruct-f16.gguf",
+      .dest = config::models_path() / "qwen2.5-vl-3b-mmproj-f16.gguf",
       .sha256_hex =
-          "4cc1cb3660d87ff56432ebeb7884ad35d67c48c7b9f6b2856f305e39c38eed8f",
-      .size_bytes = 909'777'984ULL,
+          "b9160fe9d814d1fadf68395677468534778b39ac33c2e7561b7b218626e60d5e",
+      .size_bytes = 1'338'428'128ULL,
   };
 }
 

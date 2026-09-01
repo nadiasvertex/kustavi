@@ -26,8 +26,8 @@ namespace kustavi {
 /// gRPC metadata key carrying the GUI-generated auth token.
 inline constexpr std::string_view k_auth_token_header = "x-kustavi-auth-token";
 
-/// Vision model reported by `GetInfo` (junk pass placeholder).
-inline constexpr std::string_view k_model_name = "moondream2";
+/// Vision model reported by `GetInfo` (junk pass).
+inline constexpr std::string_view k_model_name = "qwen2.5-vl-3b";
 
 // --- per-pass streaming events --------------------------------------------
 // Carried by event_queue between the pass worker and the gRPC writer thread.

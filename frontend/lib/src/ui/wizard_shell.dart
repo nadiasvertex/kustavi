@@ -138,11 +138,11 @@ class _WizardShellState extends ConsumerState<WizardShell> {
           ),
         WizardJunkPrep() => const JunkPrepScreen(),
         WizardJunkRunning(:final done, :final total) => PassProgressScreen(
-            title: 'Classifying with Moondream',
+            title: 'Classifying images',
             done: done,
             total: total,
             caption:
-                'Moondream takes about 1.5–3 seconds per image — expect '
+                'The vision model takes about 1–3 seconds per image — expect '
                 'this pass to be slow.',
           ),
         WizardJunkReview(:final flaggedCount, :final totalImages) =>

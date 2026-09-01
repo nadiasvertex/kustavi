@@ -66,7 +66,7 @@ pb.QualityEvent qualityFlag(
 }
 
 pb.ModelEvent modelReady(
-        {String model = 'moondream2', int sizeBytes = 1100000000}) =>
+        {String model = 'qwen2.5-vl-3b', int sizeBytes = 1100000000}) =>
     pb.ModelEvent()
       ..ready = (pb.ModelReady()
         ..modelName = model

@@ -105,8 +105,8 @@ class JunkPrepScreen extends ConsumerWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Moondream 2 powers the junk pass and is required; '
-              'the download runs in the background.',
+              'The Qwen2.5-VL vision model powers the junk pass and is '
+              'required; the download runs in the background.',
               style: theme.textTheme.bodySmall,
               textAlign: TextAlign.center,
             ),

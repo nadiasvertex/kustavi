@@ -58,7 +58,7 @@ void main() {
       );
       final state = container.read(modelStatusProvider).value
           as ModelPrepReady;
-      expect(state.modelName, 'moondream2');
+      expect(state.modelName, 'qwen2.5-vl-3b');
     });
 
     test('download progress carries byte counters', () async {

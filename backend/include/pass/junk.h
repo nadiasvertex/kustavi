@@ -11,17 +11,20 @@ namespace kustavi::image {
 struct junk_result {
   bool is_junk = false;
   std::string reason;     //! e.g. "screenshot", "meme", "scan"; empty if kept.
-  double confidence = 0.0; //! 0..1, probability of the model's first answer token.
+  double confidence = 0.0; //! 0..1, the model's probability that it is not a photo.
   bool valid = false;      //! false when the image could not be analyzed.
 };
 
 /**
- * @brief Loads a Moondream 2 GGUF + multimodal projector and classifies images
+ * @brief Loads a Qwen2.5-VL GGUF + multimodal projector and classifies images
  * as ordinary photographs or junk (screenshots, scans, memes, graphics).
  *
- * Uses the optimal ggml backend for the platform (Metal on macOS). Greedy
- * decoding (temperature 0) for reproducibility. Not thread-safe: one instance
- * drives a single llama context; call `classify` serially.
+ * Two questions per image: a calibrated yes/no "is this a photograph?" scored
+ * from the yes/no logits (only flagged above a confidence threshold), then a
+ * category question for the reason bucket. Uses the optimal ggml backend for
+ * the platform (Metal on macOS). Greedy decoding (temperature 0) for
+ * reproducibility. Not thread-safe: one instance drives a single llama
+ * context; call `classify` serially.
  */
 class junk_classifier {
 public:

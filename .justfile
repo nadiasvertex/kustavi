@@ -36,7 +36,7 @@ test-backend:
 test-llama:
   bazel run //backend:llama_smoke
 
-# Vision (junk) pass end-to-end. Downloads the ~3.7 GB Moondream 2 weights on
+# Vision (junk) pass end-to-end. Downloads the ~3.3 GB Qwen2.5-VL-3B weights on
 # the first run (cached in the OS app-data dir), then runs EnsureModel +
 # RunJunkPass against a copy of test/photos. Not part of `just test`.
 test-junk:

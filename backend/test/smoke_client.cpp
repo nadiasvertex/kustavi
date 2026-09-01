@@ -524,7 +524,7 @@ void run_similar(const options &opts) {
 }
 
 // Opt-in (`--junk-check`): exercise the vision pipeline. EnsureModel downloads
-// the Moondream 2 GGUF weights (~3.7 GB, cached in the OS app-data dir on the
+// the Qwen2.5-VL-3B GGUF weights (~3.3 GB, cached in the OS app-data dir on the
 // first run), then RunJunkPass classifies every scanned image.
 void run_ensure_model(const options &opts) {
   auto stub = k::Kustavi::NewStub(make_channel(opts));
@@ -575,6 +575,9 @@ void run_junk(const options &opts) {
       if (event.flag().image_id().empty()) {
         fail("JunkFlag with empty image_id");
       }
+      std::println("   junk: {} reason={} confidence={:.2f}",
+                   event.flag().image_id(), event.flag().reason(),
+                   event.flag().confidence());
     } else if (event.has_complete()) {
       saw_complete = true;
       complete_flagged = event.complete().flagged();
