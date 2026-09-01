@@ -458,6 +458,109 @@ void main() {
       );
     });
 
+    test('commit summary → Copy → committing → done', () async {
+      final client = FakeKustaviClient(
+        scanEvents: [
+          scanImage('a.jpg'),
+          scanImage('b.jpg'),
+          scanComplete(images: 2),
+        ],
+        modelEvents: [modelReady()],
+        similarEvents: const [],
+        junkEvents: [junkFlag('b.jpg', reason: 'meme')],
+        commitEvents: [
+          commitProgress(done: 1, total: 1, currentName: 'a.jpg'),
+          commitComplete(copied: 1, skipped: 0),
+        ],
+      );
+      container = makeContainer(client);
+      await reachConfirmFolder(container, client);
+      final wizard = container.read(wizardProvider.notifier);
+      wizard.continueFromConfirm();
+      await pumpUntil(container,
+          () => container.read(wizardProvider).value is WizardQualityReview);
+      wizard.continueFromQuality();
+      await pumpUntil(container,
+          () => container.read(wizardProvider).value is WizardSimilarReview);
+      await pumpUntil(container,
+          () => container.read(modelStatusProvider).value is ModelPrepReady);
+      wizard.continueFromSimilar();
+      await pumpUntil(container,
+          () => container.read(wizardProvider).value is WizardJunkReview);
+      wizard.continueFromJunk();
+      await pumpUntil(container,
+          () => container.read(wizardProvider).value is WizardTripsReview);
+      wizard.continueFromTrips();
+      await pumpUntil(container,
+          () => container.read(wizardProvider).value is WizardCommitSummary);
+
+      // The suggested destination is a `<source-name>-kept` sibling.
+      final summary =
+          container.read(wizardProvider).value as WizardCommitSummary;
+      expect(summary.destination, '/photos-kept');
+      expect(summary.keepCount, 1); // b.jpg is junk-flagged → left behind
+      expect(summary.leftBehindCount, 1);
+
+      // Editing the field republishes a fresh phase.
+      wizard.setCommitDestination('/exports/keep');
+      expect(
+        (container.read(wizardProvider).value as WizardCommitSummary)
+            .destination,
+        '/exports/keep',
+      );
+
+      wizard.startCommit();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardDone,
+      );
+      expect(client.lastCommitRequest?.destination, '/exports/keep');
+      expect(client.lastCommitRequest?.keepIds, ['a.jpg']);
+
+      final done = container.read(wizardProvider).value as WizardDone;
+      expect(done.copiedCount, 1);
+      expect(done.destination, '/exports/keep');
+    });
+
+    test('cancel committing returns to the commit summary', () async {
+      final client = FakeKustaviClient(
+        scanEvents: [
+          scanImage('a.jpg'),
+          scanComplete(images: 1),
+        ],
+        modelEvents: [modelReady()],
+        similarEvents: const [],
+        commitEvents: [commitProgress(done: 0, total: 1)],
+      );
+      container = makeContainer(client);
+      await reachConfirmFolder(container, client);
+      final wizard = container.read(wizardProvider.notifier);
+      wizard.continueFromConfirm();
+      await pumpUntil(container,
+          () => container.read(wizardProvider).value is WizardQualityReview);
+      wizard.continueFromQuality();
+      await pumpUntil(container,
+          () => container.read(wizardProvider).value is WizardSimilarReview);
+      await pumpUntil(container,
+          () => container.read(modelStatusProvider).value is ModelPrepReady);
+      wizard.continueFromSimilar();
+      await pumpUntil(container,
+          () => container.read(wizardProvider).value is WizardJunkReview);
+      wizard.continueFromJunk();
+      await pumpUntil(container,
+          () => container.read(wizardProvider).value is WizardTripsReview);
+      wizard.continueFromTrips();
+      await pumpUntil(container,
+          () => container.read(wizardProvider).value is WizardCommitSummary);
+
+      wizard.startCommit();
+      wizard.cancelCommit();
+      expect(
+        container.read(wizardProvider).value,
+        isA<WizardCommitSummary>(),
+      );
+    });
+
     test('trips review: move photos between trips, create, unassign, rerun',
         () async {
       final client = FakeKustaviClient(

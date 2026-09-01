@@ -9,7 +9,10 @@ import '../state/domain.dart';
 import '../state/model_status.dart';
 import '../state/phases.dart';
 import '../state/wizard.dart';
+import 'commit_summary.dart';
+import 'committing.dart';
 import 'confirm_folder.dart';
+import 'done.dart';
 import 'errors.dart';
 import 'format.dart';
 import 'junk_prep.dart';
@@ -181,9 +184,45 @@ class _WizardShellState extends ConsumerState<WizardShell> {
             trips: trips,
             tripFolders: tripFolders,
           ),
-        WizardCommitSummary() => const PlaceholderScreen('Commit summary'),
-        WizardCommitting() => const PlaceholderScreen('Copying photos'),
-        WizardDone() => const PlaceholderScreen('Done'),
+        WizardCommitSummary(
+              :final keepCount,
+              :final keepBytes,
+              :final leftBehindCount,
+              :final destination,
+            ) =>
+          CommitSummaryScreen(
+            keepCount: keepCount,
+            keepBytes: keepBytes,
+            leftBehindCount: leftBehindCount,
+            destination: destination,
+            pickDirectory: widget.pickDirectory,
+          ),
+        WizardCommitting(
+              :final done,
+              :final total,
+              :final doneBytes,
+              :final totalBytes,
+              :final currentName,
+            ) =>
+          CommittingScreen(
+            done: done,
+            total: total,
+            doneBytes: doneBytes,
+            totalBytes: totalBytes,
+            currentName: currentName,
+          ),
+        WizardDone(
+              :final copiedCount,
+              :final skippedCount,
+              :final destination,
+              :final errors,
+            ) =>
+          DoneScreen(
+            copiedCount: copiedCount,
+            skippedCount: skippedCount,
+            destination: destination,
+            errors: errors,
+          ),
       };
 
   Widget? _actionBar(WizardPhase? phase) {
@@ -304,6 +343,33 @@ class _WizardShellState extends ConsumerState<WizardShell> {
           FilledButton(
             onPressed: wizard.continueFromTrips,
             child: const Text('Continue'),
+          ),
+        ],
+      WizardCommitSummary(:final destination) => [
+          OutlinedButton(
+            onPressed: wizard.backFromCommitSummary,
+            child: const Text('Back'),
+          ),
+          FilledButton(
+            onPressed:
+                destination.trim().isEmpty ? null : wizard.startCommit,
+            child: const Text('Copy'),
+          ),
+        ],
+      WizardCommitting() => [
+          OutlinedButton(
+            onPressed: wizard.cancelCommit,
+            child: const Text('Cancel'),
+          ),
+        ],
+      WizardDone() => [
+          OutlinedButton(
+            onPressed: wizard.resetToStart,
+            child: const Text('Start over'),
+          ),
+          FilledButton(
+            onPressed: () => exitApp(ref),
+            child: const Text('Done'),
           ),
         ],
       _ => null,

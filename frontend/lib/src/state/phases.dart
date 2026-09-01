@@ -243,10 +243,22 @@ final class WizardTripsReview extends WizardPhase {
 
 /// S11 — commit summary.
 final class WizardCommitSummary extends WizardPhase {
-  const WizardCommitSummary({required this.keepCount, required this.keepBytes});
+  const WizardCommitSummary({
+    required this.keepCount,
+    required this.keepBytes,
+    required this.leftBehindCount,
+    required this.destination,
+  });
 
   final int keepCount;
   final int keepBytes;
+
+  /// Images marked for deletion across every step (left in the source folder).
+  final int leftBehindCount;
+
+  /// Current destination-field value; starts as the suggested `<source>-kept`
+  /// sibling. [Copy] is disabled while it is blank.
+  final String destination;
 
   @override
   int get stepIndex => WizardStep.copy.index;
@@ -254,10 +266,22 @@ final class WizardCommitSummary extends WizardPhase {
 
 /// S12 — commit in flight.
 final class WizardCommitting extends WizardPhase {
-  const WizardCommitting({this.done = 0, this.total = 0});
+  const WizardCommitting({
+    this.done = 0,
+    this.total = 0,
+    this.currentName = '',
+    this.doneBytes = 0,
+    this.totalBytes = 0,
+  });
 
   final int done;
   final int total;
+  final String currentName;
+
+  /// Bytes copied so far / total to copy (summed from the keep set, since
+  /// `CommitProgress` carries only file counts).
+  final int doneBytes;
+  final int totalBytes;
 
   @override
   int get stepIndex => WizardStep.copy.index;
@@ -265,9 +289,17 @@ final class WizardCommitting extends WizardPhase {
 
 /// S13 — done.
 final class WizardDone extends WizardPhase {
-  const WizardDone({required this.copiedCount, required this.destination, this.errors = const <String>[]});
+  const WizardDone({
+    required this.copiedCount,
+    required this.destination,
+    this.skippedCount = 0,
+    this.errors = const <String>[],
+  });
 
   final int copiedCount;
+
+  /// Name collisions with different content (proto `CommitComplete.skipped`).
+  final int skippedCount;
   final String destination;
   final List<String> errors;
 

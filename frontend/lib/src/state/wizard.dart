@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:collection';
 
 import 'package:grpc/grpc.dart';
+import 'package:path/path.dart' as p;
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import '../backend/client.dart' show KustaviClient, mapToBackendError;
@@ -84,6 +85,21 @@ class Wizard extends _$Wizard {
   bool _cancelRequested = false;
   pb.ScanComplete? _pendingScanComplete;
   WizardPhase? _returnPhase;
+
+  /// The scanned source folder; the commit step suggests a `<name>-kept`
+  /// sibling of it as the default destination.
+  String _sourceFolder = '';
+
+  /// Commit-step state. `_commitDestination` is the user-editable field value
+  /// ('' → use the suggested default). The rest are captured when the run
+  /// starts / completes so the S12 progress and S13 summary can render.
+  String _commitDestination = '';
+  List<String> _commitKeepIds = const <String>[];
+  int _commitTotalBytes = 0;
+  String _committedDestination = '';
+  int _commitCopied = 0;
+  int _commitSkipped = 0;
+  List<String> _commitErrors = const <String>[];
 
   Map<String, ImageInfo> get images => UnmodifiableMapView(_images);
 
@@ -410,6 +426,7 @@ class Wizard extends _$Wizard {
     }
     _clearPassResults();
     _returnPhase = null;
+    _sourceFolder = folder;
     state = AsyncValue.data(WizardScanning(folder: folder));
     final client = ref.read(kustaviClientProvider);
     if (client case AsyncData<KustaviClient>(:final value)) {
@@ -810,7 +827,9 @@ class Wizard extends _$Wizard {
     );
   }
 
-  WizardCommitSummary get _commitSummaryPhase {
+  /// Image ids to copy at commit: every scanned image not marked for deletion
+  /// by any step, in scan order.
+  List<String> _keepIds() {
     final plan = ref.read(deletionPlanProvider);
     final keepers = similarKeeperMap(plan, _similarGroups);
     final qualityFlagged = _qualityFlags.keys.toSet();
@@ -825,16 +844,41 @@ class Wizard extends _$Wizard {
             similarKeepers: keepers,
           ),
         );
-    var keepCount = 0;
-    var keepBytes = 0;
-    for (final entry in _images.entries) {
-      if (deleted(entry.key)) {
-        continue;
-      }
-      keepCount++;
-      keepBytes += entry.value.sizeBytes;
+    return _orderedIds.where((id) => !deleted(id)).toList(growable: false);
+  }
+
+  /// The suggested default destination: a sibling of the source folder named
+  /// `<source-name>-kept` (spec/frontend.md §6.2 S11, §15).
+  String _suggestedDestination() {
+    if (_sourceFolder.isEmpty) {
+      return '';
     }
-    return WizardCommitSummary(keepCount: keepCount, keepBytes: keepBytes);
+    final normalized = p.normalize(_sourceFolder);
+    final parent = p.dirname(normalized);
+    final name = p.basename(normalized);
+    if (name.isEmpty) {
+      return '';
+    }
+    return p.join(parent, '$name-kept');
+  }
+
+  /// The destination that a commit would use: the user's field value, or the
+  /// suggested default when they have not typed one.
+  String get _effectiveCommitDestination =>
+      _commitDestination.isNotEmpty ? _commitDestination : _suggestedDestination();
+
+  WizardCommitSummary get _commitSummaryPhase {
+    final keepIds = _keepIds();
+    var keepBytes = 0;
+    for (final id in keepIds) {
+      keepBytes += _images[id]?.sizeBytes ?? 0;
+    }
+    return WizardCommitSummary(
+      keepCount: keepIds.length,
+      keepBytes: keepBytes,
+      leftBehindCount: _images.length - keepIds.length,
+      destination: _effectiveCommitDestination,
+    );
   }
 
   int _tripsMarkedCount(List<TripInfo> trips) {
@@ -1047,6 +1091,114 @@ class Wizard extends _$Wizard {
     state = AsyncValue.data(_returnPhase ?? _junkReviewPhase);
   }
 
+  // --- S11–S13: commit -------------------------------------------------------
+
+  /// S11 destination field edit. Republishes the summary so the shell's
+  /// [Copy] button re-evaluates its enabled state (see the note on
+  /// [_publishQualityReviewPhase] for why a fresh instance is required).
+  void setCommitDestination(String value) {
+    if (state.value is! WizardCommitSummary || value == _commitDestination) {
+      return;
+    }
+    _commitDestination = value;
+    state = AsyncValue.data(_commitSummaryPhase);
+  }
+
+  /// S11 [Back] -> trips review.
+  void backFromCommitSummary() {
+    if (state.value is! WizardCommitSummary) {
+      return;
+    }
+    state = AsyncValue.data(_returnPhase ?? _tripsReviewPhase);
+  }
+
+  /// S11 [Copy] -> run the commit pass (S12).
+  void startCommit() {
+    if (state.value is! WizardCommitSummary) {
+      return;
+    }
+    final destination = _effectiveCommitDestination;
+    if (destination.isEmpty) {
+      return;
+    }
+    _returnPhase = _commitSummaryPhase;
+    _committedDestination = destination;
+    _commitKeepIds = _keepIds();
+    _commitTotalBytes = _commitKeepIds.fold<int>(
+      0,
+      (sum, id) => sum + (_images[id]?.sizeBytes ?? 0),
+    );
+    _commitCopied = 0;
+    _commitSkipped = 0;
+    _commitErrors = const <String>[];
+    state = AsyncValue.data(
+      WizardCommitting(
+        total: _commitKeepIds.length,
+        totalBytes: _commitTotalBytes,
+      ),
+    );
+    final client = ref.read(kustaviClientProvider).requireValue;
+    final request = pb.CommitRequest(
+      destination: destination,
+      keepIds: _commitKeepIds,
+      folderForId: commitFolderPlan().entries,
+    );
+    _subscribe(client.commit(request), _onCommitEvent, _onCommitDone);
+  }
+
+  void cancelCommit() {
+    if (state.value is! WizardCommitting) {
+      return;
+    }
+    _cancelPass();
+    state = AsyncValue.data(_returnPhase ?? _commitSummaryPhase);
+  }
+
+  void _onCommitEvent(pb.CommitEvent event) {
+    if (state.value is! WizardCommitting) {
+      return;
+    }
+    switch (event.whichEvent()) {
+      case pb.CommitEvent_Event.progress:
+        final done = event.progress.done;
+        // CommitProgress carries only file counts; approximate bytes-done by
+        // summing the sizes of the first `done` ids in the keep set.
+        var doneBytes = 0;
+        for (var i = 0; i < done && i < _commitKeepIds.length; i++) {
+          doneBytes += _images[_commitKeepIds[i]]?.sizeBytes ?? 0;
+        }
+        state = AsyncValue.data(
+          WizardCommitting(
+            done: done,
+            total: event.progress.total,
+            currentName: event.progress.currentName,
+            doneBytes: doneBytes,
+            totalBytes: _commitTotalBytes,
+          ),
+        );
+      case pb.CommitEvent_Event.complete:
+        _commitCopied = event.complete.copied;
+        _commitSkipped = event.complete.skipped;
+        _commitErrors = List<String>.unmodifiable(event.complete.errors);
+      case pb.CommitEvent_Event.notSet:
+        break;
+    }
+  }
+
+  void _onCommitDone() {
+    if (state.value is! WizardCommitting) {
+      return;
+    }
+    state = AsyncValue.data(
+      WizardDone(
+        copiedCount: _commitCopied,
+        skippedCount: _commitSkipped,
+        destination: _committedDestination,
+        errors: _commitErrors,
+      ),
+    );
+  }
+
   // --- step error (§10.2) -------------------------------------------------
 
   /// [Back] on the step error screen: return to the phase the failed pass
@@ -1120,6 +1272,13 @@ class Wizard extends _$Wizard {
     _tripResults.clear();
     _tripSelections.clear();
     _resetTripEdits();
+    _commitDestination = '';
+    _commitKeepIds = const <String>[];
+    _commitTotalBytes = 0;
+    _committedDestination = '';
+    _commitCopied = 0;
+    _commitSkipped = 0;
+    _commitErrors = const <String>[];
     if (!keepReturnPhase) {
       _returnPhase = null;
     }

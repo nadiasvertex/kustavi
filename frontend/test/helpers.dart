@@ -113,6 +113,30 @@ pb.SimilarEvent similarGroup(
 GrpcError rpcBoom([String message = 'boom']) =>
     GrpcError.custom(StatusCode.internal, message);
 
+pb.CommitEvent commitProgress({
+  int done = 0,
+  int total = 0,
+  String currentName = '',
+}) {
+  return pb.CommitEvent()
+    ..progress = (pb.CommitProgress()
+      ..done = done
+      ..total = total
+      ..currentName = currentName);
+}
+
+pb.CommitEvent commitComplete({
+  int copied = 0,
+  int skipped = 0,
+  List<String> errors = const [],
+}) {
+  return pb.CommitEvent()
+    ..complete = (pb.CommitComplete()
+      ..copied = copied
+      ..skipped = skipped
+      ..errors.addAll(errors));
+}
+
 pb.TripsEvent tripEvent(
   int id,
   List<String> imageIds, {
