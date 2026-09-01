@@ -76,16 +76,20 @@ auto type_size(uint16_t type) -> std::size_t {
   }
 }
 
-/** Walks one IFD; `ifd_off` is absolute, sub-IFD offsets are relative to
+/** Walks one IFD; `ifd_off` and sub-IFD value offsets are all relative to
  * `tiff_base`. */
 auto read_ifd(const byte_view &view, std::size_t tiff_base, std::size_t ifd_off)
     -> std::vector<ifd_entry> {
   std::vector<ifd_entry> entries;
-  const auto count = view.u16(ifd_off);
+  // `ifd_off` is relative to `tiff_base` (TIFF spec); make it absolute before
+  // indexing into the buffer, matching how sub-IFD value offsets are resolved
+  // below.
+  const std::size_t ifd_abs = tiff_base + ifd_off;
+  const auto count = view.u16(ifd_abs);
   if (!count) {
     return entries;
   }
-  std::size_t off = ifd_off + 2;
+  std::size_t off = ifd_abs + 2;
   for (std::size_t i = 0; i < static_cast<std::size_t>(*count); ++i) {
     if (off + 12 > view.data.size()) {
       break;
