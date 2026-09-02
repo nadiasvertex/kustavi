@@ -14,12 +14,16 @@ Layout produced under `dist/`:
 
     macOS      dist/Kustavi.app/                  (unpacked, used by `just run`)
                dist/Contents/MacOS/kustavi-backend
-               dist/kustavi-macos.zip             (Kustavi.app/...)
+               dist/kustavi-macos-<version>.zip   (Kustavi.app/...)
 
     Windows    dist/Kustavi/                      (unpacked)
                dist/Kustavi/Kustavi.exe
                dist/Kustavi/kustavi-backend.exe
-               dist/kustavi-windows.zip           (Kustavi/...)
+               dist/Kustavi/VERSION               (payload version marker)
+               dist/kustavi-windows-<version>.zip (Kustavi/...)
+               dist/Kustavi-<version>-x64.msi     (with --installer; WiX v5)
+
+The version is the repo-root VERSION file, maintained by tools/version.py.
 
 The back-end binary is placed next to the GUI executable so the front end
 finds it (see frontend/lib/src/backend/process.dart::findBackendBinary), and
@@ -31,6 +35,7 @@ Usage:
     python tools/package.py --target macos  # explicit; must match the host
     python tools/package.py --keep          # leave the staging tree, skip zip
     python tools/package.py --skip-build    # reuse existing bazel-bin outputs
+    python tools/package.py --installer     # Windows: build the WiX MSI
 """
 
 from __future__ import annotations
@@ -49,6 +54,22 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 
 APP_NAME = "Kustavi"
 BACKEND_STEM = "kustavi-backend"
+
+# WiX v5 installer sources (Windows only). See tools/installer/README.md.
+WXS_FILE = REPO_ROOT / "tools" / "installer" / "kustavi.wxs"
+
+
+def read_version() -> str:
+    """Return the app version from the repo-root VERSION file (MAJOR.MINOR.PATCH).
+
+    This is the single source of truth maintained by tools/version.py; the
+    packaged archive, the payload VERSION marker and the MSI ProductVersion all
+    derive from it so a build is always identifiable.
+    """
+    text = (REPO_ROOT / "VERSION").read_text(encoding="utf-8").strip()
+    if not text:
+        raise SystemExit("VERSION file is empty")
+    return text
 
 # Small data files bundled next to the back-end binary. paths.h looks for these
 # beside the executable first in a packaged build.
@@ -211,6 +232,11 @@ def package_macos(args: argparse.Namespace) -> Path:
     for lib in libs:
         copy_file(lib, macos_dir / lib.name, executable=True)
 
+    # Version marker so an unpacked bundle is identifiable (matches the MSI
+    # ProductVersion / archive name on Windows).
+    version = read_version()
+    (macos_dir / "VERSION").write_text(f"{version}\n", encoding="utf-8")
+
     # Bazel's build rpath points into the sandbox and does not survive the
     # copy; repoint the binary at its own directory.
     if shutil.which("install_name_tool"):
@@ -225,7 +251,7 @@ def package_macos(args: argparse.Namespace) -> Path:
         return app_dir
 
     print("[4/4] Writing the redistributable archive")
-    archive = dist / "kustavi-macos.zip"
+    archive = dist / f"kustavi-macos-{version}.zip"
     make_macos_zip(dist, archive)
     return archive
 
@@ -276,14 +302,50 @@ def package_windows(args: argparse.Namespace) -> Path:
     for lib in libs:
         copy_file(lib, app_dir / lib.name, executable=True)
 
+    # Version marker inside the payload so both the installed tree and the zip
+    # carry the version that produced them.
+    version = read_version()
+    (app_dir / "VERSION").write_text(f"{version}\n", encoding="utf-8")
+
+    if args.installer:
+        print(f"[4/4] Building the WiX MSI installer (v{version})")
+        return build_msi(dist, app_dir, version)
+
     if args.keep:
         print("[4/4] --keep: leaving dist/ unpacked, skipping the archive")
         return app_dir
 
     print("[4/4] Writing the redistributable archive")
-    archive = dist / "kustavi-windows.zip"
+    archive = dist / f"kustavi-windows-{version}.zip"
     make_zip(dist, APP_NAME, archive)
     return archive
+
+
+def build_msi(dist: Path, staging: Path, version: str) -> Path:
+    """Run `wix build` over the staged dist/Kustavi tree -> dist/Kustavi-<v>-x64.msi.
+
+    Requires WiX v5 on PATH (`dotnet tool install --global wix`). The whole
+    staging tree is harvested automatically via the `Stage` bindpath referenced
+    by tools/installer/kustavi.wxs.
+    """
+    if shutil.which("wix") is None:
+        raise SystemExit(
+            "`wix` not found on PATH. Install WiX v5 with:\n"
+            "    dotnet tool install --global wix"
+        )
+    if not WXS_FILE.exists():
+        raise SystemExit(f"missing installer source: {WXS_FILE}")
+    msi = dist / f"{APP_NAME}-{version}-x64.msi"
+    if msi.exists():
+        msi.unlink()
+    run([
+        "wix", "build", str(WXS_FILE),
+        "-arch", "x64",
+        "-d", f"Version={version}",
+        "-bindpath", f"Stage={staging}",
+        "-out", str(msi),
+    ])
+    return msi
 
 
 def main() -> int:
@@ -300,6 +362,11 @@ def main() -> int:
         "--skip-build", action="store_true",
         help="reuse existing bazel-bin outputs instead of building",
     )
+    parser.add_argument(
+        "--installer", action="store_true",
+        help="build the WiX MSI installer instead of the zip (Windows only; "
+             "needs `dotnet tool install --global wix`)",
+    )
     args = parser.parse_args()
 
     target = host_target() if args.target == "host" else args.target
@@ -309,6 +376,8 @@ def main() -> int:
             f"cannot package for {target!r} on a {host!r} host: the GUI bundle "
             f"toolchain only runs natively."
         )
+    if args.installer and target != "windows":
+        raise SystemExit("--installer is only supported on Windows")
 
     dist = REPO_ROOT / "dist"
     print(f"Packaging Kustavi for {target} (repo: {REPO_ROOT})")
@@ -321,7 +390,7 @@ def main() -> int:
     size_mb = ""
     if result.is_file():
         size_mb = f" ({result.stat().st_size / 1e6:.1f} MB)"
-    print(f"\nDone: {result}{size_mb}")
+    print(f"\nDone (v{read_version()}): {result}{size_mb}")
     return 0
 
 

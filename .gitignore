@@ -9,6 +9,7 @@ frontend/.idea/
 test/photos/
 dist/
 .bazelbsp/
+__pycache__/
 .cache/clangd/index/
 .idea/
 

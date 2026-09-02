@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../state/model_status.dart';
 import '../state/wizard.dart';
+import '../version.dart';
 import 'format.dart';
 
 /// S0 — the start screen (spec/frontend.md §6.2).
@@ -47,6 +48,12 @@ class StartScreen extends ConsumerWidget {
             const SizedBox(height: 24),
             _ModelPrepCard(state: model),
           ],
+          const SizedBox(height: 24),
+          Text(
+            'Kustavi v$kAppVersion',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.outline),
+          ),
         ],
       ),
     );

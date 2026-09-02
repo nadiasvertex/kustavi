@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Kustavi Windows installer (WiX v5).
+
+  Built by "tools/package.py (installer flag)", which stages the full
+  application tree into the dist Kustavi folder and then invokes "wix build"
+  with: arch x64, define Version=X.Y.Z, bindpath Stage=<dist Kustavi folder>,
+  out dist/Kustavi-X.Y.Z-x64.msi
+
+  Version comes from the repo-root VERSION file (see tools/version.py). The
+  whole staged payload is harvested automatically via the Files element and
+  the Stage bindpath. Per-user install: no elevation prompt. See
+  tools/installer/README.md.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="Kustavi"
+      Manufacturer="Kustavi"
+      Version="$(Version)"
+      UpgradeCode="7E9C2A14-3B6D-4F51-9A2E-1C8D5B0F4A73"
+      Scope="perUser"
+      Compressed="yes">
+
+    <!-- Clean in-place upgrades: an older version is removed before the new
+         one is laid down; a downgrade is blocked with a friendly message. -->
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Kustavi is already installed." />
+
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Add/Remove Programs metadata. -->
+    <Icon Id="KustaviIcon" SourceFile="!(bindpath.Stage)\Kustavi.exe" />
+    <Property Id="ARPPRODUCTICON" Value="KustaviIcon" />
+    <Property Id="ARPNOREPAIR" Value="1" />
+
+    <!-- Per-user install root: %LOCALAPPDATA%\Programs\Kustavi -->
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Kustavi" />
+      </Directory>
+    </StandardDirectory>
+
+    <!-- Start Menu shortcut (per-user). -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Component Id="StartMenuShortcut" Guid="*">
+        <Shortcut Id="KustaviStartMenu"
+                  Name="Kustavi"
+                  Description="Keep the best of a folder of photos"
+                  Target="[INSTALLFOLDER]Kustavi.exe"
+                  WorkingDirectory="INSTALLFOLDER"
+                  Icon="KustaviIcon" />
+        <RegistryValue Root="HKCU" Key="Software\Kustavi\Kustavi"
+                       Name="installed" Type="integer" Value="1" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+
+    <!-- The application payload: every file staged under dist/Kustavi/. -->
+    <ComponentGroup Id="Payload" Directory="INSTALLFOLDER">
+      <Files Include="!(bindpath.Stage)\**" />
+    </ComponentGroup>
+
+    <Feature Id="Main" Title="Kustavi" Level="1">
+      <ComponentGroupRef Id="Payload" />
+      <ComponentRef Id="StartMenuShortcut" />
+    </Feature>
+  </Package>
+</Wix>

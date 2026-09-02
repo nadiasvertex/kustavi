@@ -88,6 +88,33 @@ package *ARGS:
   : "${PY:?no working python interpreter on PATH}"
   "$PY" tools/package.py {{ ARGS }}
 
+# Build the Windows MSI installer (WiX v5; needs `dotnet tool install -g wix`).
+# See tools/installer/README.md.
+installer *ARGS:
+  #!/usr/bin/env sh
+  set -e
+  for c in python3 python py; do "$c" -c "import sys" >/dev/null 2>&1 && PY=$c && break; done
+  : "${PY:?no working python interpreter on PATH}"
+  "$PY" tools/package.py --installer {{ ARGS }}
+
+# Print the current app version (the repo-root VERSION file).
+version-show:
+  #!/usr/bin/env sh
+  set -e
+  for c in python3 python py; do "$c" -c "import sys" >/dev/null 2>&1 && PY=$c && break; done
+  : "${PY:?no working python interpreter on PATH}"
+  "$PY" tools/version.py show
+
+# Bump the global version and propagate it to the front end, back end,
+# MODULE.bazel and the Windows resource script. COMPONENT is major|minor|patch.
+# Pass `--tag` through to also commit + tag, e.g. `just version-bump patch --tag`.
+version-bump COMPONENT *ARGS:
+  #!/usr/bin/env sh
+  set -e
+  for c in python3 python py; do "$c" -c "import sys" >/dev/null 2>&1 && PY=$c && break; done
+  : "${PY:?no working python interpreter on PATH}"
+  "$PY" tools/version.py bump {{ COMPONENT }} {{ ARGS }}
+
 # Package, then launch the unpacked macOS app from dist/.
 run:
   #!/usr/bin/env sh

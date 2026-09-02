@@ -91,6 +91,10 @@ class ProcessHandle {
   /// OS-assigned loopback port parsed from the ready line.
   int port = 0;
 
+  /// Back-end version reported by `GetInfo` during the ready handshake
+  /// (spec/frontend.md §3.1). Empty until the readiness probe completes.
+  String backendVersion = '';
+
   final RingBuffer log = RingBuffer(maxBytes: kBackendLogMaxBytes);
 
   /// Set before a clean shutdown so the supervision logic does not treat the
@@ -222,7 +226,7 @@ class ProcessHandle {
     );
     try {
       final client = stub.KustaviClient(channel);
-      await client
+      final info = await client
           .getInfo(
             pb.GetInfoRequest(),
             options: CallOptions(
@@ -231,6 +235,7 @@ class ProcessHandle {
             ),
           )
           .timeout(const Duration(seconds: 5));
+      backendVersion = info.version;
     } on GrpcError catch (error) {
       throw BackendStartupFailed(
         'Back end readiness probe failed: ${error.message ?? 'status ${error.code}'}',
@@ -259,11 +264,15 @@ class BackendEndpoint {
     required this.handle,
     required this.token,
     required this.port,
+    this.backendVersion = '',
   });
 
   final ProcessHandle handle;
   final String token;
   final int port;
+
+  /// Version string the back end returned from `GetInfo` at startup.
+  final String backendVersion;
 }
 
 /// Discovers the back-end binary (spec/frontend.md §3.1):
@@ -362,7 +371,12 @@ class BackendProcess extends _$BackendProcess {
         }
       }),
     );
-    return BackendEndpoint(handle: handle, token: token, port: handle.port);
+    return BackendEndpoint(
+      handle: handle,
+      token: token,
+      port: handle.port,
+      backendVersion: handle.backendVersion,
+    );
   }
 
   /// Clean shutdown (spec/frontend.md §3.2): call `Shutdown`, wait up to 3 s
