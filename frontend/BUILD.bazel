@@ -28,6 +28,10 @@ flutter_macos_app(
     name = "kustavi_macos",
     application = ":kustavi_app",
     app_name = "Kustavi",
+    # Compiled by actool into the bundle's Assets.car and wired into
+    # Info.plist as CFBundleIconName. Regenerate with `dart run
+    # flutter_launcher_icons` after changing resources/icon.png.
+    app_icons = glob(["macos/Runner/Assets.xcassets/AppIcon.appiconset/**"]),
     bundle_id = "dev.kustavi.app",
     target_compatible_with = ["@platforms//os:macos"],
 )
