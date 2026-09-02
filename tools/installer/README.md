@@ -26,7 +26,7 @@ which runs `python tools/package.py --installer`. That:
    llama.cpp DLLs, `cities.tsv`, `face_detection_yunet.onnx`, a `VERSION` marker),
 3. runs `wix build` to produce `dist/Kustavi-<version>-x64.msi`.
 
-`<version>` is the repo-root `VERSION` file, maintained by `tools/version.py`
+`<version>` is the repo-root `VERSION.txt` file, maintained by `tools/version.py`
 (`just version-bump {major|minor|patch}`). The MSI `ProductVersion`, the payload
 `VERSION` marker and the file name all come from that one value.
 

@@ -97,7 +97,7 @@ installer *ARGS:
   : "${PY:?no working python interpreter on PATH}"
   "$PY" tools/package.py --installer {{ ARGS }}
 
-# Print the current app version (the repo-root VERSION file).
+# Print the current app version (the repo-root VERSION.txt file).
 version-show:
   #!/usr/bin/env sh
   set -e

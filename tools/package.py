@@ -23,7 +23,7 @@ Layout produced under `dist/`:
                dist/kustavi-windows-<version>.zip (Kustavi/...)
                dist/Kustavi-<version>-x64.msi     (with --installer; WiX v5)
 
-The version is the repo-root VERSION file, maintained by tools/version.py.
+The version is the repo-root VERSION.txt file, maintained by tools/version.py.
 
 The back-end binary is placed next to the GUI executable so the front end
 finds it (see frontend/lib/src/backend/process.dart::findBackendBinary), and
@@ -60,15 +60,16 @@ WXS_FILE = REPO_ROOT / "tools" / "installer" / "kustavi.wxs"
 
 
 def read_version() -> str:
-    """Return the app version from the repo-root VERSION file (MAJOR.MINOR.PATCH).
+    """Return the app version from the repo-root VERSION.txt file (MAJOR.MINOR.PATCH).
 
     This is the single source of truth maintained by tools/version.py; the
     packaged archive, the payload VERSION marker and the MSI ProductVersion all
-    derive from it so a build is always identifiable.
+    derive from it so a build is always identifiable. (The file is VERSION.txt,
+    not VERSION, so it does not shadow the C++ <version> header on Windows.)
     """
-    text = (REPO_ROOT / "VERSION").read_text(encoding="utf-8").strip()
+    text = (REPO_ROOT / "VERSION.txt").read_text(encoding="utf-8").strip()
     if not text:
-        raise SystemExit("VERSION file is empty")
+        raise SystemExit("VERSION.txt file is empty")
     return text
 
 # Small data files bundled next to the back-end binary. paths.h looks for these

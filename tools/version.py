@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Read and bump the single Kustavi version.
 
-The repository-root ``VERSION`` file (``MAJOR.MINOR.PATCH``) is the one place a
+The repository-root ``VERSION.txt`` file (``MAJOR.MINOR.PATCH``) is the one place a
 human edits the app version. This script propagates it to every derived
 location so the front end, the back end, the Bazel module, the Windows
 executable metadata and the installer all agree:
@@ -34,7 +34,10 @@ from pathlib import Path
 
 # Repo root = parent of this file's directory (tools/).
 REPO_ROOT = Path(__file__).resolve().parent.parent
-VERSION_FILE = REPO_ROOT / "VERSION"
+# Not literally "VERSION": Bazel's MSVC toolchain puts the repo root on the
+# angle-include search path, so on a case-insensitive filesystem a repo-root
+# file named VERSION shadows the C++ standard <version> header. See MODULE.bazel.
+VERSION_FILE = REPO_ROOT / "VERSION.txt"
 
 _SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
 
