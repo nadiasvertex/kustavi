@@ -1,10 +1,12 @@
 #include "cmd/serve.h"
 #include "kustavi_service.h"
+#include "util/parent_watch.h"
 
 #include <grpcpp/grpcpp.h>
 #include <spdlog/spdlog.h>
 
 #include <chrono>
+#include <cstdint>
 #include <iostream>
 #include <print>
 #include <string>
@@ -12,9 +14,15 @@
 
 namespace kustavi::cmd {
 
-void serve(const std::string &host, int port, const std::string &auth_token) {
+void serve(const std::string &host, int port, const std::string &auth_token,
+           std::int64_t parent_pid) {
   // Note: stdout is reserved for the KUSTAVI-READY handshake line; all log
   // output is routed to stderr by main() so the GUI can capture it.
+
+  // Bail out the moment the launching GUI disappears, however it dies, so
+  // no back-end process is left running (spec/frontend.md §3.2).
+  kustavi::util::watch_parent_and_exit(parent_pid);
+
   kustavi::kustavi_service service(auth_token);
 
   grpc::ServerBuilder builder;

@@ -115,6 +115,7 @@ class ProcessHandle {
     required String binary,
     required String token,
     String? logFile,
+    int? parentPid,
     Duration readyTimeout = const Duration(seconds: 30),
   }) async {
     final args = <String>[
@@ -126,6 +127,9 @@ class ProcessHandle {
     ];
     if (logFile != null) {
       args.addAll(['--log-file', logFile]);
+    }
+    if (parentPid != null) {
+      args.addAll(['--parent-pid', '$parentPid']);
     }
     final process =
         await Process.start(binary, args, mode: ProcessStartMode.normal);
@@ -353,6 +357,9 @@ class BackendProcess extends _$BackendProcess {
       binary: binary,
       token: token,
       logFile: defaultBackendLogFile(),
+      // The back end force-exits if this process dies without a clean
+      // Shutdown (window close, crash, SIGKILL) — spec/frontend.md §3.2.
+      parentPid: pid,
     );
     _handle = handle;
     ref.onDispose(() {

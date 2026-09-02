@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 namespace kustavi::cmd {
@@ -13,6 +14,10 @@ namespace kustavi::cmd {
  * @param port The port to bind to (0 = OS-assigned).
  * @param auth_token The token validated on every incoming gRPC call. When
  * empty, validation is skipped (development mode).
+ * @param parent_pid PID of the launching GUI. When positive, the back end
+ * forces itself to exit as soon as that process is gone so it is never
+ * orphaned (spec/frontend.md §3.2). 0 disables the watch.
  */
-void serve(const std::string &host, int port, const std::string &auth_token);
+void serve(const std::string &host, int port, const std::string &auth_token,
+           std::int64_t parent_pid = 0);
 } // namespace kustavi::cmd

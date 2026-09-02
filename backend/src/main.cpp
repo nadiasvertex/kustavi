@@ -9,6 +9,7 @@
 #include <spdlog/sinks/ostream_sink.h>
 #include <spdlog/spdlog.h>
 
+#include <cstdint>
 #include <exception>
 #include <expected>
 #include <filesystem>
@@ -105,6 +106,7 @@ auto main(int argc, char **argv) -> int {
 
     std::string listen;
     std::string auth_token;
+    std::int64_t parent_pid = 0;
     bool verbose = false;
     bool version = false;
     std::filesystem::path folder_path;
@@ -145,6 +147,10 @@ auto main(int argc, char **argv) -> int {
     serve_cmd->add_option("--token", auth_token,
                           "Token validated in the gRPC call metadata of every "
                           "request");
+    serve_cmd->add_option("--parent-pid", parent_pid,
+                          "PID of the launching GUI; the back end exits "
+                          "automatically once that process is gone "
+                          "(0 = disabled)");
 
     // parse the args and handle --help automatically
     CLI11_PARSE(app, argc, argv)
@@ -183,7 +189,8 @@ auto main(int argc, char **argv) -> int {
               address->host);
           return 1;
         }
-        kustavi::cmd::serve(address->host, address->port, auth_token);
+        kustavi::cmd::serve(address->host, address->port, auth_token,
+                            parent_pid);
         return 0;
       }
     } else if (init_cmd->parsed() || analyze_cmd->parsed()) {
