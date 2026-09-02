@@ -78,31 +78,21 @@ lint: compile-commands
       | xargs -0 -P1 {{ CLANG_TIDY }} -p=. --fix --fix-errors \
           --extra-arg=-isysroot --extra-arg="$SDK"
 
-dist-clean:
-  rm -rf dist && mkdir -p dist
+# Build a redistributable desktop package (zip) for the host OS. The build +
+# bundle logic lives in tools/package.py, which also covers Windows. Extra
+# args pass straight through, e.g. `just package --keep`.
+package *ARGS:
+  #!/usr/bin/env sh
+  set -e
+  for c in python3 python py; do "$c" -c "import sys" >/dev/null 2>&1 && PY=$c && break; done
+  : "${PY:?no working python interpreter on PATH}"
+  "$PY" tools/package.py {{ ARGS }}
 
-package-server: build-server-release
-  @# Copy the backend binary → kustavi-backend
-  cp bazel-bin/backend/server dist/kustavi-backend
-  @# Bundle the GeoNames place table next to the binary (trips pass folder
-  @# names); geo_data_path() looks here first in a packaged build.
-  cp backend/data/cities.tsv dist/cities.tsv
-  @# Bundle the llama.cpp shared libraries next to the binary and repoint the
-  @# binary at them via an @loader_path rpath (Bazel's build rpath points into
-  @# the sandbox and does not survive the copy).
-  find -L bazel-bin/backend/server.runfiles \( -name 'libllama*.dylib' -o -name 'libggml*.dylib' -o -name 'libmtmd*.dylib' \) -type f \
-    -exec cp {} dist/ \;
-  install_name_tool -add_rpath @loader_path dist/kustavi-backend 2>/dev/null || true
-
-package-gui: build-gui
-  unzip -q bazel-bin/frontend/kustavi_macos.zip -d "dist/"
-  mv dist/kustavi-backend dist/Kustavi.app/Contents/MacOS/
-  mv dist/cities.tsv dist/Kustavi.app/Contents/MacOS/
-  @# Move the bundled llama.cpp dylibs alongside the backend binary.
-  find dist -maxdepth 1 \( -name 'libllama*.dylib' -o -name 'libggml*.dylib' -o -name 'libmtmd*.dylib' \) \
-    -exec mv {} dist/Kustavi.app/Contents/MacOS/ \;
-
-package: dist-clean package-server package-gui
-
-run: package
+# Package, then launch the unpacked macOS app from dist/.
+run:
+  #!/usr/bin/env sh
+  set -e
+  for c in python3 python py; do "$c" -c "import sys" >/dev/null 2>&1 && PY=$c && break; done
+  : "${PY:?no working python interpreter on PATH}"
+  "$PY" tools/package.py --keep
   dist/Kustavi.app/Contents/MacOS/Kustavi
