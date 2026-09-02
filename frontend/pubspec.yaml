@@ -54,6 +54,27 @@ dev_dependencies:
   flutter_lints: ^6.0.0
   riverpod_generator: ^4.0.8
   build_runner: ^2.16.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter_launcher_icons:
+  image_path: "assets/icon/app_icon.png"
+  # The source art is a circular scene on a transparent background; fill the
+  # square corners with white on platforms that require an opaque icon.
+  background_color: "#ffffff"
+  adaptive_icon_background: "#ffffff"
+  adaptive_icon_foreground: "assets/icon/app_icon.png"
+  android: true
+  ios: true
+  remove_alpha_ios: true
+  macos:
+    generate: true
+  windows:
+    generate: true
+    icon_size: 256
+  web:
+    generate: true
+    background_color: "#ffffff"
+    theme_color: "#1b3a5c"
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
