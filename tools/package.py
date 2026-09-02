@@ -78,14 +78,26 @@ def run(cmd: list[str]) -> None:
     subprocess.run(cmd, cwd=REPO_ROOT, check=True)
 
 
-def bazel_bin() -> Path:
-    """Resolve the `bazel-bin` output path (a symlink in the repo root)."""
-    link = REPO_ROOT / "bazel-bin"
-    if not link.exists():
-        raise SystemExit(
-            "bazel-bin not found -- run a build first or drop --skip-build."
-        )
-    return link.resolve()
+def bazel_bin_for(label: str, config_args: list[str]) -> Path:
+    """Resolve the `bin` directory that actually holds `label`'s outputs.
+
+    A package run builds the back-end with `--config=release` and the GUI
+    bundle without it, so the two land in different `bazel-out/<config>/bin`
+    trees. The repo-root `bazel-bin` symlink only points at whichever build
+    ran last, so ask Bazel where each target's files really are.
+    """
+    proc = subprocess.run(
+        ["bazel", "cquery", label, "--output=files", *config_args],
+        cwd=REPO_ROOT, check=True, capture_output=True, text=True,
+    )
+    files = proc.stdout.split()
+    if not files:
+        raise SystemExit(f"bazel cquery returned no files for {label}")
+    first = (REPO_ROOT / files[0]).resolve()
+    for parent in first.parents:
+        if parent.name == "bin":
+            return parent
+    raise SystemExit(f"could not find a 'bin' directory above {first}")
 
 
 def copy_file(src: Path, dst: Path, *, executable: bool = False) -> None:
@@ -159,15 +171,17 @@ def make_macos_zip(staging: Path, archive: Path) -> None:
 # --------------------------------------------------------------------------- #
 def package_macos(args: argparse.Namespace) -> Path:
     dist = REPO_ROOT / "dist"
-    bin_dir = bazel_bin()
 
     if not args.skip_build:
         print("[1/4] Building release back-end + macOS GUI bundle")
         run(["bazel", "build", "//backend:server", "--config=release"])
         run(["bazel", "build", "//frontend:kustavi_macos"])
 
+    backend_bin = bazel_bin_for("//backend:server", ["--config=release"])
+    gui_bin = bazel_bin_for("//frontend:kustavi_macos", [])
+
     print("[2/4] Unpacking the GUI bundle")
-    gui_zip = bin_dir / "frontend" / "kustavi_macos.zip"
+    gui_zip = gui_bin / "frontend" / "kustavi_macos.zip"
     if not gui_zip.exists():
         raise SystemExit(f"missing {gui_zip} -- run without --skip-build")
     app_dir = dist / f"{APP_NAME}.app"
@@ -184,14 +198,14 @@ def package_macos(args: argparse.Namespace) -> Path:
     macos_dir.mkdir(parents=True, exist_ok=True)
 
     print("[3/4] Bundling the back-end, data files and llama.cpp libraries")
-    copy_file(bin_dir / "backend" / "server", macos_dir / BACKEND_STEM,
+    copy_file(backend_bin / "backend" / "server", macos_dir / BACKEND_STEM,
               executable=True)
     for name in DATA_FILES:
         copy_file(REPO_ROOT / "backend" / "data" / name, macos_dir / name)
 
     libs = find_llama_libs("macos", [
-        bin_dir / "backend" / "server.runfiles",
-        bin_dir / "backend",
+        backend_bin / "backend" / "server.runfiles",
+        backend_bin / "backend",
     ])
     if not libs:
         raise SystemExit("no llama.cpp dylibs found in the server build outputs")
@@ -222,16 +236,18 @@ def package_macos(args: argparse.Namespace) -> Path:
 # --------------------------------------------------------------------------- #
 def package_windows(args: argparse.Namespace) -> Path:
     dist = REPO_ROOT / "dist"
-    bin_dir = bazel_bin()
 
     if not args.skip_build:
         print("[1/4] Building release back-end + Windows GUI bundle")
         run(["bazel", "build", "//backend:server", "--config=release"])
         run(["bazel", "build", "//frontend:kustavi_windows"])
 
+    backend_bin = bazel_bin_for("//backend:server", ["--config=release"])
+    gui_bin = bazel_bin_for("//frontend:kustavi_windows", [])
+
     print("[2/4] Staging the GUI bundle")
     # flutter_windows_app emits a tree artifact named after the target.
-    gui_bundle = bin_dir / "frontend" / "kustavi_windows"
+    gui_bundle = gui_bin / "frontend" / "kustavi_windows"
     if not gui_bundle.is_dir():
         raise SystemExit(f"missing {gui_bundle} -- run without --skip-build")
     app_dir = dist / APP_NAME
@@ -247,14 +263,14 @@ def package_windows(args: argparse.Namespace) -> Path:
             os.chmod(path, 0o755 if path.suffix in (".exe", ".dll") else 0o644)
 
     print("[3/4] Bundling the back-end, data files and llama.cpp libraries")
-    copy_file(bin_dir / "backend" / "server.exe", app_dir / f"{BACKEND_STEM}.exe",
-              executable=True)
+    copy_file(backend_bin / "backend" / "server.exe",
+              app_dir / f"{BACKEND_STEM}.exe", executable=True)
     for name in DATA_FILES:
         copy_file(REPO_ROOT / "backend" / "data" / name, app_dir / name)
 
     libs = find_llama_libs("windows", [
-        bin_dir / "backend",
-        bin_dir / "backend" / "server.exe.runfiles",
+        backend_bin / "backend",
+        backend_bin / "backend" / "server.exe.runfiles",
     ])
     if not libs:
         raise SystemExit("no llama.cpp DLLs found in the server build outputs")
