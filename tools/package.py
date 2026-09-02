@@ -327,8 +327,12 @@ def build_msi(dist: Path, staging: Path, version: str) -> Path:
 
     Requires WiX v5 on PATH (`dotnet tool install --global wix`). The whole
     staging tree is harvested automatically via the `Stage` bindpath referenced
-    by tools/installer/kustavi.wxs.
+    by tools/installer/kustavi.wxs; the `Resources` bindpath points at the
+    Flutter Windows runner resources so the MSI's ARP / shortcut icon is the
+    app icon (app_icon.ico, generated from resources/icon.png) rather than the
+    default Windows Installer icon.
     """
+    icon_dir = REPO_ROOT / "frontend" / "windows" / "runner" / "resources"
     if shutil.which("wix") is None:
         raise SystemExit(
             "`wix` not found on PATH. Install WiX v5 with:\n"
@@ -344,6 +348,7 @@ def build_msi(dist: Path, staging: Path, version: str) -> Path:
         "-arch", "x64",
         "-d", f"Version={version}",
         "-bindpath", f"Stage={staging}",
+        "-bindpath", f"Resources={icon_dir}",
         "-out", str(msi),
     ])
     return msi

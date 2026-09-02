@@ -45,6 +45,9 @@ python tools/package.py --installer --skip-build
   place; a downgrade is refused with a message.
 - Listed in **Settings → Apps → Installed apps** as "Kustavi <version>",
   publisher "Kustavi".
+- ARP entry and Start Menu shortcut show the app icon
+  (`frontend/windows/runner/resources/app_icon.ico`, generated from
+  `resources/icon.png`), passed to `wix build` via the `Resources` bindpath.
 
 ## Not handled on uninstall
 

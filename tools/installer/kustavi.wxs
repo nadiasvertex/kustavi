@@ -5,6 +5,7 @@
   Built by "tools/package.py (installer flag)", which stages the full
   application tree into the dist Kustavi folder and then invokes "wix build"
   with: arch x64, define Version=X.Y.Z, bindpath Stage=<dist Kustavi folder>,
+  bindpath Resources=<frontend/windows/runner/resources> (the app_icon.ico),
   out dist/Kustavi-X.Y.Z-x64.msi
 
   Version comes from the repo-root VERSION file (see tools/version.py). The
@@ -27,9 +28,15 @@
 
     <MediaTemplate EmbedCab="yes" />
 
-    <!-- Add/Remove Programs metadata. -->
-    <Icon Id="KustaviIcon" SourceFile="!(bindpath.Stage)\Kustavi.exe" />
-    <Property Id="ARPPRODUCTICON" Value="KustaviIcon" />
+    <!-- Add/Remove Programs metadata. The ARP entry and the Start Menu shortcut
+         use the app icon (frontend/windows/runner/resources/app_icon.ico,
+         generated from resources/icon.png), supplied via the Resources
+         bindpath. Icon/@Id keeps a real ".ico" extension so Windows Installer
+         stores it as an icon rather than falling back to its generic default
+         (which is what happened when this pointed at Kustavi.exe with an
+         extension-less Id). -->
+    <Icon Id="Kustavi.ico" SourceFile="!(bindpath.Resources)\app_icon.ico" />
+    <Property Id="ARPPRODUCTICON" Value="Kustavi.ico" />
     <Property Id="ARPNOREPAIR" Value="1" />
 
     <!-- Per-user install root: %LOCALAPPDATA%\Programs\Kustavi -->
@@ -47,7 +54,7 @@
                   Description="Keep the best of a folder of photos"
                   Target="[INSTALLFOLDER]Kustavi.exe"
                   WorkingDirectory="INSTALLFOLDER"
-                  Icon="KustaviIcon" />
+                  Icon="Kustavi.ico" />
         <RegistryValue Root="HKCU" Key="Software\Kustavi\Kustavi"
                        Name="installed" Type="integer" Value="1" KeyPath="yes" />
       </Component>
