@@ -1,4 +1,7 @@
 exports_files([
     "opencv-wstring-convert.patch",
+    "opencv-msvc-copts.patch",
+    "opencv-msvc-pthread.patch",
+    "libtiff-drop-root-version-file.patch",
     "rules_flutter-subdir-app.patch",
 ])

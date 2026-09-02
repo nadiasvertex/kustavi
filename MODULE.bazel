@@ -37,8 +37,26 @@ bazel_dep(name = "curl", version = "8.21.0.bcr.1")
 bazel_dep(name = "opencv", version = "5.0.0.bcr.3")
 single_version_override(
     module_name = "opencv",
-    patches = ["//patches:opencv-wstring-convert.patch"],
+    patches = [
+        "//patches:opencv-wstring-convert.patch",
+        "//patches:opencv-msvc-copts.patch",
+        "//patches:opencv-msvc-pthread.patch",
+    ],
     version = "5.0.0.bcr.3",
+)
+
+# libtiff (pulled in transitively by opencv's imgcodecs). Upstream ships a file
+# literally named VERSION at the repo root. Bazel's MSVC toolchain puts every
+# dependency's repo root on the angle-include search path, and on a
+# case-insensitive filesystem `#include <version>` (pulled by <ranges>,
+# <format>, …) then resolves to that file instead of the STL header. Delete it;
+# the Bazel build derives the version from explicit defines, not this file.
+bazel_dep(name = "libtiff", version = "4.7.1")
+single_version_override(
+    module_name = "libtiff",
+    patch_strip = 1,
+    patches = ["//patches:libtiff-drop-root-version-file.patch"],
+    version = "4.7.1",
 )
 
 # Repo-only third party libraries

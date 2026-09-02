@@ -127,13 +127,31 @@ _LINUX_VULKAN_LIBS = _LINUX_LIBS + ["libggml-vulkan.so"]
 
 _LINUX_CUDA_LIBS = _LINUX_LIBS + ["libggml-cuda.so"]
 
+# Windows/MSVC: CMake emits import-libbed DLLs — no "lib" prefix, ".dll" in bin/
+# and a matching ".lib" import library in lib/. GPU backends (--define=llama_gpu)
+# stay Linux-only for now.
+_WINDOWS_DLLS = [
+    "mtmd.dll",
+    "llama.dll",
+    "ggml.dll",
+    "ggml-base.dll",
+    "ggml-cpu.dll",
+]
+
+_WINDOWS_IMPORT_LIBS = [dll.replace(".dll", ".lib") for dll in _WINDOWS_DLLS]
+
 cmake(
     name = "llama_cpp_build",
     cache_entries = _CACHE_ENTRIES,
     generate_args = ["-GNinja"],
     lib_source = ":all_srcs",
+    out_interface_libs = select({
+        "@platforms//os:windows": _WINDOWS_IMPORT_LIBS,
+        "//conditions:default": [],
+    }),
     out_shared_libs = select({
         "@platforms//os:macos": _MACOS_LIBS,
+        "@platforms//os:windows": _WINDOWS_DLLS,
         ":gpu_vulkan": _LINUX_VULKAN_LIBS,
         ":gpu_cuda": _LINUX_CUDA_LIBS,
         "//conditions:default": _LINUX_LIBS,

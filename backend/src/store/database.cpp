@@ -82,7 +82,12 @@ void sqlite_statement::bind_text(int index, const std::string &value) {
 
 void sqlite_statement::bind_path(int index,
                                  const std::filesystem::path &value) {
-  sqlite3_bind_text(stmt_, index, value.c_str(), -1, SQLITE_TRANSIENT);
+  // path::c_str() is const wchar_t* on Windows; go through string() (native
+  // narrow encoding, matching how paths are stringified elsewhere in the
+  // codebase). SQLITE_TRANSIENT copies before the temporary dies.
+  const std::string text = value.string();
+  sqlite3_bind_text(stmt_, index, text.c_str(),
+                    static_cast<int>(text.size()), SQLITE_TRANSIENT);
 }
 
 void sqlite_statement::bind_int64(int index, int64_t value) {

@@ -80,6 +80,14 @@ cc_binary(
 cc_binary(
     name = "smoke_client",
     srcs = ["test/smoke_client.cpp"],
+    # POSIX-only: uses posix_spawn, pipe/poll, waitpid, kill and (on macOS)
+    # _NSGetExecutablePath to run the server as a child and drive it. Not ported
+    # to Win32 process/pipe APIs, so it is excluded from Windows builds. The
+    # `just test-*` recipes that use it are POSIX shell anyway.
+    target_compatible_with = select({
+        "@platforms//os:windows": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     # The smoke client spawns the server as a child process; make it
     # available in the runfiles tree.
     data = [":server"],

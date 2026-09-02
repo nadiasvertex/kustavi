@@ -1,0 +1,33 @@
+--- opencv.bzl
++++ opencv.bzl
+@@ -304,6 +304,16 @@
+         srcs_excludes_globs: A list of glob patterns to exclude from the module's sources.
+         sources: A list of sources for the module. If None, sources will be determined by globbing the src directory. This is useful for modules that need to explicitly list their sources, such as videoio or highgui.
+     """
++
++    # MSVC's cl.exe rejects Clang/GCC "-W" warning spellings: "-Wno-foo" collides
++    # with cl's "/W" option and aborts with error D8021. Several upstream module
++    # definitions hardcode such flags (e.g. -Wno-deprecated-volatile), so strip
++    # anything starting with "-W" when building with the Windows toolchain.
++    copts = select({
++        "@platforms//os:windows": [copt for copt in copts if not copt.startswith("-W")],
++        "//conditions:default": copts,
++    })
++
+     prefix = "modules/{}".format(name)
+     extra_headers = []
+ 
+@@ -564,7 +574,12 @@
+                 copts +
+                 select(baseline_copts),
+         implementation_deps = [":" + name + "_generated_simd_headers"],
+-        linkopts = linkopts,
++        linkopts = linkopts + select({
++            # cv::tempfile() calls CoCreateGuid on Windows; OpenCV's own CMake
++            # links ole32 for it but this BCR module never does.
++            "@platforms//os:windows": ["ole32.lib"],
++            "//conditions:default": [],
++        }),
+         local_defines = local_defines,
+         target_compatible_with = compatible_with,
+         strip_include_prefix = prefix + "/include",

@@ -14,6 +14,13 @@ common --tool_java_language_version=25
 common --tool_java_runtime_version=remotejdk_25
 startup:windows --windows_enable_symlinks
 
+# Keep the output tree short. The default output_user_root
+# (…/_bazel_<user>/<hash>) plus deeply nested generated paths (envoy_api's xDS
+# proto packages, for one) blow past Windows' 260-char MAX_PATH inside cl.exe,
+# which is not long-path aware even with LongPathsEnabled set. A short root
+# buys back ~30 characters.
+startup:windows --output_user_root=D:/b/_bzl
+
 # Disable strict header checking to fix external gRPC compilation on macOS
 build --features=-layering_check
 build --features=-parse_headers
@@ -52,6 +59,50 @@ build:macos --host_cxxopt=-std=c++26
 # that Clang/GCC do for the external packages.
 build:windows --cxxopt=/std:c++latest
 build:windows --host_cxxopt=/std:c++latest
+
+# grpc's filter-fusion templates (fused_filters.cc) do not compile with this
+# MSVC preview toolchain: promise_based_filter.h instantiates
+# RaceAsyncCompletion::Run / MapResult with a void Promise and cl rejects it
+# (C2672, "'void' cannot be used as a function parameter"). Filter fusion is a
+# perf-only optimization gated at runtime by the fuse_filters experiment;
+# GRPC_NO_FILTER_FUSION compiles the file to an empty RegisterFusedFilters().
+# The macro appears in no header, so scoping it to this one TU is ODR-safe.
+build:windows --per_file_copt=external/grpc.*/fused_filters\.cc$@-DGRPC_NO_FILTER_FUSION
+
+# Treat sources as UTF-8 and emit UTF-8 execution strings. {fmt} static-asserts
+# on this (base.h: "Unicode support requires compiling with /utf-8").
+build:windows --copt=/utf-8
+build:windows --host_copt=/utf-8
+
+# Make cl.exe report a conforming __cplusplus value. Without this MSVC always
+# reports 199711L, so libraries that feature-test the standard version (stdexec's
+# "requires C++20" #error, among others) fail even under /std:c++latest.
+build:windows --cxxopt=/Zc:__cplusplus
+build:windows --host_cxxopt=/Zc:__cplusplus
+
+# stdexec also requires MSVC's conforming (C99) preprocessor.
+build:windows --cxxopt=/Zc:preprocessor
+build:windows --host_cxxopt=/Zc:preprocessor
+
+# Don't enforce strict header-inclusion deps from cl.exe's /showIncludes output.
+# Some third-party BCR modules (grpc's channelz/v2tov1 target, for one) have
+# imprecise dep declarations for their generated upb headers that only Clang's
+# dotd pruning lets slide; matches the -layering_check / -parse_headers relaxations
+# already applied above.
+build:windows --features=-parse_showincludes
+
+# Route external-repo header dirs through cl's /external:I instead of /I. Bazel's
+# MSVC toolchain otherwise lowers -iquote to /I, so every external repo root
+# joins the angle-include search — and libtiff ships a root file literally named
+# VERSION that then shadows the STL's <version> header (case-insensitive FS),
+# wrecking <ranges>/<format>/<filesystem>.
+build:windows --features=external_include_paths
+
+# rules_foreign_cc's default pkg-config toolchain builds pkg-config from source,
+# which fails on MSVC because the bundled glib expects a `msvc_recommended_pragmas.h`
+# that recent glib no longer ships. llama.cpp's CMake build never calls pkg-config,
+# so use the preinstalled (PATH) toolchain instead of the from-source one here.
+build:windows --extra_toolchains=@rules_foreign_cc//toolchains:preinstalled_pkgconfig_toolchain
 
 # Optimize for local development (faster builds)
 build:debug --compilation_mode=dbg

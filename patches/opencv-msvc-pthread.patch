@@ -1,0 +1,27 @@
+--- BUILD.bazel
++++ BUILD.bazel
+@@ -206,8 +206,6 @@
+         "#cmakedefine HAVE_OPENGL\n": "/* #undef HAVE_OPENGL */\n",
+         "#cmakedefine HAVE_PNG\n": "#define HAVE_PNG 1\n",
+         "#cmakedefine HAVE_SPNG\n": "/* #undef HAVE_SPNG */\n",
+-        "#cmakedefine HAVE_PTHREAD\n": "#define HAVE_PTHREAD\n",
+-        "#cmakedefine HAVE_PTHREADS_PF\n": "#define HAVE_PTHREADS_PF\n",
+         "#cmakedefine HAVE_TBB\n": "/* #undef HAVE_TBB */\n",
+         "#cmakedefine HAVE_HPX\n": "/* #undef HAVE_HPX */\n",
+         "#cmakedefine HAVE_TIFF\n": "#define HAVE_TIFF 1\n",
+@@ -225,6 +223,15 @@
+         "//conditions:default": {
+             "#cmakedefine HAVE_EIGEN\n": "/* #undef HAVE_EIGEN */\n",
+         },
++    }) | select({
++        "@platforms//os:windows": {
++            "#cmakedefine HAVE_PTHREAD\n": "/* #undef HAVE_PTHREAD */\n",
++            "#cmakedefine HAVE_PTHREADS_PF\n": "/* #undef HAVE_PTHREADS_PF */\n",
++        },
++        "//conditions:default": {
++            "#cmakedefine HAVE_PTHREAD\n": "#define HAVE_PTHREAD\n",
++            "#cmakedefine HAVE_PTHREADS_PF\n": "#define HAVE_PTHREADS_PF\n",
++        },
+     }),
+     template = "@opencv//:cmake/templates/cvconfig.h.in",
+ )

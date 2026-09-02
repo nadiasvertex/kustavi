@@ -89,7 +89,7 @@ auto generate_working_image(const std::filesystem::path &base_path,
     result.working_path = dest_path.string();
 
     if (fs::exists(dest_path)) {
-      cv::Mat header = cv::imread(src_path, cv::IMREAD_UNCHANGED);
+      cv::Mat header = cv::imread(src_path.string(), cv::IMREAD_UNCHANGED);
       if (!header.empty()) {
         result.original_width = header.cols;
         result.original_height = header.rows;
@@ -98,7 +98,7 @@ auto generate_working_image(const std::filesystem::path &base_path,
       }
     }
 
-    cv::Mat src = cv::imread(src_path, cv::IMREAD_COLOR);
+    cv::Mat src = cv::imread(src_path.string(), cv::IMREAD_COLOR);
     if (src.empty()) {
       result.error_message = "File corrupt or encoding format unsupported.";
       return result;

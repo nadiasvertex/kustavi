@@ -8,9 +8,11 @@ namespace kustavi::exec {
 using default_scheduler = gcd::gcd_scheduler;
 }
 #elif defined(_WIN32)
-#include <exec/parallel_scheduler.hpp>
+// stdexec's portable parallel scheduler (P2300 system context). Declared by
+// <stdexec/execution.hpp> above; the backend impl is linked from the stdexec
+// target (STDEXEC_BUILD_PARALLEL_SCHEDULER=1).
 namespace kustavi::exec {
-using default_scheduler = exec::parallel_scheduler;
+using default_scheduler = stdexec::parallel_scheduler;
 }
 #elif defined(__linux__)
 #include <exec/linux/io_uring_context.hpp>
@@ -29,7 +31,7 @@ inline default_scheduler make_scheduler() {
 #if defined(__APPLE__)
   return gcd::gcd_scheduler();
 #elif defined(_WIN32)
-  return exec::parallel_scheduler();
+  return stdexec::get_parallel_scheduler();
 #elif defined(__linux__)
   static exec::io_uring_context context;
   static std::thread context_driver([]() { context.run(); });
