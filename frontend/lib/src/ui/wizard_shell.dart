@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
+import 'dart:ui' show AppExitResponse;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -38,6 +40,10 @@ class WizardShell extends ConsumerStatefulWidget {
 }
 
 class _WizardShellState extends ConsumerState<WizardShell> {
+  /// Watches for OS window-close requests (e.g. the Windows title-bar "X") so
+  /// the back end is shut down cleanly instead of being orphaned (§3.2).
+  late final AppLifecycleListener _lifecycleListener;
+
   Future<String?> _pickDirectory() =>
       widget.pickDirectory != null
           ? widget.pickDirectory!()
@@ -66,8 +72,24 @@ class _WizardShellState extends ConsumerState<WizardShell> {
   @override
   void initState() {
     super.initState();
+    // Intercept the OS close request so a clean back-end shutdown runs before
+    // the process exits; otherwise the child back end is left running (§3.2).
+    _lifecycleListener = AppLifecycleListener(
+      onExitRequested: _handleExitRequest,
+    );
     // Start the vision-model pipeline on app start (§6.3).
     ref.read(modelStatusProvider);
+  }
+
+  @override
+  void dispose() {
+    _lifecycleListener.dispose();
+    super.dispose();
+  }
+
+  Future<AppExitResponse> _handleExitRequest() async {
+    await ref.read(backendProcessProvider.notifier).quit();
+    return AppExitResponse.exit;
   }
 
   @override

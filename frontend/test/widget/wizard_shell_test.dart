@@ -1,3 +1,5 @@
+import 'dart:ui' show AppExitResponse;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -9,14 +11,25 @@ import 'package:kustavi/src/ui/wizard_shell.dart';
 
 import '../helpers.dart';
 
-ProviderContainer makeContainer(FakeKustaviClient client) {
+ProviderContainer makeContainer(
+  FakeKustaviClient client, {
+  BackendProcess Function()? backend,
+}) {
   return ProviderContainer(
     overrides: [
       kustaviClientProvider.overrideWith((ref) => client),
       // Never launch the real back end from a widget test.
-      backendProcessProvider.overrideWith(() => InactiveBackendProcess()),
+      backendProcessProvider.overrideWith(backend ?? InactiveBackendProcess.new),
     ],
   );
+}
+
+/// Records whether a clean shutdown was requested.
+class RecordingBackendProcess extends InactiveBackendProcess {
+  int quitCalls = 0;
+
+  @override
+  Future<void> quit() async => quitCalls++;
 }
 
 Future<String?> _pickPhotos() async => '/photos';
@@ -177,6 +190,31 @@ void main() {
         container.read(wizardProvider).value,
         isA<WizardStart>(),
       );
+    });
+
+    testWidgets('an OS window-close request shuts the back end down cleanly',
+        (tester) async {
+      final backend = RecordingBackendProcess();
+      final container = makeContainer(
+        FakeKustaviClient(),
+        backend: () => backend,
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: WizardShell(pickDirectory: _pickPhotos),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final response =
+          await tester.binding.handleRequestAppExit();
+
+      expect(response, AppExitResponse.exit);
+      expect(backend.quitCalls, 1);
     });
 
     testWidgets('a step error shows the error screen with [Back]',
