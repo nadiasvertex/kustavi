@@ -6,10 +6,9 @@ back-end server and the Flutter desktop bundle with Bazel, assembles them
 into a single self-contained application directory under `dist/`, and zips
 that directory into a redistributable archive.
 
-Historically `just package` was a macOS-only shell recipe. The logic now
-lives here and also covers Windows. A build is always produced for the host
-OS -- the toolchains that assemble a macOS `.app` or a Windows runner only
-run natively -- so `--target` may only name the current platform.
+A build is always produced for the host OS -- the toolchains that assemble a
+macOS `.app` or a Windows runner only run natively -- so `--target` may only
+name the current platform.
 
 Layout produced under `dist/`:
 
