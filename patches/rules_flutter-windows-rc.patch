@@ -1,0 +1,154 @@
+diff --git flutter/private/flutter_windows_application.bzl flutter/private/flutter_windows_application.bzl
+index 84ca862..2da920a 100644
+--- flutter/private/flutter_windows_application.bzl
++++ flutter/private/flutter_windows_application.bzl
+@@ -19,11 +19,62 @@ Output bundle structure:
+         icudtl.dat
+ """
+ 
++load("@rules_cc//cc:action_names.bzl", "CPP_COMPILE_ACTION_NAME")
++load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
+ load("//flutter:providers.bzl", "FlutterApplicationInfo", "FlutterInfo")
+ load("//flutter/private:cc_runner_compile.bzl", "compile_and_link_runner")
+ load("//flutter/private:common.bzl", "compute_desktop_bundle_copies")
+ load("//flutter/private:engine_helpers.bzl", "find_engine_header_dir")
+ 
++def _compile_win32_resources(ctx, rc_files, rc_data):
++    """Compile flutter create `windows/runner/*.rc` scripts into `.res` blobs.
++
++    The stock flutter create runner declares its app icon and VERSIONINFO in
++    `Runner.rc`; CMake compiles that with `rc.exe` and links the result into
++    the executable. rules_flutter's cc_common path only handles `.cc`/`.cpp`,
++    so without this the shipped `.exe` carries no icon or version metadata.
++
++    `rc.exe` comes from the Windows SDK; Bazel's MSVC toolchain puts its
++    directory on the compile action's `PATH` (and the SDK headers on
++    `INCLUDE`, which `Runner.rc`'s `#include "winres.h"` needs), so we borrow
++    that environment rather than probing the host.
++    """
++    if not rc_files:
++        return []
++
++    cc_toolchain = ctx.attr._cc_toolchain[cc_common.CcToolchainInfo]
++    feature_configuration = cc_common.configure_features(
++        ctx = ctx,
++        cc_toolchain = cc_toolchain,
++    )
++    env = dict(cc_common.get_environment_variables(
++        feature_configuration = feature_configuration,
++        action_name = CPP_COMPILE_ACTION_NAME,
++        variables = cc_common.create_compile_variables(
++            feature_configuration = feature_configuration,
++            cc_toolchain = cc_toolchain,
++        ),
++    ))
++
++    # Keep the msys2 shell from rewriting the `-` option flags or the
++    # `;`-separated INCLUDE list before `rc.exe` sees them.
++    env["MSYS_NO_PATHCONV"] = "1"
++    env["MSYS2_ARG_CONV_EXCL"] = "*"
++
++    res_files = []
++    for rc in rc_files:
++        res = ctx.actions.declare_file("%s_%s.res" % (ctx.label.name, rc.basename[:-len(".rc")]))
++        ctx.actions.run_shell(
++            inputs = depset(direct = [rc] + rc_data),
++            outputs = [res],
++            command = 'rc.exe -nologo -i "%s" -fo "%s" "%s"' % (rc.dirname, res.path, rc.path),
++            env = env,
++            mnemonic = "FlutterWindowsRC",
++            progress_message = "Compiling Windows resources %s" % rc.short_path,
++        )
++        res_files.append(res)
++    return res_files
++
+ # =============================================================================
+ # Runner compilation rule
+ # =============================================================================
+@@ -68,6 +119,11 @@ def _flutter_windows_runner_lib_impl(ctx):
+             plugin_hdrs.extend(entry.hdrs.to_list())
+             plugin_include_dirs.extend(entry.include_dirs.to_list())
+ 
++    # Compile any flutter create `windows/runner/*.rc` scripts and link the
++    # resulting `.res` blobs into the runner so its app icon and VERSIONINFO
++    # end up in the shipped executable.
++    res_files = _compile_win32_resources(ctx, ctx.files.resources, ctx.files.resource_data)
++
+     runner_binary = _compile_windows_runner(
+         ctx,
+         runner_srcs = runner_srcs,
+@@ -79,6 +135,7 @@ def _flutter_windows_runner_lib_impl(ctx):
+         plugin_srcs = plugin_srcs,
+         plugin_hdrs = plugin_hdrs,
+         plugin_include_dirs = plugin_include_dirs,
++        res_files = res_files,
+     )
+ 
+     return [DefaultInfo(
+@@ -86,7 +143,7 @@ def _flutter_windows_runner_lib_impl(ctx):
+         executable = runner_binary,
+     )]
+ 
+-def _compile_windows_runner(ctx, runner_srcs, engine_files, is_debug, registrant_srcs = [], registrant_hdrs = [], runner_hdrs = [], plugin_srcs = [], plugin_hdrs = [], plugin_include_dirs = []):
++def _compile_windows_runner(ctx, runner_srcs, engine_files, is_debug, registrant_srcs = [], registrant_hdrs = [], runner_hdrs = [], plugin_srcs = [], plugin_hdrs = [], plugin_include_dirs = [], res_files = []):
+     """Compile the C++ Win32 runner binary.
+ 
+     Uses cc_common.compile() + cc_common.link() with Bazel's hermetic CC
+@@ -220,9 +277,12 @@ def _compile_windows_runner(ctx, runner_srcs, engine_files, is_debug, registrant
+         engine_header_files = all_header_files,
+         engine_include_dir = header_dir,
+         extra_compile_flags = extra_compile_flags,
+-        extra_link_flags = ["/SUBSYSTEM:WINDOWS", "user32.lib", "ole32.lib", "dwmapi.lib", "shell32.lib", "advapi32.lib"],
++        # A `.res` passed straight to link.exe embeds its resources in the exe.
++        extra_link_flags = ["/SUBSYSTEM:WINDOWS", "user32.lib", "ole32.lib", "dwmapi.lib", "shell32.lib", "advapi32.lib"] +
++                           [r.path for r in res_files],
+         extra_defines = defines,
+         additional_srcs = additional_srcs + plugin_srcs,
++        additional_inputs = res_files,
+     )
+ 
+ flutter_windows_runner_lib = rule(
+@@ -245,6 +305,17 @@ flutter_windows_runner_lib = rule(
+             doc = "Custom runner C++ header files.",
+             allow_files = [".h", ".hpp"],
+         ),
++        "resources": attr.label_list(
++            doc = "Win32 `.rc` resource scripts (e.g. flutter create's " +
++                  "windows/runner/Runner.rc). Each is compiled with rc.exe " +
++                  "and the resulting .res is linked into the runner exe.",
++            allow_files = [".rc"],
++        ),
++        "resource_data": attr.label_list(
++            doc = "Files referenced by `resources` (icons, manifests) that " +
++                  "must be present next to the .rc scripts when rc.exe runs.",
++            allow_files = True,
++        ),
+         "application": attr.label(
+             doc = "Optional flutter_application target. When set, the runner " +
+                   "compiles every transitive plugin's Windows C++ sources " +
+diff --git flutter/windows.bzl flutter/windows.bzl
+index 07a43ea..c3a0a22 100644
+--- flutter/windows.bzl
++++ flutter/windows.bzl
+@@ -188,6 +188,12 @@ def flutter_windows_app(
+     runner_srcs = native.glob(["windows/runner/*.cc", "windows/runner/*.cpp"], allow_empty = True)
+     runner_hdrs = native.glob(["windows/runner/*.h"], allow_empty = True)
+ 
++    # flutter create also drops a Runner.rc (app icon + VERSIONINFO) and its
++    # resources/ payload. cc_common only compiles C++, so hand these to the
++    # runner rule, which compiles them with rc.exe and links the .res in.
++    runner_rc = native.glob(["windows/runner/*.rc"], allow_empty = True)
++    runner_rc_data = native.glob(["windows/runner/resources/**"], allow_empty = True)
++
+     _flutter_windows_runner_lib(
+         name = "__%s_runner" % name,
+         engine = "__%s_engine" % name,
+@@ -195,6 +201,8 @@ def flutter_windows_app(
+         application = application,
+         srcs = runner_srcs if runner_srcs else [],
+         hdrs = runner_hdrs if runner_hdrs else [],
++        resources = runner_rc,
++        resource_data = runner_rc_data,
+         **common
+     )
+ 

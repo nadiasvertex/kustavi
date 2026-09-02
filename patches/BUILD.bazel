@@ -4,4 +4,5 @@ exports_files([
     "opencv-msvc-pthread.patch",
     "libtiff-drop-root-version-file.patch",
     "rules_flutter-subdir-app.patch",
+    "rules_flutter-windows-rc.patch",
 ])

@@ -93,7 +93,12 @@ bazel_dep(name = "rules_flutter", version = "0.0.0")
 git_override(
     module_name = "rules_flutter",
     commit = "cfb2921cb2129d0658ba195396ecd3f1c97aa997",
-    patches = ["//patches:rules_flutter-subdir-app.patch"],
+    patches = [
+        "//patches:rules_flutter-subdir-app.patch",
+        # Compile windows/runner/Runner.rc with rc.exe and link the .res so the
+        # app icon + VERSIONINFO land in the shipped kustavi.exe.
+        "//patches:rules_flutter-windows-rc.patch",
+    ],
     remote = "https://github.com/aran/rules_flutter.git",
 )
 
