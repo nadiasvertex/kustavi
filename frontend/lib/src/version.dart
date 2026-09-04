@@ -7,4 +7,4 @@
 
 /// The application version (`MAJOR.MINOR.PATCH`), shown in the UI and used for
 /// front-end/back-end version-skew diagnostics.
-const String kAppVersion = '1.0.0';
+const String kAppVersion = '1.1.0';
