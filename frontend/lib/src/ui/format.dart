@@ -77,3 +77,15 @@ String formatDuration(DateTime start, DateTime end) {
   }
   return '${diff.inHours}h';
 }
+
+/// Clip length as `m:ss`, or `h:mm:ss` past an hour.
+String formatMediaDuration(Duration duration) {
+  String two(int n) => n.toString().padLeft(2, '0');
+  final hours = duration.inHours;
+  final minutes = duration.inMinutes % 60;
+  final seconds = duration.inSeconds % 60;
+  if (hours > 0) {
+    return '$hours:${two(minutes)}:${two(seconds)}';
+  }
+  return '$minutes:${two(seconds)}';
+}

@@ -67,6 +67,7 @@ message ImageMeta {
   optional GpsPoint gps = 8;
   string thumbnail_path = 9;   // absolute path, written before emit
   MediaKind kind = 10;
+  optional int64 duration_ms = 11;  // video length; unset for photos
 }
 
 // --- pass 1: scan --------------------------------------------------------

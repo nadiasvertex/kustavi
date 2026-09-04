@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart' hide ImageInfo;
 
 import '../../state/domain.dart';
+import '../format.dart';
 import 'badges.dart';
 
 /// A grid cell: the cached 768px working preview, an ellipsized file name,
@@ -66,11 +67,31 @@ class ImageCell extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      image.name,
-                      style: const TextStyle(color: Colors.white, fontSize: 11),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            image.name,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (image.isVideo && image.videoDuration != null) ...[
+                          const SizedBox(width: 6),
+                          Text(
+                            formatMediaDuration(image.videoDuration!),
+                            style: const TextStyle(
+                              color: Colors.white70,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     if (chips.isNotEmpty) ...[
                       const SizedBox(height: 4),
@@ -86,6 +107,14 @@ class ImageCell extends StatelessWidget {
                 top: 8,
                 left: 8,
                 child: KeeperBadge(suggested: suggestedKeeper),
+              ),
+            if (image.isVideo)
+              const Center(
+                child: Icon(
+                  Icons.play_circle_fill,
+                  color: Colors.white70,
+                  size: 40,
+                ),
               ),
           ],
         ),

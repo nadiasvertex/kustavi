@@ -77,12 +77,18 @@ auto generate_working_video(const std::filesystem::path &src_path,
   result.original_height =
       static_cast<std::int32_t>(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
 
+  const double fps = cap.get(cv::CAP_PROP_FPS);
+  const double frame_count = cap.get(cv::CAP_PROP_FRAME_COUNT);
+  if (fps > 0.0 && frame_count > 0.0) {
+    result.duration_ms =
+        static_cast<std::int64_t>((frame_count / fps) * 1000.0);
+  }
+
   if (fs::exists(dest_path)) {
     result.success = true;
     return result;
   }
 
-  const double frame_count = cap.get(cv::CAP_PROP_FRAME_COUNT);
   if (frame_count > 0) {
     cap.set(cv::CAP_PROP_POS_FRAMES, frame_count / 2.0);
   }

@@ -116,6 +116,12 @@ auto kustavi_service::ScanFolder(grpc::ServerContext *context,
                   gps->set_longitude(*r.longitude);
                 }
                 m->set_thumbnail_path(r.working_path);
+                m->set_kind(r.kind == image::media_kind_video
+                                ? MediaKind::VIDEO
+                                : MediaKind::PHOTO);
+                if (r.duration_ms.has_value()) {
+                  m->set_duration_ms(*r.duration_ms);
+                }
               } else {
                 auto *c = proto.mutable_complete();
                 c->set_images(static_cast<uint32_t>(e.images));

@@ -17,6 +17,8 @@ class ImageInfo {
     this.taken,
     this.gps,
     required this.workingImagePath,
+    this.isVideo = false,
+    this.videoDuration,
   });
 
   /// Path relative to the session folder, e.g. `2024/paris/IMG_0001.jpg`.
@@ -42,6 +44,12 @@ class ImageInfo {
   /// end before the `ImageMeta` event was emitted.
   final String workingImagePath;
 
+  /// True when this is a video rather than a photo.
+  final bool isVideo;
+
+  /// Video length; null for photos or when the back end couldn't probe it.
+  final Duration? videoDuration;
+
   factory ImageInfo.fromMeta(pb.ImageMeta meta) {
     return ImageInfo(
       id: meta.id,
@@ -57,6 +65,10 @@ class ImageInfo {
           ? (meta.gps.latitude, meta.gps.longitude)
           : null,
       workingImagePath: meta.thumbnailPath,
+      isVideo: meta.kind == pb.MediaKind.VIDEO,
+      videoDuration: meta.hasDurationMs()
+          ? Duration(milliseconds: meta.durationMs.toInt())
+          : null,
     );
   }
 }

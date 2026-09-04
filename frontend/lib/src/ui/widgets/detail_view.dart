@@ -5,6 +5,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart' hide ImageInfo;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:media_kit/media_kit.dart';
+import 'package:media_kit_video/media_kit_video.dart';
 
 import '../../state/decisions.dart';
 import '../../state/domain.dart';
@@ -103,6 +105,8 @@ class _DetailViewState extends ConsumerState<DetailView>
     with SingleTickerProviderStateMixin {
   late final FileImage _workingProvider;
   ui.Image? _master;
+  Player? _player;
+  VideoController? _videoController;
   final TransformationController _transformation = TransformationController();
   late final AnimationController _resetController = AnimationController(
     vsync: this,
@@ -121,7 +125,14 @@ class _DetailViewState extends ConsumerState<DetailView>
         _transformation.value = animation.value;
       }
     });
-    unawaited(_loadMaster());
+    if (widget.image.isVideo) {
+      final player = Player();
+      _player = player;
+      _videoController = VideoController(player);
+      unawaited(player.open(Media(widget.image.path), play: false));
+    } else {
+      unawaited(_loadMaster());
+    }
   }
 
   /// Reads the full-resolution master and decodes it (the decode runs in the
@@ -163,6 +174,7 @@ class _DetailViewState extends ConsumerState<DetailView>
     // cache so the modal cannot leak (§7.2, §11).
     _master?.dispose();
     PaintingBinding.instance.imageCache.evict(_workingProvider);
+    unawaited(_player?.dispose());
     _transformation.dispose();
     _resetController.dispose();
     _focus.dispose();
@@ -221,6 +233,19 @@ class _DetailViewState extends ConsumerState<DetailView>
   }
 
   Widget _viewport() {
+    if (widget.image.isVideo) {
+      final controller = _videoController;
+      if (controller == null) {
+        return const SizedBox.shrink();
+      }
+      final aspectRatio = widget.image.height > 0
+          ? widget.image.width / widget.image.height
+          : 16 / 9;
+      return AspectRatio(
+        aspectRatio: aspectRatio,
+        child: Video(controller: controller),
+      );
+    }
     final master = _master;
     final width = widget.image.width.toDouble();
     final height = widget.image.height.toDouble();
@@ -268,6 +293,8 @@ class _DetailViewState extends ConsumerState<DetailView>
         _metaRow(theme, 'Path', image.path),
         _metaRow(theme, 'Dimensions', '${image.width} × ${image.height}'),
         _metaRow(theme, 'Size', formatBytes(image.sizeBytes)),
+        if (image.videoDuration != null)
+          _metaRow(theme, 'Length', formatMediaDuration(image.videoDuration!)),
         if (image.taken != null)
           _metaRow(theme, 'Taken', formatDateTime(image.taken!)),
         if (image.gps != null)
