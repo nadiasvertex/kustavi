@@ -61,7 +61,7 @@ auto get_image_records(database &db) -> std::vector<image_record> {
 
   sqlite_statement stmt = db.prepare(
       "SELECT id, absolute_path, working_image_path, taken_unix_ms, latitude, "
-      "longitude FROM images;");
+      "longitude, kind FROM images;");
 
   while (stmt.step() == SQLITE_ROW) {
     image_record record;
@@ -90,6 +90,11 @@ auto get_image_records(database &db) -> std::vector<image_record> {
     }
     if (sqlite3_column_type(raw, 5) == SQLITE_FLOAT) {
       record.longitude = sqlite3_column_double(raw, 5);
+    }
+    const auto *kind =
+        reinterpret_cast<const char *>(sqlite3_column_text(raw, 6));
+    if (kind != nullptr) {
+      record.kind = kind;
     }
 
     records.push_back(std::move(record));

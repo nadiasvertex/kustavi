@@ -1,5 +1,6 @@
 // Standalone assertions for the trips pass clustering + naming. Exits non-zero
-// on the first failure. Wired into `just test-backend` via //backend:trips_test.
+// on the first failure. Wired into `just test-backend` via
+// //backend:trips_test.
 
 #include "geo/place_index.h"
 #include "pass/trips.h"
@@ -129,8 +130,7 @@ void test_no_gps_falls_back_to_month() {
   kustavi::trips_params params;
   const auto result = kustavi::find_trips(members, params, nullptr);
   check(result.trips.size() == 1, "no-GPS photos form one time cluster");
-  check(result.trips.empty() ? false
-                             : result.trips.front().folder.has_value(),
+  check(result.trips.empty() ? false : result.trips.front().folder.has_value(),
         "no-GPS trip still gets a month-year folder");
 }
 

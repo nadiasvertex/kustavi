@@ -22,7 +22,8 @@ namespace kustavi {
 namespace fs = std::filesystem;
 
 // ---------------------------------------------------------------------------
-// Pass 3: model download (EnsureModel) + vision junk classification (RunJunkPass)
+// Pass 3: model download (EnsureModel) + vision junk classification
+// (RunJunkPass)
 //
 // Model: Qwen2.5-VL-3B-Instruct (ViT + Qwen2.5 3B) from the ggml-org GGUF repo.
 // The spec names "Moondream-3.1"; Moondream 3 has no llama.cpp/mtmd projector
@@ -91,7 +92,8 @@ auto kustavi_service::EnsureModel(grpc::ServerContext *context,
   std::exception_ptr producer_error;
 
   std::thread producer = run_producer(
-      queue, stop_source, producer_error, [&](const std::stop_token &st) -> void {
+      queue, stop_source, producer_error,
+      [&](const std::stop_token &st) -> void {
         // EnsureModel is exempt from the single-pass lock but must not race
         // another EnsureModel. Wait for the model lock without blocking a
         // client cancellation.
@@ -135,8 +137,7 @@ auto kustavi_service::EnsureModel(grpc::ServerContext *context,
       });
 
   grpc::Status status = stream_pass(
-      context, writer, queue, stop_source,
-      [&](const model_event &ev) -> bool {
+      context, writer, queue, stop_source, [&](const model_event &ev) -> bool {
         ModelEvent proto;
         std::visit(
             [&](const auto &e) -> void {
@@ -195,7 +196,13 @@ auto kustavi_service::RunJunkPass(grpc::ServerContext *context,
   std::vector<store::image_record> records;
   std::unordered_set<std::string> already_done;
   try {
-    records = store::get_image_records(session_db_);
+    // Non-photographic-content classification doesn't apply to videos; the
+    // video pass reuses this same classifier on sampled frames instead.
+    for (auto &record : store::get_image_records(session_db_)) {
+      if (record.kind == image::media_kind_photo) {
+        records.push_back(std::move(record));
+      }
+    }
     already_done = classified_ids(session_db_);
   } catch (const std::exception &e) {
     return {grpc::StatusCode::INTERNAL,
@@ -213,9 +220,9 @@ auto kustavi_service::RunJunkPass(grpc::ServerContext *context,
   std::exception_ptr producer_error;
 
   std::thread producer = run_producer(
-      queue, stop_source, producer_error, [&](const std::stop_token &st) -> void {
-        auto classifier =
-            image::junk_classifier::load(text.dest, mmproj.dest);
+      queue, stop_source, producer_error,
+      [&](const std::stop_token &st) -> void {
+        auto classifier = image::junk_classifier::load(text.dest, mmproj.dest);
         if (!classifier) {
           throw std::runtime_error(classifier.error());
         }
@@ -288,8 +295,7 @@ auto kustavi_service::RunJunkPass(grpc::ServerContext *context,
       });
 
   grpc::Status status = stream_pass(
-      context, writer, queue, stop_source,
-      [&](const junk_event &ev) -> bool {
+      context, writer, queue, stop_source, [&](const junk_event &ev) -> bool {
         JunkEvent proto;
         std::visit(
             [&](const auto &e) -> void {

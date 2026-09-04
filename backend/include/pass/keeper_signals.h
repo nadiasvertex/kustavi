@@ -18,10 +18,10 @@ struct keeper_metrics {
                                    //! ROI, normalized v/(v+100); 0 when no face
   double eyes_open_ratio = 1.0;    //! mean over usable faces of an eyes-open
                                    //! proxy in [0,1]; 1.0 == open / unknown
-  double redeye_ratio = 0.0;       //! fraction of sampled eyes with red dominance
-  double color_balance = 1.0;      //! gray-world neutrality, 0 (strong cast) ..
-                                   //! 1 (neutral white balance)
-  bool valid = false;              //! false when the image could not be decoded
+  double redeye_ratio = 0.0;  //! fraction of sampled eyes with red dominance
+  double color_balance = 1.0; //! gray-world neutrality, 0 (strong cast) ..
+                              //! 1 (neutral white balance)
+  bool valid = false;         //! false when the image could not be decoded
 };
 
 /**

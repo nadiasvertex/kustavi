@@ -578,7 +578,8 @@ void run_ensure_model(const options &opts) {
     } else if (event.has_progress()) {
       const auto done = event.progress().done_bytes();
       const auto total = event.progress().total_bytes();
-      if (done >= last_logged + (128ULL << 20) || (total > 0 && done == total)) {
+      if (done >= last_logged + (128ULL << 20) ||
+          (total > 0 && done == total)) {
         last_logged = done;
         std::println("   EnsureModel {} / {} bytes", done, total);
       }

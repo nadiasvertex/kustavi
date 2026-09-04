@@ -10,9 +10,10 @@ namespace kustavi::image {
 /** One image's junk classification from the vision model. */
 struct junk_result {
   bool is_junk = false;
-  std::string reason;     //! e.g. "screenshot", "meme", "scan"; empty if kept.
-  double confidence = 0.0; //! 0..1, the model's probability that it is not a photo.
-  bool valid = false;      //! false when the image could not be analyzed.
+  std::string reason; //! e.g. "screenshot", "meme", "scan"; empty if kept.
+  double confidence =
+      0.0;            //! 0..1, the model's probability that it is not a photo.
+  bool valid = false; //! false when the image could not be analyzed.
 };
 
 /**

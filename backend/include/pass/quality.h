@@ -1,5 +1,7 @@
 #pragma once
 
+#include <opencv2/core.hpp>
+
 #include <filesystem>
 #include <functional>
 #include <thread>
@@ -57,6 +59,10 @@ auto analyze_images(quality_thresholds thresholds,
 /** True when any quality flag applies to the metrics. */
 auto is_flagged(const local_image_metrics &metrics,
                 const quality_thresholds &thresholds) -> bool;
+
+/** Laplacian variance (sharpness) of a grayscale image; higher = sharper.
+ * Shared with the video pass, which scores sampled frames the same way. */
+auto analyze_blur(const cv::Mat &gray) -> double;
 
 /**
  * Find low quality images in a batch of image paths.

@@ -7,6 +7,7 @@
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc.hpp>
+#include <opencv2/videoio.hpp>
 #include <spdlog/spdlog.h>
 #include <stdexec/execution.hpp> // Include stdexec
 
@@ -56,6 +57,61 @@ auto slash_id(const fs::path &relative) -> std::string {
 }
 } // namespace
 
+/** Grabs a representative frame (midpoint, falling back to the first frame)
+ * from a video and writes it to `dest_path` as the working thumbnail. */
+auto generate_working_video(const std::filesystem::path &src_path,
+                            const fs::path &dest_path) -> ingestion_result {
+  ingestion_result result;
+  result.absolute_path = src_path;
+  result.kind = std::string(media_kind_video);
+  result.working_path = dest_path.string();
+
+  cv::VideoCapture cap(src_path.string());
+  if (!cap.isOpened()) {
+    result.error_message = "File corrupt or container unplayable.";
+    return result;
+  }
+
+  result.original_width =
+      static_cast<std::int32_t>(cap.get(cv::CAP_PROP_FRAME_WIDTH));
+  result.original_height =
+      static_cast<std::int32_t>(cap.get(cv::CAP_PROP_FRAME_HEIGHT));
+
+  if (fs::exists(dest_path)) {
+    result.success = true;
+    return result;
+  }
+
+  const double frame_count = cap.get(cv::CAP_PROP_FRAME_COUNT);
+  if (frame_count > 0) {
+    cap.set(cv::CAP_PROP_POS_FRAMES, frame_count / 2.0);
+  }
+
+  cv::Mat frame;
+  bool ok = cap.read(frame);
+  if ((!ok || frame.empty()) && frame_count > 0) {
+    // Some containers misreport frame count/seek position; fall back to the
+    // first decodable frame.
+    cap.set(cv::CAP_PROP_POS_FRAMES, 0);
+    ok = cap.read(frame);
+  }
+  if (!ok || frame.empty()) {
+    result.error_message = "Could not decode a representative frame.";
+    return result;
+  }
+
+  std::vector<int> compression_params;
+  compression_params.push_back(cv::IMWRITE_JPEG_QUALITY);
+  compression_params.push_back(85);
+  if (!cv::imwrite(dest_path.string(), frame, compression_params)) {
+    result.error_message = "Failed to write video thumbnail to cache.";
+    return result;
+  }
+
+  result.success = true;
+  return result;
+}
+
 auto generate_working_image(const std::filesystem::path &base_path,
                             const std::filesystem::path &src_path,
                             const std::filesystem::path &cache_path)
@@ -87,6 +143,14 @@ auto generate_working_image(const std::filesystem::path &base_path,
 
     result.relative_id = relative_id;
     result.working_path = dest_path.string();
+
+    const auto kind = classify_media_kind(src_path);
+    if (kind == media_kind_video) {
+      auto video_result = generate_working_video(src_path, dest_path);
+      video_result.size_bytes = result.size_bytes;
+      video_result.relative_id = relative_id;
+      return video_result;
+    }
 
     if (fs::exists(dest_path)) {
       cv::Mat header = cv::imread(src_path.string(), cv::IMREAD_UNCHANGED);
@@ -145,9 +209,10 @@ auto generate_working_image(const std::filesystem::path &base_path,
   return result;
 }
 
-auto is_valid_image_file(const std::filesystem::path &path) -> bool {
+auto classify_media_kind(const std::filesystem::path &path)
+    -> std::optional<std::string_view> {
   if (path.string().contains(".kustavi-cache")) {
-    return false;
+    return std::nullopt;
   }
 
   std::string ext = path.extension().string();
@@ -157,7 +222,13 @@ auto is_valid_image_file(const std::filesystem::path &path) -> bool {
   std::ranges::transform(
       ext, ext.begin(), [](unsigned char c) -> int { return std::tolower(c); });
 
-  return std::ranges::contains(supported_image_extensions, ext);
+  if (std::ranges::contains(supported_image_extensions, ext)) {
+    return media_kind_photo;
+  }
+  if (std::ranges::contains(supported_video_extensions, ext)) {
+    return media_kind_video;
+  }
+  return std::nullopt;
 }
 
 void insert_ingested_images(database &db,
@@ -168,8 +239,8 @@ void insert_ingested_images(database &db,
   db.begin_transaction();
   try {
     auto insert_stmt = db.prepare(R"(
-            INSERT OR IGNORE INTO images (id, absolute_path, file_name, original_width, original_height, size_bytes, taken_unix_ms, latitude, longitude, working_image_path, scanned_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s','now'));
+            INSERT OR IGNORE INTO images (id, absolute_path, file_name, original_width, original_height, size_bytes, taken_unix_ms, latitude, longitude, working_image_path, kind, scanned_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s','now'));
         )");
 
     for (const auto &img : images) {
@@ -194,6 +265,7 @@ void insert_ingested_images(database &db,
         insert_stmt.bind_null(9);
       }
       insert_stmt.bind_text(10, img.working_path);
+      insert_stmt.bind_text(11, img.kind);
       insert_stmt.step();
       insert_stmt.reset();
     }
@@ -227,7 +299,7 @@ auto execute_folder_ingestion_pass(
     const auto &abs_path = entry.path();
     spdlog::debug("evaluating '{}'", abs_path.string());
 
-    if (is_valid_image_file(abs_path)) {
+    if (classify_media_kind(abs_path).has_value()) {
       images_found++;
       paths_to_process.push_back(abs_path);
     }

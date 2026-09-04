@@ -18,6 +18,20 @@ namespace kustavi::image {
 inline constexpr std::array<std::string_view, 4> supported_image_extensions{
     "jpg", "jpeg", "png", "webp"};
 
+/// Lowercase file extensions of the video containers the back end can decode
+/// (via OpenCV's videoio module: AVFoundation on macOS, Media Foundation on
+/// Windows).
+inline constexpr std::array<std::string_view, 6> supported_video_extensions{
+    "mp4", "mov", "avi", "mkv", "webm", "m4v"};
+
+inline constexpr std::string_view media_kind_photo = "photo";
+inline constexpr std::string_view media_kind_video = "video";
+
+/** Lowercased extension (no dot) classified as "photo" or "video", or
+ * `std::nullopt` for an unsupported/cache-internal file. */
+auto classify_media_kind(const std::filesystem::path &path)
+    -> std::optional<std::string_view>;
+
 /**
  * @brief Represents the result of an image ingestion operation.
  */
@@ -33,6 +47,7 @@ struct ingestion_result {
   std::optional<std::int64_t> taken_unix_ms; //! EXIF capture time, if present.
   std::optional<double> latitude;            //! EXIF GPS, if present.
   std::optional<double> longitude;           //! EXIF GPS, if present.
+  std::string kind = std::string(media_kind_photo); //! "photo" or "video".
   std::string error_message; //! An error message describing the reason for
                              //! failure, if any.
 };

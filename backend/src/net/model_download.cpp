@@ -118,7 +118,8 @@ private:
   }
 
   void finalize(unsigned char *out) {
-    const std::uint64_t total_bits = bit_len_ + (std::uint64_t{buffer_len_} * 8);
+    const std::uint64_t total_bits =
+        bit_len_ + (std::uint64_t{buffer_len_} * 8);
     std::size_t i = buffer_len_;
 
     buffer_[i++] = 0x80;
@@ -133,8 +134,7 @@ private:
       buffer_[i++] = 0x00;
     }
     for (int shift = 56; shift >= 0; shift -= 8) {
-      buffer_[i++] =
-          static_cast<unsigned char>((total_bits >> shift) & 0xff);
+      buffer_[i++] = static_cast<unsigned char>((total_bits >> shift) & 0xff);
     }
     transform(buffer_.data());
 
@@ -213,7 +213,8 @@ auto xfer_cb(void *clientp, curl_off_t /*dltotal*/, curl_off_t dlnow,
   }
 
   const auto now = std::chrono::steady_clock::now();
-  const std::uint64_t done = state->resume_from + static_cast<std::uint64_t>(dlnow);
+  const std::uint64_t done =
+      state->resume_from + static_cast<std::uint64_t>(dlnow);
 
   if (state->window_start.time_since_epoch().count() == 0) {
     state->window_start = now;
@@ -271,7 +272,8 @@ auto download_asset(const remote_asset &asset, std::stop_token stop_token,
     }
   }
 
-  std::FILE *file = std::fopen(part.string().c_str(), resume_from > 0 ? "ab" : "wb");
+  std::FILE *file =
+      std::fopen(part.string().c_str(), resume_from > 0 ? "ab" : "wb");
   if (file == nullptr) {
     return std::unexpected("cannot open " + part.string() + " for writing");
   }
@@ -318,9 +320,9 @@ auto download_asset(const remote_asset &asset, std::stop_token stop_token,
     return std::unexpected("download cancelled");
   }
   if (code != CURLE_OK) {
-    const std::string detail =
-        errbuf[0] != '\0' ? std::string(errbuf.data())
-                          : std::string(curl_easy_strerror(code));
+    const std::string detail = errbuf[0] != '\0'
+                                   ? std::string(errbuf.data())
+                                   : std::string(curl_easy_strerror(code));
     return std::unexpected("download failed: " + detail);
   }
 

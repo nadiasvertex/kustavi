@@ -138,7 +138,8 @@ auto place_index::nearest(double latitude, double longitude) const
       }
       for (int dlon = -radius; dlon <= radius; ++dlon) {
         // Only the perimeter of the current ring is new.
-        if (radius > 0 && std::abs(dlat) != radius && std::abs(dlon) != radius) {
+        if (radius > 0 && std::abs(dlat) != radius &&
+            std::abs(dlon) != radius) {
           continue;
         }
         int lon_idx = (lon0 + dlon) % 360;
@@ -177,9 +178,8 @@ auto place_index::nearest(double latitude, double longitude) const
 
 auto folder_label(const place &p) -> std::string {
   static const std::unordered_set<std::string_view> federal = {
-      "United States", "Canada",    "Australia", "Brazil",
-      "Mexico",        "India",     "Russia",    "China",
-      "Germany",       "Indonesia",
+      "United States", "Canada", "Australia", "Brazil",  "Mexico",
+      "India",         "Russia", "China",     "Germany", "Indonesia",
   };
   if (!p.admin1.empty() && federal.contains(p.country)) {
     return p.city + ", " + p.admin1 + ", " + p.country;
@@ -201,8 +201,8 @@ auto slugify(std::string_view text) -> std::string {
         out.push_back('-');
       }
       pending_sep = false;
-      out.push_back(static_cast<char>(
-          (ch >= 'A' && ch <= 'Z') ? (ch - 'A' + 'a') : ch));
+      out.push_back(
+          static_cast<char>((ch >= 'A' && ch <= 'Z') ? (ch - 'A' + 'a') : ch));
     } else {
       pending_sep = true;
     }

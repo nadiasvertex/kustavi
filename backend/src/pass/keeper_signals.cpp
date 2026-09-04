@@ -94,9 +94,10 @@ auto color_balance_from_bgr(const cv::Mat &bgr) -> double {
   if (mean_all <= 1e-6) {
     return 1.0;
   }
-  const double cast = (std::abs(mean_b - mean_all) + std::abs(mean_g - mean_all) +
-                       std::abs(mean_r - mean_all)) /
-                      (3.0 * mean_all);
+  const double cast =
+      (std::abs(mean_b - mean_all) + std::abs(mean_g - mean_all) +
+       std::abs(mean_r - mean_all)) /
+      (3.0 * mean_all);
   return std::clamp(1.0 - (cast / k_cast_full_penalty), 0.0, 1.0);
 }
 
@@ -123,10 +124,10 @@ auto eye_openness(const cv::Mat &bgr, cv::Point2f center, double interocular,
                   bool debug) -> std::pair<bool, double> {
   const int half_w = std::max(6, cvRound(0.20 * interocular));
   const int half_h = std::max(4, cvRound(0.13 * interocular));
-  const cv::Rect roi = clamp_rect(
-      cv::Rect(cvRound(center.x) - half_w, cvRound(center.y) - half_h,
-               half_w * 2, half_h * 2),
-      bgr.size());
+  const cv::Rect roi =
+      clamp_rect(cv::Rect(cvRound(center.x) - half_w,
+                          cvRound(center.y) - half_h, half_w * 2, half_h * 2),
+                 bgr.size());
   if (roi.width < 8 || roi.height < 6) {
     return {false, 1.0};
   }
@@ -136,8 +137,9 @@ auto eye_openness(const cv::Mat &bgr, cv::Point2f center, double interocular,
     if (dir != nullptr && *dir != '\0') {
       cv::Mat big;
       cv::resize(bgr(roi), big, cv::Size(), 3, 3, cv::INTER_NEAREST);
-      cv::imwrite(std::string(dir) + "/eye_" + std::to_string(cvRound(center.x)) +
-                      "_" + std::to_string(cvRound(center.y)) + ".png",
+      cv::imwrite(std::string(dir) + "/eye_" +
+                      std::to_string(cvRound(center.x)) + "_" +
+                      std::to_string(cvRound(center.y)) + ".png",
                   big);
     }
   }
@@ -179,8 +181,8 @@ auto eye_openness(const cv::Mat &bgr, cv::Point2f center, double interocular,
   const double s_low = std::clamp((lowsat_frac - 0.05) / 0.30, 0.0, 1.0);
   const double s_scl = std::clamp((sclera_frac - 0.01) / 0.12, 0.0, 1.0);
   const double s_rows = std::clamp((lowsat_row_frac - 0.10) / 0.45, 0.0, 1.0);
-  const double openness = std::clamp(
-      (0.45 * s_low) + (0.35 * s_scl) + (0.20 * s_rows), 0.0, 1.0);
+  const double openness =
+      std::clamp((0.45 * s_low) + (0.35 * s_scl) + (0.20 * s_rows), 0.0, 1.0);
 
   if (debug) {
     spdlog::info("    eye@({:.0f},{:.0f}) roi={}x{} lowsat_frac={:.3f} "
@@ -288,8 +290,9 @@ auto keeper_analyzer::analyze(const std::filesystem::path &image_path)
     const float fy = faces.at<float>(i, 1) * up;
     const float fw = faces.at<float>(i, 2) * up;
     const float fh = faces.at<float>(i, 3) * up;
-    const cv::Rect face_roi = clamp_rect(
-        cv::Rect(cvRound(fx), cvRound(fy), cvRound(fw), cvRound(fh)), bgr.size());
+    const cv::Rect face_roi =
+        clamp_rect(cv::Rect(cvRound(fx), cvRound(fy), cvRound(fw), cvRound(fh)),
+                   bgr.size());
     if (face_roi.empty()) {
       continue;
     }
@@ -313,8 +316,7 @@ auto keeper_analyzer::analyze(const std::filesystem::path &image_path)
                                 faces.at<float>(i, 5) * up);
     const cv::Point2f left_eye(faces.at<float>(i, 6) * up,
                                faces.at<float>(i, 7) * up);
-    const double interocular =
-        std::max(4.0, cv::norm(right_eye - left_eye));
+    const double interocular = std::max(4.0, cv::norm(right_eye - left_eye));
 
     double face_open = 0.0;
     int face_eyes = 0;
@@ -346,10 +348,10 @@ auto keeper_analyzer::analyze(const std::filesystem::path &image_path)
     // Red-eye: sample a patch around each eye landmark.
     const int patch = std::max(2, cvRound(fw * 0.06));
     for (const auto &eye : {right_eye, left_eye}) {
-      const cv::Rect eye_roi = clamp_rect(
-          cv::Rect(cvRound(eye.x) - patch, cvRound(eye.y) - patch, patch * 2,
-                   patch * 2),
-          bgr.size());
+      const cv::Rect eye_roi =
+          clamp_rect(cv::Rect(cvRound(eye.x) - patch, cvRound(eye.y) - patch,
+                              patch * 2, patch * 2),
+                     bgr.size());
       if (eye_roi.empty()) {
         continue;
       }

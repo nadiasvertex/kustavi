@@ -128,18 +128,18 @@ auto detect_homes(const std::vector<stamped> &sorted)
     return {};
   }
 
-  const auto global_span =
-      static_cast<double>(std::max<std::int64_t>(1, global_last - global_first));
+  const auto global_span = static_cast<double>(
+      std::max<std::int64_t>(1, global_last - global_first));
   const double count_threshold =
       std::max(5.0, 0.05 * static_cast<double>(gps_total));
 
   std::vector<std::pair<double, double>> homes;
   for (const auto &[key, value] : cells) {
     const std::int64_t span = value.last_ms - value.first_ms;
-    const bool dense =
-        static_cast<double>(value.c.count) >= count_threshold;
-    const bool recurs = span >= min_span_ms &&
-                        static_cast<double>(span) / global_span >= min_span_ratio;
+    const bool dense = static_cast<double>(value.c.count) >= count_threshold;
+    const bool recurs =
+        span >= min_span_ms &&
+        static_cast<double>(span) / global_span >= min_span_ratio;
     if (dense && recurs) {
       homes.emplace_back(value.c.lat(), value.c.lon());
     }
@@ -165,16 +165,17 @@ auto is_away(const stamped &s,
 }
 
 /** Splits one away trip's members into contiguous legs. */
-auto build_legs(const std::vector<const stamped *> &members, double leg_radius_km,
-                const geo::place_index *places) -> std::vector<trip_leg> {
+auto build_legs(const std::vector<const stamped *> &members,
+                double leg_radius_km, const geo::place_index *places)
+    -> std::vector<trip_leg> {
   std::vector<trip_leg> legs;
   centroid current;
 
   for (const auto *sp : members) {
     const auto &s = *sp;
-    const bool jump =
-        s.has_gps && current.has() &&
-        haversine_km(current.lat(), current.lon(), s.lat, s.lon) > leg_radius_km;
+    const bool jump = s.has_gps && current.has() &&
+                      haversine_km(current.lat(), current.lon(), s.lat, s.lon) >
+                          leg_radius_km;
     if (legs.empty() || jump) {
       legs.emplace_back();
       current = {};
@@ -216,7 +217,8 @@ void name_away_trip(trip &t) {
       continue;
     }
     const auto comma = leg.place_name.rfind(", ");
-    const std::string city = leg.place_name.substr(0, leg.place_name.find(", "));
+    const std::string city =
+        leg.place_name.substr(0, leg.place_name.find(", "));
     const std::string country = comma == std::string::npos
                                     ? std::string{}
                                     : leg.place_name.substr(comma + 2);
@@ -335,8 +337,8 @@ auto find_trips(const std::vector<trip_member> &members,
       t.centroid_latitude = current_centroid.lat();
       t.centroid_longitude = current_centroid.lon();
     }
-    t.legs = build_legs(current_members, static_cast<double>(params.leg_radius_km),
-                        places);
+    t.legs = build_legs(current_members,
+                        static_cast<double>(params.leg_radius_km), places);
     name_away_trip(t);
     away_trips.push_back(std::move(t));
     current_members.clear();
@@ -356,8 +358,8 @@ auto find_trips(const std::vector<trip_member> &members,
   };
 
   for (const auto &s : sorted) {
-    const bool away = is_away(s, homes, static_cast<double>(params.home_radius_km),
-                              prev_away);
+    const bool away = is_away(
+        s, homes, static_cast<double>(params.home_radius_km), prev_away);
     prev_away = away;
 
     if (!away) {
@@ -375,7 +377,8 @@ auto find_trips(const std::vector<trip_member> &members,
       continue;
     }
 
-    const bool within_time = !has_current || (s.ms - current_end) <= gap_limit_ms;
+    const bool within_time =
+        !has_current || (s.ms - current_end) <= gap_limit_ms;
     const bool within_drift =
         !has_current || !current_centroid.has() || !s.has_gps ||
         haversine_km(current_centroid.lat(), current_centroid.lon(), s.lat,

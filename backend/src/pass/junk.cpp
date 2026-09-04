@@ -142,13 +142,12 @@ auto category_from_answer(std::string_view answer) -> std::string {
     return "diagram";
   }
   if (has("drawing") || has("illustration") || has("sketch") ||
-      has("painting") || has("cartoon") || has("clip art") ||
-      has("clipart") || has("render") || has("digital art") ||
-      has("artwork") || has("anime")) {
+      has("painting") || has("cartoon") || has("clip art") || has("clipart") ||
+      has("render") || has("digital art") || has("artwork") || has("anime")) {
     return "drawing";
   }
-  if (has("poster") || has("flyer") || has("advertisement") ||
-      has("advert") || has("banner")) {
+  if (has("poster") || has("flyer") || has("advertisement") || has("advert") ||
+      has("banner")) {
     return "poster";
   }
   return "other";
@@ -220,8 +219,8 @@ auto junk_classifier::load(const std::filesystem::path &text_model_gguf,
   state.vocab = llama_model_get_vocab(state.model);
   state.yes_ids = single_token_ids(
       state.vocab, {"yes", " yes", "Yes", " Yes", "YES", " YES"});
-  state.no_ids = single_token_ids(
-      state.vocab, {"no", " no", "No", " No", "NO", " NO"});
+  state.no_ids =
+      single_token_ids(state.vocab, {"no", " no", "No", " No", "NO", " NO"});
 
   const int threads =
       std::max(1, static_cast<int>(std::thread::hardware_concurrency()));
@@ -258,7 +257,8 @@ auto junk_classifier::load(const std::filesystem::path &text_model_gguf,
 }
 
 auto junk_classifier::impl::eval_question(
-    const std::filesystem::path &image_path, std::string_view question) -> bool {
+    const std::filesystem::path &image_path, std::string_view question)
+    -> bool {
   llama_memory_clear(llama_get_memory(lctx), true);
   llama_sampler_reset(sampler);
 
@@ -298,9 +298,9 @@ auto junk_classifier::impl::decode_answer() -> std::string {
       break;
     }
     std::array<char, 256> piece{};
-    const int32_t n = llama_token_to_piece(
-        vocab, token, piece.data(), static_cast<int32_t>(piece.size()),
-        /*lstrip=*/0, /*special=*/false);
+    const int32_t n = llama_token_to_piece(vocab, token, piece.data(),
+                                           static_cast<int32_t>(piece.size()),
+                                           /*lstrip=*/0, /*special=*/false);
     if (n > 0) {
       answer.append(piece.data(), static_cast<std::size_t>(n));
     }

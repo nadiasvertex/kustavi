@@ -68,9 +68,8 @@ auto kustavi_service::Commit(grpc::ServerContext *context,
         const fs::path raw = fs::path(fit->second).lexically_normal();
         const bool escapes =
             raw.is_absolute() ||
-            std::ranges::any_of(raw, [](const fs::path &part) -> bool {
-              return part == "..";
-            });
+            std::ranges::any_of(
+                raw, [](const fs::path &part) -> bool { return part == ".."; });
         if (!escapes) {
           subdir = raw;
         }

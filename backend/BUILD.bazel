@@ -21,6 +21,7 @@ cc_binary(
         "@opencv//:imgcodecs",
         "@opencv//:objdetect",
         "@opencv//:dnn",
+        "@opencv//:videoio",
         "@sqlite3",
         "@stdexec",
         "@cli11",
@@ -73,6 +74,40 @@ cc_binary(
         "@opencv//:objdetect",
         "@opencv//:dnn",
         "@spdlog",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# Assertions for the video pass's blur/motion/duration heuristics. Run via
+# `just test-video` (fixtures are small, synthetic, and cheap; the vision
+# junk-classifier reuse is not exercised here — see junk_pass's classifier
+# tests for that path).
+cc_binary(
+    name = "video_test",
+    srcs = [
+        "src/pass/junk.cpp",
+        "src/pass/quality.cpp",
+        "src/pass/similar.cpp",
+        "src/pass/video.cpp",
+        "test/video_test.cpp",
+    ] + glob([
+        "include/collection/*.h",
+        "include/pass/junk.h",
+        "include/pass/quality.h",
+        "include/pass/similar.h",
+        "include/pass/video.h",
+        "include/image_features.h",
+        "include/exec/*.h",
+    ]),
+    includes = ["include"],
+    deps = [
+        "@llama_cpp",
+        "@opencv//:core",
+        "@opencv//:imgcodecs",
+        "@opencv//:imgproc",
+        "@opencv//:videoio",
+        "@spdlog",
+        "@stdexec",
     ],
     visibility = ["//visibility:public"],
 )

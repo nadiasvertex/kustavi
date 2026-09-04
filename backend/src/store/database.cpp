@@ -2,6 +2,7 @@
 #include "paths.h"
 
 #include <filesystem>
+#include <string_view>
 
 namespace fs = std::filesystem;
 
@@ -86,8 +87,8 @@ void sqlite_statement::bind_path(int index,
   // narrow encoding, matching how paths are stringified elsewhere in the
   // codebase). SQLITE_TRANSIENT copies before the temporary dies.
   const std::string text = value.string();
-  sqlite3_bind_text(stmt_, index, text.c_str(),
-                    static_cast<int>(text.size()), SQLITE_TRANSIENT);
+  sqlite3_bind_text(stmt_, index, text.c_str(), static_cast<int>(text.size()),
+                    SQLITE_TRANSIENT);
 }
 
 void sqlite_statement::bind_int64(int index, int64_t value) {
@@ -171,7 +172,38 @@ void database::initialize_schema() {
             processed_at INTEGER NOT NULL,
             FOREIGN KEY(image_id) REFERENCES images(id) ON DELETE CASCADE
         );
+        CREATE TABLE IF NOT EXISTS video_flags (
+            video_id TEXT PRIMARY KEY,
+            is_junk INTEGER NOT NULL CHECK (is_junk IN (0,1)),
+            reason TEXT,
+            confidence REAL NOT NULL,
+            duration_ms INTEGER,
+            processed_at INTEGER NOT NULL,
+            FOREIGN KEY(video_id) REFERENCES images(id) ON DELETE CASCADE
+        );
     )");
+
+  // Migration: `kind` was added after the `images` table first shipped, so an
+  // existing on-disk session cache may predate it. CREATE TABLE IF NOT EXISTS
+  // above never adds columns to an existing table.
+  bool has_kind_column = false;
+  {
+    auto stmt = prepare("PRAGMA table_info(images);");
+    while (stmt.step() == SQLITE_ROW) {
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) sqlite C
+      // API
+      const auto *name =
+          reinterpret_cast<const char *>(sqlite3_column_text(stmt.raw(), 1));
+      if (name != nullptr && std::string_view(name) == "kind") {
+        has_kind_column = true;
+        break;
+      }
+    }
+  }
+  if (!has_kind_column) {
+    execute(
+        "ALTER TABLE images ADD COLUMN kind TEXT NOT NULL DEFAULT 'photo';");
+  }
 }
 
 } // namespace kustavi

@@ -1,5 +1,8 @@
 #pragma once
 
+#include <opencv2/core.hpp>
+
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <vector>
@@ -18,4 +21,8 @@ auto find_similar_images(
     const std::vector<std::filesystem::path> &paths,
     const std::function<void(std::size_t images_analyzed)> &progress_callback)
     -> std::vector<std::vector<std::filesystem::path>>;
+
+/** 64-bit difference hash (dHash) of a grayscale image. Shared with the video
+ * pass, which hashes sampled frames to detect motion between them. */
+auto compute_dhash(const cv::Mat &gray) -> uint64_t;
 } // namespace kustavi::image

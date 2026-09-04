@@ -377,5 +377,26 @@ the bundled GeoNames table (`backend/data/cities.tsv`, located through
 absent). At-home photos become monthly `is_home` trips. See
 `spec/proto.md` §RunTripsPass for the full rule set.
 
+### RunVideoPass
+Precondition: Active session. Runs only over `images` rows with `kind = 'video'`
+(ingested alongside photos during `ScanFolder` from `supported_video_extensions`,
+decoded via OpenCV's `videoio` module — AVFoundation on macOS, Media Foundation
+on Windows). For each video: a container that fails to open, or reports a
+non-positive fps/frame count, is flagged `corrupt`; a clip shorter than
+`min_duration_ms` (default 1500ms) is flagged `too_short` without decoding any
+frames; otherwise `sample_frame_count` evenly spaced frames are decoded and
+scored with the same Laplacian-variance sharpness function as `RunQualityPass`
+(flagged `blurry` below `blur_threshold`) and the same dHash function as
+`RunSimilarPass` (flagged `static` when every consecutive sampled-frame pair's
+Hamming distance stays below `motion_hamming_threshold`, i.e. no motion across
+the whole clip). If the vision model from `EnsureModel`/`RunJunkPass` is
+already downloaded, 1-2 sampled frames are also run through that same
+classifier to catch non-photographic content (e.g. screen recordings); the
+vision step is skipped, not an error, when the model isn't present. Results
+are recorded in `video_flags`, keyed by the video's `images.id`. Near-duplicate
+and burst-recorded clips are not handled here — `RunSimilarPass` already
+groups them, since video ingestion writes a representative frame to
+`working_image_path` just like photos do.
+
 ### Commit
 Creates target destination path layouts. Copies calculated image files while automatically grabbing matching layout sidecars (such as `.xmp` and `.aae` extensions) sitting adjacent within the original folders. By default each file keeps its path relative to the session folder; when `CommitRequest.folder_for_id` maps its id to a sub-path, the file is placed under `destination/<sub-path>/` (the trip/leg folder layout) instead, with `-<n>` suffixing on same-folder name collisions. Sub-paths that are absolute or contain `..` are ignored. Tracks progress using byte counts (`done_bytes` and `total_bytes`) alongside item counters for linear rendering representation.

@@ -64,8 +64,8 @@ inline auto executable_dir() -> std::optional<std::filesystem::path> {
   return exe.parent_path();
 #elif defined(_WIN32)
   std::wstring buf(MAX_PATH, L'\0');
-  const DWORD len = ::GetModuleFileNameW(nullptr, buf.data(),
-                                         static_cast<DWORD>(buf.size()));
+  const DWORD len =
+      ::GetModuleFileNameW(nullptr, buf.data(), static_cast<DWORD>(buf.size()));
   if (len == 0) {
     return std::nullopt;
   }

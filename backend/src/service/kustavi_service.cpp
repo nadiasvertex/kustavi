@@ -40,6 +40,9 @@ auto kustavi_service::GetInfo(grpc::ServerContext *context,
   for (const auto ext : image::supported_image_extensions) {
     response->add_supported_formats(std::string(ext));
   }
+  for (const auto ext : image::supported_video_extensions) {
+    response->add_supported_formats(std::string(ext));
+  }
   response->set_model_name(std::string(k_model_name));
   return grpc::Status::OK;
 }

@@ -122,6 +122,22 @@ struct trips_complete_evt {
 using trips_event =
     std::variant<trips_progress_evt, trips_result_evt, trips_complete_evt>;
 
+struct video_progress_evt {
+  std::size_t done = 0;
+  std::size_t total = 0;
+};
+struct video_flag_evt {
+  std::string video_id;
+  std::string reason;
+  double confidence = 0.0;
+};
+struct video_complete_evt {
+  std::size_t flagged = 0;
+  std::size_t total = 0;
+};
+using video_event =
+    std::variant<video_progress_evt, video_flag_evt, video_complete_evt>;
+
 struct commit_progress_evt {
   std::size_t done = 0;
   std::size_t total = 0;
@@ -259,6 +275,9 @@ public:
   grpc::Status RunTripsPass(grpc::ServerContext *context,
                             const RunTripsPassRequest *request,
                             grpc::ServerWriter<TripsEvent> *writer) override;
+  grpc::Status RunVideoPass(grpc::ServerContext *context,
+                            const RunVideoPassRequest *request,
+                            grpc::ServerWriter<VideoEvent> *writer) override;
   grpc::Status Commit(grpc::ServerContext *context,
                       const CommitRequest *request,
                       grpc::ServerWriter<CommitEvent> *writer) override;

@@ -23,7 +23,10 @@ service Kustavi {
   // --- pass 5: trips -----------------------------------------------------
   rpc RunTripsPass(RunTripsPassRequest) returns (stream TripsEvent);
 
-  // --- pass 6: commit ----------------------------------------------------
+  // --- pass 6: video quality -----------------------------------------------
+  rpc RunVideoPass(RunVideoPassRequest) returns (stream VideoEvent);
+
+  // --- pass 7: commit ----------------------------------------------------
   rpc Commit(CommitRequest) returns (stream CommitEvent);
 }
 
@@ -47,6 +50,12 @@ message GpsPoint {
   double longitude = 2;
 }
 
+enum MediaKind {
+  MEDIA_KIND_UNSPECIFIED = 0;
+  PHOTO = 1;
+  VIDEO = 2;
+}
+
 message ImageMeta {
   string id = 1;               // relative path from the session folder
   string path = 2;             // absolute path to the original file
@@ -57,6 +66,7 @@ message ImageMeta {
   optional int64 taken_unix_ms = 7;
   optional GpsPoint gps = 8;
   string thumbnail_path = 9;   // absolute path, written before emit
+  MediaKind kind = 10;
 }
 
 // --- pass 1: scan --------------------------------------------------------
@@ -259,7 +269,39 @@ message TripsComplete {
   uint32 unassigned = 2;  // images without a usable timestamp
 }
 
-// --- pass 6: commit ------------------------------------------------------------------
+// --- pass 6: video quality -------------------------------------------------
+
+message RunVideoPassRequest {
+  // Video ids the user already marked for deletion in an earlier step.
+  // The video pass counts them toward progress but never analyzes them.
+  repeated string skip_video_ids = 1;
+}
+
+message VideoEvent {
+  oneof event {
+    VideoProgress progress = 1;
+    VideoFlag flag = 2;        // emitted for flagged videos only
+    VideoComplete complete = 3;
+  }
+}
+
+message VideoProgress {
+  uint32 done = 1;
+  uint32 total = 2;
+}
+
+message VideoFlag {
+  string video_id = 1;
+  string reason = 2;    // "too_short" | "corrupt" | "blurry" | "static" | a junk category
+  double confidence = 3;  // 0..1
+}
+
+message VideoComplete {
+  uint32 flagged = 1;
+  uint32 total = 2;
+}
+
+// --- pass 7: commit ------------------------------------------------------------------
 
 message CommitRequest {
   string destination = 1;     // absolute path; created if missing

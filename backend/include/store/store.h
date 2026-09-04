@@ -19,6 +19,7 @@ struct image_record {
   std::optional<std::int64_t> taken_unix_ms;
   std::optional<double> latitude;
   std::optional<double> longitude;
+  std::string kind = "photo"; //! "photo" or "video"
 };
 
 /** Get the cached image paths from the database */

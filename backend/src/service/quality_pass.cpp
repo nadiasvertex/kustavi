@@ -90,6 +90,9 @@ auto kustavi_service::RunQualityPass(grpc::ServerContext *context,
     paths.reserve(records.size());
     path_to_id.reserve(records.size());
     for (const auto &record : records) {
+      if (record.kind != image::media_kind_photo) {
+        continue; // blur/exposure metrics don't apply to videos
+      }
       paths.push_back(record.absolute_path);
       path_to_id.emplace(record.absolute_path.string(), record.id);
     }

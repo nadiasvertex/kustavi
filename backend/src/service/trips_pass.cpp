@@ -82,7 +82,8 @@ auto kustavi_service::RunTripsPass(grpc::ServerContext *context,
                    loaded.error());
     }
   } else {
-    spdlog::warn("trips: no place table found; folders fall back to month-year");
+    spdlog::warn(
+        "trips: no place table found; folders fall back to month-year");
   }
 
   event_queue<trips_event> queue;

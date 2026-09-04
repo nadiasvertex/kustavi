@@ -47,6 +47,13 @@ test-junk:
   cp -R test/photos "$tmp/photos" && \
   bazel run //backend:smoke_client -- --folder "$tmp/photos" --junk-check
 
+# Video pass heuristics (duration/blur/motion/corruption) against small
+# synthetic clips. Not part of `just test`; mirrors test-junk's structure but
+# has no model download of its own (video_test never loads the vision model).
+test-video:
+  bazel build //backend:video_test
+  KUSTAVI_TEST_VIDEOS="$(pwd)/test/videos" bazel run //backend:video_test
+
 test: test-backend test-llama test-gui
 
 proto:
