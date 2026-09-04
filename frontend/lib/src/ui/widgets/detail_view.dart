@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart' hide ImageInfo;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:video_player/video_player.dart';
 
 import '../../state/decisions.dart';
 import '../../state/domain.dart';
@@ -103,6 +104,7 @@ class _DetailViewState extends ConsumerState<DetailView>
     with SingleTickerProviderStateMixin {
   late final FileImage _workingProvider;
   ui.Image? _master;
+  VideoPlayerController? _videoController;
   final TransformationController _transformation = TransformationController();
   late final AnimationController _resetController = AnimationController(
     vsync: this,
@@ -121,21 +123,29 @@ class _DetailViewState extends ConsumerState<DetailView>
         _transformation.value = animation.value;
       }
     });
-    if (!widget.image.isVideo) {
+    if (widget.image.isVideo) {
+      unawaited(_initVideo());
+    } else {
       unawaited(_loadMaster());
     }
   }
 
-  /// Launches the video in the OS default player (spec/frontend.md §7.2):
-  /// no cross-platform embedded playback is available in this build.
-  Future<void> _openExternally() async {
-    final path = widget.image.path;
-    if (Platform.isMacOS) {
-      await Process.run('open', [path]);
-    } else if (Platform.isWindows) {
-      await Process.run('cmd', ['/c', 'start', '', path]);
-    } else if (Platform.isLinux) {
-      await Process.run('xdg-open', [path]);
+  /// Initializes embedded playback for the video (spec/frontend.md §7.2).
+  /// video_player is backed natively on macOS/iOS/Android and by fvp
+  /// (libmpv) on Windows/Linux, registered in main().
+  Future<void> _initVideo() async {
+    final controller = VideoPlayerController.file(File(widget.image.path));
+    _videoController = controller;
+    try {
+      await controller.initialize();
+      if (!mounted) {
+        return;
+      }
+      setState(() {});
+      await controller.play();
+    } on Object {
+      // Leave the controller in place; the viewport falls back to the
+      // static thumbnail if initialization failed.
     }
   }
 
@@ -178,6 +188,7 @@ class _DetailViewState extends ConsumerState<DetailView>
     // cache so the modal cannot leak (§7.2, §11).
     _master?.dispose();
     PaintingBinding.instance.imageCache.evict(_workingProvider);
+    unawaited(_videoController?.dispose());
     _transformation.dispose();
     _resetController.dispose();
     _focus.dispose();
@@ -237,7 +248,7 @@ class _DetailViewState extends ConsumerState<DetailView>
 
   Widget _viewport() {
     if (widget.image.isVideo) {
-      return _externalVideoFallback();
+      return _videoViewport();
     }
     final master = _master;
     final width = widget.image.width.toDouble();
@@ -271,29 +282,44 @@ class _DetailViewState extends ConsumerState<DetailView>
     );
   }
 
-  Widget _externalVideoFallback() {
-    return GestureDetector(
-      onTap: _openExternally,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
+  Widget _videoViewport() {
+    final controller = _videoController;
+    if (controller == null || !controller.value.isInitialized) {
+      // Still initializing: show the working thumbnail so the pane isn't
+      // empty, sized to fill as much of the pane as possible.
+      return SizedBox.expand(
+        child: FittedBox(
+          fit: BoxFit.contain,
+          child: Image(image: _workingProvider),
+        ),
+      );
+    }
+    return SizedBox.expand(
+      child: FittedBox(
+        fit: BoxFit.contain,
+        child: SizedBox(
+          width: controller.value.size.width,
+          height: controller.value.size.height,
+          child: GestureDetector(
+            onTap: () {
+              setState(() {
+                controller.value.isPlaying ? controller.pause() : controller.play();
+              });
+            },
             child: Stack(
               alignment: Alignment.center,
               children: [
-                Image(image: _workingProvider, width: 480),
-                const Icon(Icons.play_circle_fill, color: Colors.white70, size: 64),
+                VideoPlayer(controller),
+                if (!controller.value.isPlaying)
+                  const Icon(
+                    Icons.play_circle_fill,
+                    color: Colors.white70,
+                    size: 64,
+                  ),
               ],
             ),
           ),
-          const SizedBox(height: 16),
-          FilledButton.icon(
-            onPressed: _openExternally,
-            icon: const Icon(Icons.open_in_new),
-            label: const Text('Play in default video player'),
-          ),
-        ],
+        ),
       ),
     );
   }

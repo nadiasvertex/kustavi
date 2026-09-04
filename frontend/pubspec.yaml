@@ -41,6 +41,9 @@ dependencies:
   fixnum: ^1.1.1
   file_picker: ^10.3.8
   path: ^1.9.1
+  video_player: ^2.10.0
+  video_player_avfoundation: ^2.7.0
+  fvp: ^0.38.1
 
 dev_dependencies:
   flutter_test:
