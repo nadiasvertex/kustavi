@@ -20,11 +20,11 @@ service Kustavi {
   // --- pass 4: similar images -------------------------------------------
   rpc RunSimilarPass(RunSimilarPassRequest) returns (stream SimilarEvent);
 
-  // --- pass 5: trips -----------------------------------------------------
-  rpc RunTripsPass(RunTripsPassRequest) returns (stream TripsEvent);
-
-  // --- pass 6: video quality -----------------------------------------------
+  // --- pass 5: video quality -----------------------------------------------
   rpc RunVideoPass(RunVideoPassRequest) returns (stream VideoEvent);
+
+  // --- pass 6: trips -----------------------------------------------------
+  rpc RunTripsPass(RunTripsPassRequest) returns (stream TripsEvent);
 
   // --- pass 7: commit ----------------------------------------------------
   rpc Commit(CommitRequest) returns (stream CommitEvent);
@@ -222,7 +222,39 @@ message SimilarComplete {
   uint32 total_images = 2;
 }
 
-// --- pass 5: trips ----------------------------------------------------------------
+// --- pass 5: video quality -------------------------------------------------
+
+message RunVideoPassRequest {
+  // Video ids the user already marked for deletion in an earlier step.
+  // The video pass counts them toward progress but never analyzes them.
+  repeated string skip_video_ids = 1;
+}
+
+message VideoEvent {
+  oneof event {
+    VideoProgress progress = 1;
+    VideoFlag flag = 2;        // emitted for flagged videos only
+    VideoComplete complete = 3;
+  }
+}
+
+message VideoProgress {
+  uint32 done = 1;
+  uint32 total = 2;
+}
+
+message VideoFlag {
+  string video_id = 1;
+  string reason = 2;    // "too_short" | "corrupt" | "blurry" | "static" | a junk category
+  double confidence = 3;  // 0..1
+}
+
+message VideoComplete {
+  uint32 flagged = 1;
+  uint32 total = 2;
+}
+
+// --- pass 6: trips ----------------------------------------------------------------
 
 message RunTripsPassRequest {
   int32 max_gap_hours = 1;    // time gap that ends an away trip (default 48)
@@ -267,38 +299,6 @@ message TripLeg {
 message TripsComplete {
   uint32 trips = 1;
   uint32 unassigned = 2;  // images without a usable timestamp
-}
-
-// --- pass 6: video quality -------------------------------------------------
-
-message RunVideoPassRequest {
-  // Video ids the user already marked for deletion in an earlier step.
-  // The video pass counts them toward progress but never analyzes them.
-  repeated string skip_video_ids = 1;
-}
-
-message VideoEvent {
-  oneof event {
-    VideoProgress progress = 1;
-    VideoFlag flag = 2;        // emitted for flagged videos only
-    VideoComplete complete = 3;
-  }
-}
-
-message VideoProgress {
-  uint32 done = 1;
-  uint32 total = 2;
-}
-
-message VideoFlag {
-  string video_id = 1;
-  string reason = 2;    // "too_short" | "corrupt" | "blurry" | "static" | a junk category
-  double confidence = 3;  // 0..1
-}
-
-message VideoComplete {
-  uint32 flagged = 1;
-  uint32 total = 2;
 }
 
 // --- pass 7: commit ------------------------------------------------------------------

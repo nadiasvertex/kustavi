@@ -25,6 +25,7 @@ import 'scanning.dart';
 import 'similar_review.dart';
 import 'start.dart';
 import 'trips_review.dart';
+import 'video_review.dart';
 import 'widgets/progress.dart';
 
 /// The wizard frame: step indicator, phase body, per-step action bar, and
@@ -206,6 +207,17 @@ class _WizardShellState extends ConsumerState<WizardShell> {
             trips: trips,
             tripFolders: tripFolders,
           ),
+        WizardVideoRunning(:final done, :final total) =>
+          PassProgressScreen(
+            title: 'Checking videos',
+            done: done,
+            total: total,
+          ),
+        WizardVideoReview(:final flaggedCount, :final totalVideos) =>
+          VideoReviewScreen(
+            flaggedCount: flaggedCount,
+            totalVideos: totalVideos,
+          ),
         WizardCommitSummary(
               :final keepCount,
               :final keepBytes,
@@ -367,6 +379,32 @@ class _WizardShellState extends ConsumerState<WizardShell> {
             child: const Text('Continue'),
           ),
         ],
+      WizardVideoRunning() => [
+          OutlinedButton(
+            onPressed: wizard.cancelVideo,
+            child: const Text('Cancel'),
+          ),
+        ],
+      WizardVideoReview(:final flaggedCount) => [
+          if (flaggedCount > 0) ...[
+            OutlinedButton(
+              onPressed: wizard.keepAllVideoFlagged,
+              child: const Text('Keep all'),
+            ),
+            OutlinedButton(
+              onPressed: wizard.markAllVideoFlagged,
+              child: const Text('Mark all'),
+            ),
+            OutlinedButton(
+              onPressed: wizard.backFromVideo,
+              child: const Text('Back'),
+            ),
+          ],
+          FilledButton(
+            onPressed: wizard.continueFromVideo,
+            child: const Text('Continue'),
+          ),
+        ],
       WizardCommitSummary(:final destination) => [
           OutlinedButton(
             onPressed: wizard.backFromCommitSummary,
@@ -436,12 +474,12 @@ class _WizardShellState extends ConsumerState<WizardShell> {
   }
 }
 
-/// The six-step indicator in the app bar (spec/frontend.md §6.1):
-/// completed steps checked, the current step highlighted.
+/// The step indicator in the app bar (spec/frontend.md §6.1): completed
+/// steps checked, the current step highlighted.
 class StepIndicator extends StatelessWidget {
   const StepIndicator({super.key, required this.currentIndex});
 
-  /// 0-based current step; 6 = every step completed.
+  /// 0-based current step; [WizardStep.values.length] = every step completed.
   final int currentIndex;
 
   @override
@@ -492,6 +530,9 @@ class StepIndicator extends StatelessWidget {
         ),
       );
     }
-    return Row(children: items);
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(children: items),
+    );
   }
 }

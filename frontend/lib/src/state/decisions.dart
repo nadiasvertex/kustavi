@@ -131,6 +131,9 @@ enum DeletionStep {
 
   /// S9 — deletion by default when not the designated group keeper.
   similar,
+
+  /// S10-C — deletion by default when flagged by the video pass.
+  video,
 }
 
 /// Evaluates the deterministic deletion hierarchy (spec/frontend.md §8):
@@ -146,6 +149,7 @@ bool isMarkedForDeletion(
   required Set<String> qualityFlagged,
   required Set<String> junkFlagged,
   required Map<String, String> similarKeepers,
+  Set<String> videoFlagged = const <String>{},
 }) {
   if (plan.explicitDeleted.contains(id)) {
     return true;
@@ -158,6 +162,7 @@ bool isMarkedForDeletion(
     DeletionStep.junk => junkFlagged.contains(id),
     DeletionStep.similar => similarKeepers[id]?.isNotEmpty == true &&
         similarKeepers[id] != id,
+    DeletionStep.video => videoFlagged.contains(id),
     null => false,
   };
 }

@@ -1,11 +1,12 @@
 import '../state/domain.dart';
 
-/// The wizard's six steps, in order (spec/frontend.md §6.1).
+/// The wizard's steps, in order (spec/frontend.md §6.1).
 enum WizardStep {
   select('Select'),
   quality('Quality'),
   duplicates('Duplicates'),
   junk('Junk'),
+  video('Video'),
   trips('Trips'),
   copy('Copy');
 
@@ -206,7 +207,29 @@ final class WizardSimilarReview extends WizardPhase {
   int get stepIndex => WizardStep.duplicates.index;
 }
 
-/// S9 — trips pass running.
+/// S9-B — video pass running (duration/blur/motion/corruption).
+final class WizardVideoRunning extends WizardPhase {
+  const WizardVideoRunning({this.done = 0, this.total = 0});
+
+  final int done;
+  final int total;
+
+  @override
+  int get stepIndex => WizardStep.video.index;
+}
+
+/// S9-C — video review of flagged clips.
+final class WizardVideoReview extends WizardPhase {
+  const WizardVideoReview({required this.flaggedCount, required this.totalVideos});
+
+  final int flaggedCount;
+  final int totalVideos;
+
+  @override
+  int get stepIndex => WizardStep.video.index;
+}
+
+/// S9-D — trips pass running.
 final class WizardTripsRunning extends WizardPhase {
   const WizardTripsRunning({this.done = 0, this.total = 0});
 

@@ -36,7 +36,7 @@ Future<String?> _pickPhotos() async => '/photos';
 
 void main() {
   group('wizard shell end-to-end (§6)', () {
-    testWidgets('step indicator shows the six steps', (tester) async {
+    testWidgets('step indicator shows every step', (tester) async {
       final container = makeContainer(FakeKustaviClient());
       addTearDown(container.dispose);
       await tester.pumpWidget(
@@ -54,6 +54,7 @@ void main() {
         'Junk',
         'Duplicates',
         'Trips',
+        'Video',
         'Copy',
       ]) {
         expect(find.text(label), findsOneWidget, reason: label);

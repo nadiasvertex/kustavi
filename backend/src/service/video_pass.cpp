@@ -21,7 +21,7 @@ namespace kustavi {
 namespace fs = std::filesystem;
 
 // ---------------------------------------------------------------------------
-// Pass 6: video quality (duration / blur / motion / corruption, plus a reuse
+// Pass 5: video quality (duration / blur / motion / corruption, plus a reuse
 // of the photo junk classifier against a couple of sampled frames)
 // ---------------------------------------------------------------------------
 

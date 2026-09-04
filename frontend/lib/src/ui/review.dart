@@ -27,10 +27,12 @@ class FlaggedReview extends ConsumerWidget {
     final plan = ref.watch(deletionPlanProvider);
     final qualityFlagged = wizard.qualityFlags.keys.toSet();
     final junkFlagged = wizard.junkFlags.keys.toSet();
+    final videoFlagged = wizard.videoFlags.keys.toSet();
     final flaggedIds = switch (step) {
       DeletionStep.quality => qualityFlagged,
       DeletionStep.junk => junkFlagged,
       DeletionStep.similar => const <String>{},
+      DeletionStep.video => videoFlagged,
     };
     final flaggedImages = wizard
         .orderedImages
@@ -41,6 +43,13 @@ class FlaggedReview extends ConsumerWidget {
       flaggedImages.sort((a, b) {
         final ca = wizard.junkFlags[a.id]?.confidence ?? 0;
         final cb = wizard.junkFlags[b.id]?.confidence ?? 0;
+        return cb.compareTo(ca);
+      });
+    } else if (step == DeletionStep.video) {
+      // Most-confident flag first, same rationale as junk.
+      flaggedImages.sort((a, b) {
+        final ca = wizard.videoFlags[a.id]?.confidence ?? 0;
+        final cb = wizard.videoFlags[b.id]?.confidence ?? 0;
         return cb.compareTo(ca);
       });
     }
@@ -76,6 +85,7 @@ class FlaggedReview extends ConsumerWidget {
                       qualityFlagged: qualityFlagged,
                       junkFlagged: junkFlagged,
                       similarKeepers: const <String, String>{},
+                      videoFlagged: videoFlagged,
                     ),
                     onTap: () => _openDetail(context, wizard, image),
                   );
@@ -91,6 +101,8 @@ class FlaggedReview extends ConsumerWidget {
         DeletionStep.quality => 'No blurry or poorly exposed images found',
         DeletionStep.junk => 'No screenshots, scans, or memes found',
         DeletionStep.similar => 'No similar photos found',
+        DeletionStep.video =>
+          'No too-short, corrupt, blurry, or static videos found',
       };
 
   List<Widget> _chips(Wizard wizard, String id) {
@@ -112,12 +124,29 @@ class FlaggedReview extends ConsumerWidget {
         return <Widget>[ReasonChip('${flag.reason} · $pct%')];
       case DeletionStep.similar:
         return const <Widget>[];
+      case DeletionStep.video:
+        final flag = wizard.videoFlags[id];
+        if (flag == null) {
+          return const <Widget>[];
+        }
+        final pct = (flag.confidence * 100).round();
+        return <Widget>[ReasonChip('${_videoReasonLabel(flag.reason)} · $pct%')];
     }
+  }
+
+  /// "too_short" -> "Too short"; junk categories ("screenshot") pass through.
+  String _videoReasonLabel(String reason) {
+    final spaced = reason.replaceAll('_', ' ');
+    if (spaced.isEmpty) {
+      return spaced;
+    }
+    return spaced[0].toUpperCase() + spaced.substring(1);
   }
 
   void _openDetail(BuildContext context, Wizard wizard, ImageInfo image) {
     final quality = wizard.qualityFlags[image.id];
     final junk = wizard.junkFlags[image.id];
+    final video = wizard.videoFlags[image.id];
     showImageDetail(
       context,
       image: image,
@@ -125,10 +154,13 @@ class FlaggedReview extends ConsumerWidget {
       step: step,
       qualityFlagged: wizard.qualityFlags.keys.toSet(),
       junkFlagged: wizard.junkFlags.keys.toSet(),
+      videoFlagged: wizard.videoFlags.keys.toSet(),
       sharpness: quality?.sharpness,
       exposureScore: quality?.exposureScore,
       junkReason: junk?.reason,
       junkConfidence: junk?.confidence,
+      videoReason: video?.reason,
+      videoConfidence: video?.confidence,
     );
   }
 }

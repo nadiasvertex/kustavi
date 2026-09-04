@@ -47,6 +47,12 @@ class FakeKustavi extends KustaviServiceBase {
   ) => const Stream.empty();
 
   @override
+  Stream<VideoEvent> runVideoPass(
+    ServiceCall call,
+    RunVideoPassRequest request,
+  ) => const Stream.empty();
+
+  @override
   Stream<CommitEvent> commit(ServiceCall call, CommitRequest request) =>
       const Stream.empty();
 }

@@ -97,6 +97,18 @@ pb.JunkEvent junkFlag(
       ..confidence = confidence);
 }
 
+pb.VideoEvent videoFlag(
+  String id, {
+  String reason = 'too_short',
+  double confidence = 1.0,
+}) {
+  return pb.VideoEvent()
+    ..flag = (pb.VideoFlag()
+      ..videoId = id
+      ..reason = reason
+      ..confidence = confidence);
+}
+
 pb.SimilarEvent similarGroup(int id, List<String> ids, String keepId) {
   return pb.SimilarEvent()
     ..group = (pb.SimilarGroup()

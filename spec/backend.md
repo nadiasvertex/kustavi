@@ -365,18 +365,6 @@ largest-face focus, face count, a landmark-anchored eyes-open proxy, and a
 red-eye score. The blend degrades to sharpness + color-balance when the face
 model is absent. `member_scores` carries the composite score, best-first.
 
-### RunTripsPass
-Home-anchored clustering over in-memory database records. Detects recurring
-"home" GPS clusters (dense cells whose photos span ≥ 7 days and ≥ 50% of the
-archive timeline), then groups away-from-home photos chronologically into
-trips (broken by `max_gap_hours` or a `max_distance_km` centroid-drift
-guard), splits each trip into contiguous `TripLeg`s at `leg_radius_km` GPS
-jumps, and reverse-geocodes leg centroids to "City, Country" folder names via
-the bundled GeoNames table (`backend/data/cities.tsv`, located through
-`config::geo_data_path()`; folders fall back to "Month Year" when it is
-absent). At-home photos become monthly `is_home` trips. See
-`spec/proto.md` §RunTripsPass for the full rule set.
-
 ### RunVideoPass
 Precondition: Active session. Runs only over `images` rows with `kind = 'video'`
 (ingested alongside photos during `ScanFolder` from `supported_video_extensions`,
@@ -397,6 +385,18 @@ are recorded in `video_flags`, keyed by the video's `images.id`. Near-duplicate
 and burst-recorded clips are not handled here — `RunSimilarPass` already
 groups them, since video ingestion writes a representative frame to
 `working_image_path` just like photos do.
+
+### RunTripsPass
+Home-anchored clustering over in-memory database records. Detects recurring
+"home" GPS clusters (dense cells whose photos span ≥ 7 days and ≥ 50% of the
+archive timeline), then groups away-from-home photos chronologically into
+trips (broken by `max_gap_hours` or a `max_distance_km` centroid-drift
+guard), splits each trip into contiguous `TripLeg`s at `leg_radius_km` GPS
+jumps, and reverse-geocodes leg centroids to "City, Country" folder names via
+the bundled GeoNames table (`backend/data/cities.tsv`, located through
+`config::geo_data_path()`; folders fall back to "Month Year" when it is
+absent). At-home photos become monthly `is_home` trips. See
+`spec/proto.md` §RunTripsPass for the full rule set.
 
 ### Commit
 Creates target destination path layouts. Copies calculated image files while automatically grabbing matching layout sidecars (such as `.xmp` and `.aae` extensions) sitting adjacent within the original folders. By default each file keeps its path relative to the session folder; when `CommitRequest.folder_for_id` maps its id to a sub-path, the file is placed under `destination/<sub-path>/` (the trip/leg folder layout) instead, with `-<n>` suffixing on same-folder name collisions. Sub-paths that are absolute or contain `..` are ignored. Tracks progress using byte counts (`done_bytes` and `total_bytes`) alongside item counters for linear rendering representation.

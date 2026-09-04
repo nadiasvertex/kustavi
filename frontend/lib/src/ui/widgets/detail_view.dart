@@ -21,11 +21,14 @@ Future<T?> showImageDetail<T extends Object?>(
   DeletionStep? step,
   Set<String> qualityFlagged = const <String>{},
   Set<String> junkFlagged = const <String>{},
+  Set<String> videoFlagged = const <String>{},
   Map<String, String> similarKeepers = const <String, String>{},
   double? sharpness,
   double? exposureScore,
   String? junkReason,
   double? junkConfidence,
+  String? videoReason,
+  double? videoConfidence,
   Map<String, String> mappings = const <String, String>{},
 }) {
   return showDialog<T>(
@@ -38,11 +41,14 @@ Future<T?> showImageDetail<T extends Object?>(
         step: step,
         qualityFlagged: qualityFlagged,
         junkFlagged: junkFlagged,
+        videoFlagged: videoFlagged,
         similarKeepers: similarKeepers,
         sharpness: sharpness,
         exposureScore: exposureScore,
         junkReason: junkReason,
         junkConfidence: junkConfidence,
+        videoReason: videoReason,
+        videoConfidence: videoConfidence,
         mappings: mappings,
       ),
     ),
@@ -60,11 +66,14 @@ class DetailView extends ConsumerStatefulWidget {
     this.step,
     this.qualityFlagged = const <String>{},
     this.junkFlagged = const <String>{},
+    this.videoFlagged = const <String>{},
     this.similarKeepers = const <String, String>{},
     this.sharpness,
     this.exposureScore,
     this.junkReason,
     this.junkConfidence,
+    this.videoReason,
+    this.videoConfidence,
     this.mappings = const <String, String>{},
   });
 
@@ -73,11 +82,14 @@ class DetailView extends ConsumerStatefulWidget {
   final DeletionStep? step;
   final Set<String> qualityFlagged;
   final Set<String> junkFlagged;
+  final Set<String> videoFlagged;
   final Map<String, String> similarKeepers;
   final double? sharpness;
   final double? exposureScore;
   final String? junkReason;
   final double? junkConfidence;
+  final String? videoReason;
+  final double? videoConfidence;
 
   /// Extra label → value rows (trip, leg, place, group…) shown in the
   /// metadata panel (spec/frontend.md §7.2 "group/trip metadata mappings").
@@ -168,6 +180,7 @@ class _DetailViewState extends ConsumerState<DetailView>
       qualityFlagged: widget.qualityFlagged,
       junkFlagged: widget.junkFlagged,
       similarKeepers: widget.similarKeepers,
+      videoFlagged: widget.videoFlagged,
     );
     return Focus(
       focusNode: _focus,
@@ -275,6 +288,14 @@ class _DetailViewState extends ConsumerState<DetailView>
             theme,
             'Confidence',
             '${(widget.junkConfidence! * 100).round()}%',
+          ),
+        if (widget.videoReason != null)
+          _metaRow(theme, 'Video reason', widget.videoReason!),
+        if (widget.videoConfidence != null)
+          _metaRow(
+            theme,
+            'Confidence',
+            '${(widget.videoConfidence! * 100).round()}%',
           ),
         for (final entry in widget.mappings.entries)
           if (entry.value.isNotEmpty) _metaRow(theme, entry.key, entry.value),

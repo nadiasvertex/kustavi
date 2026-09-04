@@ -392,7 +392,7 @@ void main() {
       expect(client.lastJunkSkipIds, isNot(contains('b.jpg')));
     });
 
-    test('continue from junk → trips → commit summary', () async {
+    test('continue from junk → video → trips → commit summary', () async {
       final client = FakeKustaviClient(
         scanEvents: [
           scanImage('a.jpg'),
@@ -436,9 +436,14 @@ void main() {
       container.read(wizardProvider.notifier).continueFromJunk();
       await pumpUntil(
         container,
-        () => container.read(wizardProvider).value is WizardTripsReview,
+        () => container.read(wizardProvider).value is WizardVideoReview,
       );
 
+      container.read(wizardProvider.notifier).continueFromVideo();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardTripsReview,
+      );
       container.read(wizardProvider.notifier).continueFromTrips();
       await pumpUntil(
         container,
@@ -484,6 +489,11 @@ void main() {
         () => container.read(wizardProvider).value is WizardJunkReview,
       );
       wizard.continueFromJunk();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardVideoReview,
+      );
+      wizard.continueFromVideo();
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardTripsReview,
@@ -554,6 +564,11 @@ void main() {
       wizard.continueFromJunk();
       await pumpUntil(
         container,
+        () => container.read(wizardProvider).value is WizardVideoReview,
+      );
+      wizard.continueFromVideo();
+      await pumpUntil(
+        container,
         () => container.read(wizardProvider).value is WizardTripsReview,
       );
       wizard.continueFromTrips();
@@ -565,6 +580,143 @@ void main() {
       wizard.startCommit();
       wizard.cancelCommit();
       expect(container.read(wizardProvider).value, isA<WizardCommitSummary>());
+    });
+
+    test('continue from junk → video pass → video review', () async {
+      final client = FakeKustaviClient(
+        scanEvents: [
+          scanImage('a.mp4'),
+          scanImage('b.mp4'),
+          scanComplete(images: 2),
+        ],
+        modelEvents: [modelReady()],
+        similarEvents: const [],
+        videoEvents: [videoFlag('b.mp4', reason: 'static')],
+      );
+      container = makeContainer(client);
+      await reachConfirmFolder(container, client);
+      final wizard = container.read(wizardProvider.notifier);
+      wizard.continueFromConfirm();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardQualityReview,
+      );
+      wizard.continueFromQuality();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardSimilarReview,
+      );
+      await pumpUntil(
+        container,
+        () => container.read(modelStatusProvider).value is ModelPrepReady,
+      );
+      wizard.continueFromSimilar();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardJunkReview,
+      );
+      wizard.continueFromJunk();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardVideoReview,
+      );
+      expect(wizard.videoFlags.keys, contains('b.mp4'));
+      final review = container.read(wizardProvider).value as WizardVideoReview;
+      expect(review.flaggedCount, 1);
+    });
+
+    test('video pass skips images already marked for deletion', () async {
+      final client = FakeKustaviClient(
+        scanEvents: [
+          scanImage('a.mp4'),
+          scanImage('b.mp4'),
+          scanComplete(images: 2),
+        ],
+        modelEvents: [modelReady()],
+        qualityEvents: [qualityFlag('a.mp4')],
+        similarEvents: const [],
+      );
+      container = makeContainer(client);
+      await reachConfirmFolder(container, client);
+      final wizard = container.read(wizardProvider.notifier);
+      wizard.continueFromConfirm();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardQualityReview,
+      );
+      // The quality-flagged video stays marked for deletion by default.
+      wizard.continueFromQuality();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardSimilarReview,
+      );
+      await pumpUntil(
+        container,
+        () => container.read(modelStatusProvider).value is ModelPrepReady,
+      );
+      wizard.continueFromSimilar();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardJunkReview,
+      );
+      wizard.continueFromJunk();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardVideoReview,
+      );
+      expect(client.lastVideoSkipIds, contains('a.mp4'));
+      expect(client.lastVideoSkipIds, isNot(contains('b.mp4')));
+    });
+
+    test('video review: keep all / mark all bulk actions', () async {
+      final client = FakeKustaviClient(
+        scanEvents: [
+          scanImage('a.mp4'),
+          scanImage('b.mp4'),
+          scanComplete(images: 2),
+        ],
+        modelEvents: [modelReady()],
+        similarEvents: const [],
+        videoEvents: [
+          videoFlag('a.mp4', reason: 'too_short'),
+          videoFlag('b.mp4', reason: 'corrupt'),
+        ],
+      );
+      container = makeContainer(client);
+      await reachConfirmFolder(container, client);
+      final wizard = container.read(wizardProvider.notifier);
+      wizard.continueFromConfirm();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardQualityReview,
+      );
+      wizard.continueFromQuality();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardSimilarReview,
+      );
+      await pumpUntil(
+        container,
+        () => container.read(modelStatusProvider).value is ModelPrepReady,
+      );
+      wizard.continueFromSimilar();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardJunkReview,
+      );
+      wizard.continueFromJunk();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardVideoReview,
+      );
+
+      wizard.keepAllVideoFlagged();
+      final plan = container.read(deletionPlanProvider);
+      expect(plan.explicitKept, containsAll(<String>['a.mp4', 'b.mp4']));
+
+      wizard.markAllVideoFlagged();
+      final plan2 = container.read(deletionPlanProvider);
+      expect(plan2.explicitDeleted, containsAll(<String>['a.mp4', 'b.mp4']));
     });
 
     test('trips review: move photos between trips, create, unassign, rerun', () async {
@@ -618,6 +770,11 @@ void main() {
         () => container.read(wizardProvider).value is WizardJunkReview,
       );
       container.read(wizardProvider.notifier).continueFromJunk();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardVideoReview,
+      );
+      container.read(wizardProvider.notifier).continueFromVideo();
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardTripsReview,
@@ -716,6 +873,11 @@ void main() {
       container.read(wizardProvider.notifier).continueFromJunk();
       await pumpUntil(
         container,
+        () => container.read(wizardProvider).value is WizardVideoReview,
+      );
+      container.read(wizardProvider.notifier).continueFromVideo();
+      await pumpUntil(
+        container,
         () => container.read(wizardProvider).value is WizardTripsReview,
       );
 
@@ -780,6 +942,11 @@ void main() {
           () => container.read(wizardProvider).value is WizardJunkReview,
         );
         container.read(wizardProvider.notifier).continueFromJunk();
+        await pumpUntil(
+          container,
+          () => container.read(wizardProvider).value is WizardVideoReview,
+        );
+        container.read(wizardProvider.notifier).continueFromVideo();
         await pumpUntil(
           container,
           () => container.read(wizardProvider).value is WizardTripsReview,

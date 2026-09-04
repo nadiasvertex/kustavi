@@ -27,6 +27,8 @@ class Wizard extends _$Wizard {
   final Map<String, QualityFlagInfo> _qualityFlags = {};
   final Map<String, JunkFlagInfo> _junkFlags = {};
   final List<SimilarGroupInfo> _similarGroups = [];
+  final Map<String, VideoFlagInfo> _videoFlags = {};
+  int _videoTotal = 0;
 
   // Junk-pass timing profile: the vision model's per-image cost is unknown
   // until measured on this machine. Profiling starts at the first progress
@@ -115,6 +117,8 @@ class Wizard extends _$Wizard {
 
   List<SimilarGroupInfo> get similarGroups =>
       List<SimilarGroupInfo>.unmodifiable(_similarGroups);
+
+  Map<String, VideoFlagInfo> get videoFlags => UnmodifiableMapView(_videoFlags);
 
   /// Effective trips: the clustering result plus hand-created trips, with
   /// per-image reassignments applied, sorted chronologically. Empty trips
@@ -833,21 +837,42 @@ class Wizard extends _$Wizard {
     }
   }
 
-  /// Junk review -> trips pass.
+  /// Junk review -> video pass.
   void continueFromJunk() {
     if (state.value is! WizardJunkReview) {
       return;
     }
     _returnPhase = state.value;
-    _tripResults.clear();
-    _resetTripEdits();
-    state = const AsyncValue.data(WizardTripsRunning());
+    _videoFlags.clear();
+    state = const AsyncValue.data(WizardVideoRunning());
     final client = ref.read(kustaviClientProvider).requireValue;
     _subscribe(
-      client.runTripsPass(_tripsRequest()),
-      _onTripsEvent,
-      _onTripsDone,
+      client.runVideoPass(skipVideoIds: _deletedBeforeVideo()),
+      _onVideoEvent,
+      _onVideoDone,
     );
+  }
+
+  /// Ids already marked for deletion by an earlier step, so the video pass
+  /// can skip analysis on them.
+  List<String> _deletedBeforeVideo() {
+    final plan = ref.read(deletionPlanProvider);
+    final keepers = similarKeeperMap(plan, _similarGroups);
+    final qualityFlagged = _qualityFlags.keys.toSet();
+    final junkFlagged = _junkFlags.keys.toSet();
+    bool marked(String id) => DeletionStep.values
+        .where((step) => step != DeletionStep.video)
+        .any(
+          (step) => isMarkedForDeletion(
+            plan,
+            id,
+            step: step,
+            qualityFlagged: qualityFlagged,
+            junkFlagged: junkFlagged,
+            similarKeepers: keepers,
+          ),
+        );
+    return _images.keys.where(marked).toList(growable: false);
   }
 
   /// Trips review -> commit summary (the last review step).
@@ -864,7 +889,7 @@ class Wizard extends _$Wizard {
       return;
     }
     _cancelPass();
-    state = AsyncValue.data(_returnPhase ?? _junkReviewPhase);
+    state = AsyncValue.data(_returnPhase ?? _videoReviewPhase);
   }
 
   pb.RunTripsPassRequest _tripsRequest() {
@@ -951,6 +976,7 @@ class Wizard extends _$Wizard {
     final keepers = similarKeeperMap(plan, _similarGroups);
     final qualityFlagged = _qualityFlags.keys.toSet();
     final junkFlagged = _junkFlags.keys.toSet();
+    final videoFlagged = _videoFlags.keys.toSet();
     bool deleted(String id) => DeletionStep.values.any(
       (step) => isMarkedForDeletion(
         plan,
@@ -959,6 +985,7 @@ class Wizard extends _$Wizard {
         qualityFlagged: qualityFlagged,
         junkFlagged: junkFlagged,
         similarKeepers: keepers,
+        videoFlagged: videoFlagged,
       ),
     );
     return _images.keys.where(deleted).toSet();
@@ -1218,7 +1245,90 @@ class Wizard extends _$Wizard {
     if (state.value is! WizardTripsReview) {
       return;
     }
+    state = AsyncValue.data(_returnPhase ?? _videoReviewPhase);
+  }
+
+  // --- S10-B/C: video pass -----------------------------------------------
+
+  void _onVideoEvent(pb.VideoEvent event) {
+    if (state.value is! WizardVideoRunning) {
+      return;
+    }
+    switch (event.whichEvent()) {
+      case pb.VideoEvent_Event.progress:
+        _videoTotal = event.progress.total;
+        state = AsyncValue.data(
+          WizardVideoRunning(
+            done: event.progress.done,
+            total: event.progress.total,
+          ),
+        );
+      case pb.VideoEvent_Event.flag:
+        final flag = VideoFlagInfo.fromFlag(event.flag);
+        _videoFlags[flag.videoId] = flag;
+      case pb.VideoEvent_Event.complete:
+        break;
+      case pb.VideoEvent_Event.notSet:
+        break;
+    }
+  }
+
+  void _onVideoDone() {
+    if (state.value is! WizardVideoRunning) {
+      return;
+    }
+    state = AsyncValue.data(_videoReviewPhase);
+  }
+
+  void cancelVideo() {
+    if (state.value is! WizardVideoRunning) {
+      return;
+    }
+    _cancelPass();
     state = AsyncValue.data(_returnPhase ?? _junkReviewPhase);
+  }
+
+  WizardVideoReview get _videoReviewPhase => WizardVideoReview(
+    flaggedCount: _videoFlags.length,
+    totalVideos: _videoTotal,
+  );
+
+  /// Video review -> trips pass.
+  void continueFromVideo() {
+    if (state.value is! WizardVideoReview) {
+      return;
+    }
+    _returnPhase = _videoReviewPhase;
+    _tripResults.clear();
+    _resetTripEdits();
+    state = const AsyncValue.data(WizardTripsRunning());
+    final client = ref.read(kustaviClientProvider).requireValue;
+    _subscribe(
+      client.runTripsPass(_tripsRequest()),
+      _onTripsEvent,
+      _onTripsDone,
+    );
+  }
+
+  void backFromVideo() {
+    if (state.value is! WizardVideoReview) {
+      return;
+    }
+    state = AsyncValue.data(_returnPhase ?? _junkReviewPhase);
+  }
+
+  void keepAllVideoFlagged() {
+    if (state.value is! WizardVideoReview) {
+      return;
+    }
+    ref.read(deletionPlanProvider.notifier).keepAll(_videoFlags.keys);
+  }
+
+  void markAllVideoFlagged() {
+    if (state.value is! WizardVideoReview) {
+      return;
+    }
+    ref.read(deletionPlanProvider.notifier).markAll(_videoFlags.keys);
   }
 
   // --- S11–S13: commit -------------------------------------------------------

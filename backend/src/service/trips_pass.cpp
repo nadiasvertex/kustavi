@@ -17,7 +17,7 @@ namespace kustavi {
 using algorithm::append_range;
 
 // ---------------------------------------------------------------------------
-// Pass 5: trips
+// Pass 6: trips
 // ---------------------------------------------------------------------------
 
 auto kustavi_service::RunTripsPass(grpc::ServerContext *context,

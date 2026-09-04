@@ -35,11 +35,13 @@ class FakeKustaviClient implements KustaviClient {
     this.junkEvents = const <JunkEvent>[],
     this.similarEvents = const <SimilarEvent>[],
     this.tripsEvents = const <TripsEvent>[],
+    this.videoEvents = const <VideoEvent>[],
     this.commitEvents = const <CommitEvent>[],
     this.scanError,
     this.qualityError,
     this.junkError,
     this.similarError,
+    this.videoError,
     this.ensureModelError,
     this.modelStreamStaysOpen = false,
     this.scanStreamStaysOpen = false,
@@ -60,6 +62,7 @@ class FakeKustaviClient implements KustaviClient {
   final List<JunkEvent> junkEvents;
   final List<SimilarEvent> similarEvents;
   final List<TripsEvent> tripsEvents;
+  final List<VideoEvent> videoEvents;
   final List<CommitEvent> commitEvents;
 
   /// Injected into the stream of the corresponding pass.
@@ -67,6 +70,7 @@ class FakeKustaviClient implements KustaviClient {
   final Object? qualityError;
   final Object? junkError;
   final Object? similarError;
+  final Object? videoError;
   final Object? ensureModelError;
 
   /// Keep the [ensureModel] stream open until [closeModelStream].
@@ -82,6 +86,7 @@ class FakeKustaviClient implements KustaviClient {
   RunTripsPassRequest? lastTripsRequest;
   List<String> lastJunkSkipIds = const [];
   List<String> lastSimilarSkipIds = const [];
+  List<String> lastVideoSkipIds = const [];
   int shutdownCount = 0;
   int qualityPassCount = 0;
 
@@ -183,6 +188,12 @@ class FakeKustaviClient implements KustaviClient {
   Stream<TripsEvent> runTripsPass(RunTripsPassRequest request) {
     lastTripsRequest = request;
     return Stream.fromIterable(tripsEvents);
+  }
+
+  @override
+  Stream<VideoEvent> runVideoPass({Iterable<String> skipVideoIds = const []}) {
+    lastVideoSkipIds = skipVideoIds.toList(growable: false);
+    return _script(videoEvents, videoError);
   }
 
   @override

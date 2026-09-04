@@ -30,6 +30,7 @@ abstract interface class KustaviClient {
   Stream<JunkEvent> runJunkPass({Iterable<String> skipImageIds});
   Stream<SimilarEvent> runSimilarPass({Iterable<String> skipImageIds});
   Stream<TripsEvent> runTripsPass(RunTripsPassRequest request);
+  Stream<VideoEvent> runVideoPass({Iterable<String> skipVideoIds});
   Stream<CommitEvent> commit(CommitRequest request);
 }
 
@@ -123,6 +124,16 @@ class GrpcKustaviClient implements KustaviClient {
   @override
   Stream<TripsEvent> runTripsPass(RunTripsPassRequest request) {
     return _pass(_client.runTripsPass(request, options: _options));
+  }
+
+  @override
+  Stream<VideoEvent> runVideoPass({Iterable<String> skipVideoIds = const []}) {
+    return _pass(
+      _client.runVideoPass(
+        RunVideoPassRequest(skipVideoIds: skipVideoIds),
+        options: _options,
+      ),
+    );
   }
 
   @override

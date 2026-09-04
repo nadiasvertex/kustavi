@@ -135,6 +135,33 @@ class JunkFlagInfo {
   final double confidence;
 }
 
+/// Video-pass verdict for one video, emitted only when flagged: too short,
+/// corrupt/unplayable, blurry, static (no motion), or a junk category reused
+/// from the vision classifier.
+class VideoFlagInfo {
+  const VideoFlagInfo({
+    required this.videoId,
+    required this.reason,
+    required this.confidence,
+  });
+
+  factory VideoFlagInfo.fromFlag(pb.VideoFlag flag) {
+    return VideoFlagInfo(
+      videoId: flag.videoId,
+      reason: flag.reason,
+      confidence: flag.confidence,
+    );
+  }
+
+  final String videoId;
+
+  /// "too_short" | "corrupt" | "blurry" | "static" | a junk category.
+  final String reason;
+
+  /// 0..1.
+  final double confidence;
+}
+
 /// A near-duplicate group, members best-first.
 class SimilarGroupInfo {
   const SimilarGroupInfo({
