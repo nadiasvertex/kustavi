@@ -25,6 +25,13 @@ startup:windows --output_user_root=D:/b/_bzl
 build --features=-layering_check
 build --features=-parse_headers
 
+# Flutter plugins commonly `@import FlutterMacOS;`/`@import Flutter;` (the
+# template rules_flutter's own plugin generator ships). Without this,
+# --incompatible_objc_framework_cleanup drops the imported framework's
+# module map from ObjC compile actions, so `@import` (as opposed to
+# `#import <FlutterMacOS/FlutterMacOS.h>`) can't resolve inside the sandbox.
+build --define=apple.incompatible.objc_framework_propagate_modulemap=true
+
 # libcurl TLS backend: reuse the boringssl gRPC already vendors instead of a
 # separate OpenSSL. Gives HTTPS on Linux/Windows; macOS would default to
 # SecureTransport but this keeps every platform on one code path.

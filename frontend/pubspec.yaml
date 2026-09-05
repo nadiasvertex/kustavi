@@ -49,6 +49,12 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
 
+  # Not used directly; pulled in so it lands in pubspec.lock. objective_c
+  # (transitive via path_provider_foundation, itself transitive via fvp) has
+  # a build-hook-only dependency on it that the Bazel overlay for
+  # objective_c 9.x expects to resolve.
+  native_toolchain_c: ^0.19.1
+
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is
   # activated in the `analysis_options.yaml` file located at the root of your
@@ -58,6 +64,14 @@ dev_dependencies:
   riverpod_generator: ^4.0.8
   build_runner: ^2.16.0
   flutter_launcher_icons: ^0.14.4
+
+dependency_overrides:
+  # rules_flutter's Bazel overlay for objective_c 9.x is hand-curated
+  # against the `test/util.c` layout; 9.5.0 renamed it to
+  # `test/reference_tracker.m`, breaking the Bazel build (though `flutter
+  # build` itself is unaffected). Pin to the last version the overlay
+  # matches until the overlay is updated upstream.
+  objective_c: 9.4.1
 
 flutter_launcher_icons:
   image_path: "assets/icon/app_icon.png"

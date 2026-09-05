@@ -5,4 +5,7 @@ exports_files([
     "libtiff-drop-root-version-file.patch",
     "rules_flutter-subdir-app.patch",
     "rules_flutter-windows-rc.patch",
+    "rules_flutter-shared-darwin-legacy-dup.patch",
+    "rules_flutter-apple-plugin-lib-objc-deps.patch",
+    "rules_flutter-apple-plugins-framework-import.patch",
 ])

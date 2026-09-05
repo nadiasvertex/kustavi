@@ -1,0 +1,17 @@
+diff --git flutter/private/flutter_apple_plugin_library.bzl flutter/private/flutter_apple_plugin_library.bzl
+index 0d56866..b436dfd 100644
+--- flutter/private/flutter_apple_plugin_library.bzl
++++ flutter/private/flutter_apple_plugin_library.bzl
+@@ -163,7 +163,11 @@ def flutter_apple_plugin_library(
+             module_name = objc_module_name,
+             enable_modules = True,
+             copts = copts,
+-            deps = [":" + framework_target],
++            # `deps` (e.g. a vendored native SDK a plugin links against, like
++            # fvp's mdk-sdk) needs to reach whichever compile step actually
++            # has ObjC/C++ sources referencing it — not just swift_deps below,
++            # which only helps a plugin with no `.m`/`.mm` sources of its own.
++            deps = [":" + framework_target] + list(deps),
+             tags = tags,
+             target_compatible_with = target_compatible_with,
+             visibility = ["//visibility:private"],

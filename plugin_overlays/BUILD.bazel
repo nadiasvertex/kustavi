@@ -1,0 +1,12 @@
+# Anchor file for our local `plugin_overlays/` tree (see MODULE.bazel's
+# `flutter.plugin_overlays(roots = [...])`). Mirrors
+# `@rules_flutter//ext:BUILD.bazel` — flutter_pub_package walks this root
+# first, then the bundled one.
+
+exports_files(
+    glob(
+        ["**/BUILD.bazel.tpl"],
+        allow_empty = True,
+    ),
+    visibility = ["//visibility:public"],
+)

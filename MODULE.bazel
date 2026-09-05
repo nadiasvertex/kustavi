@@ -17,6 +17,10 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 
 # Core Bazel utility rules
 bazel_dep(name = "apple_support", version = "2.8.0")
+# For //third_party:mdk_sdk_apple.BUILD.bazel's apple_dynamic_framework_import
+# (pulled in transitively by rules_flutter already; declared directly here so
+# @rules_apple is visible to our own root-module BUILD/.bzl files).
+bazel_dep(name = "rules_apple", version = "4.5.3")
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "rules_cc", version = "0.2.22")
 bazel_dep(name = "rules_foreign_cc", version = "0.15.1")
@@ -81,6 +85,21 @@ http_archive(
     url = "https://github.com/ggml-org/llama.cpp/archive/refs/tags/b10733.tar.gz",
 )
 
+# mdk-sdk — libmdk binaries the `fvp` Flutter plugin (video playback) links
+# against on macOS/iOS. See plugin_overlays/fvp/0/BUILD.bazel.tpl and
+# third_party/mdk_sdk_apple.BUILD.bazel for why this exists outside pub/
+# CocoaPods. Upstream's own podspec points at this same "nightly" URL with no
+# integrity pin (https://sourceforge.net/projects/mdk-sdk/files/nightly/); we
+# pin the sha256 of what that resolved to as of writing for reproducibility —
+# bump both together if fvp's required mdk version moves.
+http_archive(
+    name = "mdk_sdk_apple",
+    build_file = "//third_party:mdk_sdk_apple.BUILD.bazel",
+    sha256 = "4ef80796508c629d8085e4af9bff7f93b8308fc06eb4207799c046ef0f844a87",
+    strip_prefix = "mdk-sdk",
+    url = "https://sourceforge.net/projects/mdk-sdk/files/nightly/mdk-sdk-apple.tar.xz",
+)
+
 # Flutter support
 
 # rules_flutter is built against this fork version; 0.4.10 has API changes
@@ -98,6 +117,22 @@ git_override(
         # Compile windows/runner/Runner.rc with rc.exe and link the .res so the
         # app icon + VERSIONINFO land in the shipped kustavi.exe.
         "//patches:rules_flutter-windows-rc.patch",
+        # Skip the legacy <platform>/Classes dir when a package (e.g. fvp)
+        # declares sharedDarwinSource and also ships that dir for older SDKs
+        # — otherwise both copies get compiled, redefining every symbol.
+        "//patches:rules_flutter-shared-darwin-legacy-dup.patch",
+        # flutter_apple_plugin_library's `deps` param only threaded into the
+        # generated Swift target, never the inner objc_library that compiles
+        # a plugin's .m/.mm — so a native SDK dep (e.g. fvp's mdk-sdk) never
+        # reached the ObjC compile action at all.
+        "//patches:rules_flutter-apple-plugin-lib-objc-deps.patch",
+        # A plugin's AppleFrameworkImportInfo (e.g. fvp's mdk-sdk) compiles
+        # and links fine but never gets embedded in the app bundle: the
+        # runner aggregator that merges every plugin's Apple library only
+        # forwarded CcInfo/SwiftInfo, and its own `application` attribute
+        # (not `deps`) is invisible to rules_apple's framework
+        # auto-embedding aspect.
+        "//patches:rules_flutter-apple-plugins-framework-import.patch",
     ],
     remote = "https://github.com/aran/rules_flutter.git",
 )
@@ -107,6 +142,12 @@ flutter.toolchain(flutter_version = "3.44.1")
 flutter.pub(
     name = "deps",
     lock = "//frontend:pubspec.lock",
+)
+# Hand-curated BUILD.bazel overrides for pub plugins whose native side
+# rules_flutter's generic pub-package generator can't fully express (e.g.
+# fvp's mdk-sdk CocoaPod dependency). See plugin_overlays/.
+flutter.plugin_overlays(
+    roots = ["//plugin_overlays:BUILD.bazel"],
 )
 use_repo(
     flutter,

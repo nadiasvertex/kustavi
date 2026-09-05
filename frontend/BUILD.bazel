@@ -16,10 +16,12 @@ flutter_application(
         "@deps//:fixnum",
         "@deps//:flutter",
         "@deps//:flutter_riverpod",
+        "@deps//:fvp",
         "@deps//:grpc",
         "@deps//:path",
         "@deps//:protobuf",
         "@deps//:riverpod_annotation",
+        "@deps//:video_player",
         "@rules_flutter//flutter:material_icons",
     ],
 )

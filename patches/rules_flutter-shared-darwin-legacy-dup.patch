@@ -1,0 +1,94 @@
+diff --git flutter/private/flutter_pub_package.bzl flutter/private/flutter_pub_package.bzl
+index cfcae20..fbe0def 100644
+--- flutter/private/flutter_pub_package.bzl
++++ flutter/private/flutter_pub_package.bzl
+@@ -72,6 +72,42 @@ def _has_files_under(ctx, relative_path, extensions = None):
+                     return True
+     return False
+ 
++def _detect_apple_sibling_target_dirs(ctx, primary_dir, platform):
++    """Sibling SwiftPM target dirs for a multi-target Apple plugin package.
++
++    Modern federated plugins (e.g. video_player_avfoundation 2.9.5+) split
++    their Package.swift into a Swift target plus ObjC target(s): a shared
++    `<pkg>_objc` target most classes live in, and a per-platform
++    `<pkg>_<platform>` target for the handful of APIs that differ between
++    iOS and macOS (Package.swift makes the shared objc target depend on the
++    platform one conditionally, e.g. `.target(name: "video_player_avfoundation_objc",
++    dependencies: [.target(name: "..._macos", condition: .when(platforms: [.macOS]))])`).
++    Swift code resolves the shared target via `import <pkg>_objc`, which
++    `flutter_apple_plugin_library` already produces automatically from any
++    `.m`/`.mm` sources in its srcs — so it's enough to fold both sibling
++    directories' sources into the same srcs list as the primary target,
++    rather than modeling Package.swift's target graph.
++
++    Args:
++        ctx: The repository_rule context.
++        primary_dir: The main SwiftPM target dir already found (e.g.
++            `darwin/video_player_avfoundation/Sources/video_player_avfoundation`).
++        platform: `"macos"` or `"ios"`.
++
++    Returns:
++        The sibling directories (relative to the package root) that exist
++        and contain Apple sources. Empty when the package isn't split this
++        way.
++    """
++    dirs = []
++    objc_dir = "%s_objc" % primary_dir
++    if _has_files_under(ctx, objc_dir, _APPLE_SRC_EXTENSIONS):
++        dirs.append(objc_dir)
++    platform_dir = "%s_%s" % (primary_dir, platform)
++    if _has_files_under(ctx, platform_dir, _APPLE_SRC_EXTENSIONS):
++        dirs.append(platform_dir)
++    return dirs
++
+ def _detect_apple_source_dirs(ctx, package_name, platform, shared_darwin_source):
+     """List Apple source directory globs for the given platform.
+ 
+@@ -84,22 +120,36 @@ def _detect_apple_source_dirs(ctx, package_name, platform, shared_darwin_source)
+     swiftpm_dir = "{plat}/{pkg}/Sources/{pkg}".format(plat = platform, pkg = package_name)
+     if _has_files_under(ctx, swiftpm_dir, _APPLE_SRC_EXTENSIONS):
+         candidates.append(swiftpm_dir)
+-
+-    # Shared darwin source layout: darwin/Classes/...
++        candidates.extend(_detect_apple_sibling_target_dirs(ctx, swiftpm_dir, platform))
++
++    # Shared darwin source layout. Packages that opt into sharedDarwinSource
++    # commonly ship both a SwiftPM darwin/<pkg>/Sources/<pkg>/ directory and a
++    # mirrored CocoaPods darwin/Classes/ directory with the same sources, so
++    # the Flutter tool (and our Swift-Package-first Bazel build) can pick
++    # whichever build system is in play. Prefer the SwiftPM directory when
++    # present and only fall back to darwin/Classes otherwise, to avoid
++    # compiling both copies into one module.
+     if shared_darwin_source:
+-        darwin_dir = "darwin/Classes"
+-        if _has_files_under(ctx, darwin_dir, _APPLE_SRC_EXTENSIONS):
+-            candidates.append(darwin_dir)
+-
+-        # Legacy darwin SwiftPM (older path_provider_foundation versions).
+         darwin_swiftpm_dir = "darwin/{pkg}/Sources/{pkg}".format(pkg = package_name)
+         if _has_files_under(ctx, darwin_swiftpm_dir, _APPLE_SRC_EXTENSIONS):
+             candidates.append(darwin_swiftpm_dir)
++            candidates.extend(_detect_apple_sibling_target_dirs(ctx, darwin_swiftpm_dir, platform))
++        else:
++            darwin_dir = "darwin/Classes"
++            if _has_files_under(ctx, darwin_dir, _APPLE_SRC_EXTENSIONS):
++                candidates.append(darwin_dir)
+ 
+     # Legacy split layout: <platform>/Classes/...
+-    legacy_dir = "{plat}/Classes".format(plat = platform)
+-    if _has_files_under(ctx, legacy_dir, _APPLE_SRC_EXTENSIONS):
+-        candidates.append(legacy_dir)
++    # Packages that opt into sharedDarwinSource often also ship a duplicate
++    # legacy <platform>/Classes/ directory, kept for Flutter SDKs that predate
++    # sharedDarwinSource support (e.g. fvp). Real Flutter tooling compiles one
++    # or the other, never both; skip the legacy directory once a shared
++    # darwin directory was already found, so we don't emit two copies of the
++    # same ObjC symbols into one module.
++    if not (shared_darwin_source and candidates):
++        legacy_dir = "{plat}/Classes".format(plat = platform)
++        if _has_files_under(ctx, legacy_dir, _APPLE_SRC_EXTENSIONS):
++            candidates.append(legacy_dir)
+ 
+     return candidates
+ 

@@ -1,0 +1,28 @@
+# `mdk-sdk-apple.tar.xz` — the same archive fvp's own podspec
+# (`s.dependency 'mdk'`, https://cocoapods.org/pods/mdk) points CocoaPods at
+# for macOS/iOS. Flutter's own build resolves it through CocoaPods at `pod
+# install` time; our Bazel build has no CocoaPods integration, so
+# plugin_overlays/fvp/0/BUILD.bazel.tpl depends on this repo instead.
+#
+# Layout inside the tarball (each `.framework` is the usual macOS bundle —
+# `Headers`/`Modules`/the dylib itself symlinked from `Versions/Current/`,
+# real files under `Versions/A/`):
+#   mdk-sdk/lib/mdk.xcframework/macos-arm64_x86_64/mdk.framework/
+#   mdk-sdk/lib/mdk.xcframework/ios-arm64/mdk.framework/
+#   ...
+
+load("@rules_apple//apple:apple.bzl", "apple_dynamic_framework_import")
+
+# Referenced from plugin_overlays/fvp/0/BUILD.bazel.tpl as an extra `deps`
+# entry on the macOS flutter_apple_plugin_library — reaches the ObjC compile
+# (headers, -F search path) and link step via the usual CcInfo, and (via the
+# rules_flutter-apple-plugins-framework-import.patch fix) the app bundle via
+# rules_apple's own framework-embedding aspect.
+apple_dynamic_framework_import(
+    name = "mdk_macos",
+    framework_imports = glob([
+        "lib/mdk.xcframework/macos-arm64_x86_64/mdk.framework/**",
+    ]),
+    target_compatible_with = ["@platforms//os:macos"],
+    visibility = ["//visibility:public"],
+)
