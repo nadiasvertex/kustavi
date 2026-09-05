@@ -18,9 +18,12 @@
 # `flutter_pub_package`'s `_resolve_overlay`. We don't read {VERSION} here —
 # the overlay sits under `0/`, so any 0.x version routes here.
 
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@rules_apple//apple:macos.bzl", "macos_framework")
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("@rules_flutter//flutter:defs.bzl", "flutter_plugin")
 load("@rules_flutter//flutter:linux.bzl", "flutter_linux_plugin_library")
-load("@rules_flutter//flutter:macos.bzl", "flutter_apple_plugin_library")
+load("@rules_flutter//flutter:macos.bzl", "MACOS_MINIMUM_OS_VERSION", "flutter_apple_plugin_library")
 load("@rules_flutter//flutter:windows.bzl", "flutter_windows_plugin_library")
 
 flutter_plugin(
@@ -78,6 +81,82 @@ flutter_apple_plugin_library(
     # repo mapping (owned by rules_flutter) has no apparent name for it.
     deps = ["@@+http_archive+mdk_sdk_apple//:mdk_macos"],
     visibility = ["//visibility:public"],
+)
+
+# `fvp.framework` — the FFI half of the plugin, as a dynamic framework.
+#
+# fvp splits its native code in two: `FvpPlugin.mm` (the platform-channel /
+# texture side, built above and linked statically into the app executable
+# like every other plugin) and `callbacks.cpp` (the C API Dart reaches over
+# FFI). The FFI half cannot be statically linked: `package:fvp` loads it with
+# `DynamicLibrary.open('fvp.framework/fvp')` (lib/src/lib.dart), the path
+# CocoaPods' `use_frameworks!` build produces. Without a real framework at
+# that path the app dies during video_player registration with
+# "Failed to load dynamic library 'fvp.framework/fvp'".
+#
+# Splitting the two halves across a static lib and a dylib is safe here:
+# on Apple platforms `callbacks.cpp` shares no state with `FvpPlugin.mm` and
+# its single reference to it (`MdkGetPlayerVid`) is `#ifdef __ANDROID__`.
+# Note that `flutter_apple_plugin_library` could not build this half anyway —
+# its `_split_srcs` keeps only .swift/.m/.mm/.h and silently drops .cpp.
+#
+# `//frontend:kustavi_macos` embeds the result via `additional_contents`.
+objc_library(
+    name = "fvp_ffi_lib",
+    srcs = ["darwin/fvp/Sources/fvp/callbacks.cpp"],
+    hdrs = [
+        "darwin/fvp/Sources/fvp/callbacks.h",
+        "darwin/fvp/Sources/fvp/dart_api_types.h",
+    ],
+    # Nothing inside the framework references these symbols — Dart looks them
+    # up with dlsym from outside — so without alwayslink the linker drops the
+    # archive member and ships an empty dylib.
+    alwayslink = True,
+    # Mirrors `s.compiler_flags` in darwin/fvp.podspec.
+    copts = [
+        "-std=c++20",
+        "-Wno-documentation",
+    ],
+    includes = ["darwin/fvp/Sources/fvp"],
+    sdk_dylibs = ["c++"],
+    target_compatible_with = ["@platforms//os:macos"],
+    deps = ["@@+http_archive+mdk_sdk_apple//:mdk_macos"],
+)
+
+write_file(
+    name = "fvp_framework_info_plist",
+    out = "fvp_framework_Info.plist",
+    content = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
+        '<plist version="1.0">',
+        "<dict>",
+        "  <key>CFBundleName</key>",
+        "  <string>fvp</string>",
+        "  <key>CFBundlePackageType</key>",
+        "  <string>FMWK</string>",
+        "  <key>CFBundleShortVersionString</key>",
+        "  <string>{VERSION}</string>",
+        "  <key>CFBundleVersion</key>",
+        "  <string>{VERSION}</string>",
+        "</dict>",
+        "</plist>",
+    ],
+)
+
+# `macos_framework`, not `macos_dynamic_framework`: the latter fails unless it
+# has exactly one swift_library dep, and this framework is pure ObjC++.
+# rules_apple already links it with an `@executable_path/../Frameworks` rpath,
+# which is how it finds its sibling `mdk.framework` in the app bundle.
+macos_framework(
+    name = "fvp_framework",
+    bundle_id = "com.mediadevkit.fvp",
+    bundle_name = "fvp",
+    infoplists = [":fvp_framework_Info.plist"],
+    minimum_os_version = MACOS_MINIMUM_OS_VERSION,
+    target_compatible_with = ["@platforms//os:macos"],
+    visibility = ["//visibility:public"],
+    deps = [":fvp_ffi_lib"],
 )
 
 flutter_apple_plugin_library(

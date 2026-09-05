@@ -247,6 +247,8 @@ def package_macos(args: argparse.Namespace) -> Path:
         except subprocess.CalledProcessError:
             print("  ! install_name_tool failed (rpath may already be set)")
 
+    strip_mdk_local_rpaths(app_dir)
+
     if args.keep:
         print("[4/4] --keep: leaving dist/ unpacked, skipping the archive")
         return app_dir
@@ -255,6 +257,38 @@ def package_macos(args: argparse.Namespace) -> Path:
     archive = dist / f"kustavi-macos-{version}.zip"
     make_macos_zip(dist, archive)
     return archive
+
+
+# rpaths the prebuilt mdk framework carries for developer machines. mdk
+# weak-links libavdevice, which its own bundled libffmpeg.9.dylib does not
+# provide, so dyld follows these and loads whatever ffmpeg Homebrew/MacPorts
+# happens to have installed -- yielding "Class AVFFrameReceiver is implemented
+# in both ..." at launch and an app whose media stack differs per machine.
+# Nothing we ship needs libavdevice (it is capture-device input; playback comes
+# out of the bundled libffmpeg), so drop the paths.
+MDK_LOCAL_RPATHS = ("/opt/homebrew/lib", "/usr/local/lib")
+
+
+def strip_mdk_local_rpaths(app_dir: Path) -> None:
+    """Remove /opt/homebrew/lib and /usr/local/lib from the bundled mdk."""
+    mdk = app_dir / "Contents/Frameworks/mdk.framework/Versions/A/mdk"
+    if not mdk.exists() or not shutil.which("install_name_tool"):
+        return
+    existing = subprocess.run(["otool", "-l", str(mdk)], check=True,
+                              capture_output=True, text=True).stdout
+    removed = False
+    for rpath in MDK_LOCAL_RPATHS:
+        if f"path {rpath} (offset" not in existing:
+            continue
+        run(["install_name_tool", "-delete_rpath", rpath, str(mdk)])
+        removed = True
+    if not removed:
+        return
+    # install_name_tool invalidates the signature rules_apple applied to the
+    # framework; re-sign ad hoc so dyld still loads it.
+    if shutil.which("codesign"):
+        run(["codesign", "--force", "--sign", "-",
+             str(app_dir / "Contents/Frameworks/mdk.framework")])
 
 
 # --------------------------------------------------------------------------- #

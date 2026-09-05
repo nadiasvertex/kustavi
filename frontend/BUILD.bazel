@@ -34,6 +34,15 @@ flutter_macos_app(
     # Info.plist as CFBundleIconName. Regenerate with `dart run
     # flutter_launcher_icons` after changing resources/icon.png.
     app_icons = glob(["macos/Runner/Assets.xcassets/AppIcon.appiconset/**"]),
+    # `package:fvp` dlopens its FFI half by path — `fvp.framework/fvp` — so
+    # that framework has to sit in the bundle alongside `mdk.framework`
+    # instead of being statically linked into the runner like the rest of the
+    # plugin. Built by plugin_overlays/fvp/0/BUILD.bazel.tpl, which explains
+    # the split. The label is fully qualified because only the `deps` hub is
+    # in our repo mapping, not the per-package spokes.
+    additional_contents = {
+        "@@rules_flutter++flutter+deps__fvp//:fvp_framework": "Frameworks",
+    },
     bundle_id = "dev.kustavi.app",
     target_compatible_with = ["@platforms//os:macos"],
 )
