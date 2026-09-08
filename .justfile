@@ -111,7 +111,7 @@ installer *ARGS:
   "$PY" tools/package.py --installer {{ ARGS }}
 
 # Print the current app version (the repo-root VERSION.txt file).
-version-show:
+show-version:
   #!/usr/bin/env sh
   set -e
   for c in python3 python py; do "$c" -c "import sys" >/dev/null 2>&1 && PY=$c && break; done
@@ -121,7 +121,7 @@ version-show:
 # Bump the global version and propagate it to the front end, back end,
 # MODULE.bazel and the Windows resource script. COMPONENT is major|minor|patch.
 # Pass `--tag` through to also commit + tag, e.g. `just version-bump patch --tag`.
-version-bump COMPONENT *ARGS:
+bump-version COMPONENT *ARGS:
   #!/usr/bin/env sh
   set -e
   for c in python3 python py; do "$c" -c "import sys" >/dev/null 2>&1 && PY=$c && break; done
