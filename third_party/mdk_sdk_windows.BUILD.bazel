@@ -13,14 +13,33 @@
 #   mdk-sdk/bin/x64/libass.dll     — bundled libass (MDK_LIBASS)
 #   mdk-sdk/bin/x64/mdk-*.dll      — decoder plugins (MDK_PLUGINS: braw, nvjp2k, r3d)
 
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+# The prebuilt import library + runtime DLL. `cc_import` has no `includes`
+# (or `hdrs`) attr that feeds a header search path, so on its own it can't
+# make `#include <mdk/RenderAPI.h>` resolve for fvp's windows sources — the
+# `cc_library` wrapper below carries the headers and include dir.
 cc_import(
-    name = "mdk_windows_import",
-    hdrs = glob(["include/mdk/**/*.h"]),
-    includes = ["include"],
+    name = "mdk_windows_cimport",
     interface_library = "lib/x64/mdk.lib",
     shared_library = "bin/x64/mdk.dll",
     target_compatible_with = ["@platforms//os:windows"],
+)
+
+# What plugin_overlays/fvp/0/BUILD.bazel.tpl's `fvp_windows` depends on. The
+# `includes` attr here is the piece `cc_import` drops on the floor — it's what
+# lets the fvp Windows plugin sources (compiled into the runner) find
+# `mdk/*.h`. Because these headers live in an external repo, `includes` shows
+# up in `CcInfo.compilation_context.external_includes` (not `.includes`); the
+# rules_flutter-windows-plugin-cc-deps.patch reads that list and re-emits each
+# entry as an `-I` flag on the runner's compile.
+cc_library(
+    name = "mdk_windows_import",
+    hdrs = glob(["include/mdk/**/*.h"]),
+    includes = ["include"],
+    target_compatible_with = ["@platforms//os:windows"],
     visibility = ["//visibility:public"],
+    deps = [":mdk_windows_cimport"],
 )
 
 # Runtime DLLs that must sit next to the app executable — mdk.dll dlopens
