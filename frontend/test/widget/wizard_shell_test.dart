@@ -142,6 +142,11 @@ void main() {
       expect(find.text('1 of 2 images flagged'), findsOneWidget);
       expect(find.text('Rerun pass'), findsNothing);
 
+      // The threshold panel starts collapsed so the grid gets full height.
+      expect(find.byType(Slider), findsNothing);
+      await tester.tap(find.text('Quality thresholds'));
+      await tester.pump();
+
       await tester.drag(find.byType(Slider).first, const Offset(150, 0));
       await tester.pump();
 

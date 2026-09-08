@@ -27,7 +27,8 @@ struct quality_thresholds {
 
 struct local_image_metrics {
   std::filesystem::path path;
-  double laplacian_variance = 0.0;
+  double laplacian_variance = 0.0;    //! Whole-frame sharpness (kept for record)
+  double focus_peak_variance = 0.0;   //! Sharpness of the most in-focus region
   double underexposed_ratio = 0.0;
   double overexposed_ratio = 0.0;
   bool valid = false;
@@ -63,6 +64,15 @@ auto is_flagged(const local_image_metrics &metrics,
 /** Laplacian variance (sharpness) of a grayscale image; higher = sharper.
  * Shared with the video pass, which scores sampled frames the same way. */
 auto analyze_blur(const cv::Mat &gray) -> double;
+
+/** Sharpness of the most in-focus region: splits the frame into a `grid`x`grid`
+ * tile mosaic and returns the second-highest per-tile Laplacian variance
+ * (dropping the top tile guards against a lone specular/noisy outlier).
+ * Unlike the whole-frame measure this survives an intentionally blurred
+ * background (iPhone portrait mode), which otherwise drags a sharp subject
+ * below the blur threshold. Falls back to `analyze_blur` for images too small
+ * to tile. */
+auto analyze_blur_peak(const cv::Mat &gray, int grid = 8) -> double;
 
 /**
  * Find low quality images in a batch of image paths.

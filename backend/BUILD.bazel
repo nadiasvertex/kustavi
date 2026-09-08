@@ -112,6 +112,29 @@ cc_binary(
     visibility = ["//visibility:public"],
 )
 
+# Assertions for the quality pass's tile-based peak-sharpness blur measure
+# (analyze_blur_peak). Run via `just test-quality`; images are synthesised in
+# memory, so there are no fixtures.
+cc_binary(
+    name = "quality_test",
+    srcs = [
+        "src/pass/quality.cpp",
+        "test/quality_test.cpp",
+    ] + glob([
+        "include/pass/quality.h",
+        "include/exec/*.h",
+    ]),
+    includes = ["include"],
+    deps = [
+        "@opencv//:core",
+        "@opencv//:imgcodecs",
+        "@opencv//:imgproc",
+        "@spdlog",
+        "@stdexec",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 cc_binary(
     name = "smoke_client",
     srcs = ["test/smoke_client.cpp"],

@@ -26,7 +26,7 @@ auto quality_reasons(const image::local_image_metrics &metrics,
                      const image::quality_thresholds &thresholds)
     -> std::vector<QualityReason> {
   std::vector<QualityReason> reasons;
-  if (metrics.laplacian_variance < thresholds.blur_threshold) {
+  if (metrics.focus_peak_variance < thresholds.blur_threshold) {
     reasons.push_back(BLURRY);
   }
   if (metrics.underexposed_ratio > thresholds.underexposed_threshold) {
@@ -123,7 +123,7 @@ auto kustavi_service::RunQualityPass(grpc::ServerContext *context,
               }
               queue.push(quality_flag_evt{.image_id = id_it->second,
                                           .reasons = reasons,
-                                          .sharpness = m.laplacian_variance,
+                                          .sharpness = m.focus_peak_variance,
                                           .exposure_score = exposure_score(m)});
             });
 

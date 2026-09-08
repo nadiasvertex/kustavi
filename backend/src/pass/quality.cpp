@@ -83,6 +83,45 @@ auto analyze_blur(const cv::Mat &gray) -> double {
 }
 
 /**
+ * Sharpness of the most in-focus region (see quality.h). Portrait-mode shots
+ * have a deliberately blurred background that sinks the whole-frame variance;
+ * scoring tiles and taking a high percentile lets a sharp subject clear the
+ * threshold on its own.
+ */
+auto analyze_blur_peak(const cv::Mat &gray, int grid) -> double {
+  if (gray.empty()) {
+    return 0.0;
+  }
+  // Below this a tile carries too few pixels for a meaningful variance.
+  constexpr int min_tile = 32;
+  if (grid < 2 || gray.cols < min_tile * 2 || gray.rows < min_tile * 2) {
+    return analyze_blur(gray);
+  }
+  // Shrink the grid until tiles are at least min_tile on a side.
+  grid = std::min(grid, std::min(gray.cols, gray.rows) / min_tile);
+  grid = std::max(grid, 2);
+
+  const int tile_w = gray.cols / grid;
+  const int tile_h = gray.rows / grid;
+  std::vector<double> tile_scores;
+  tile_scores.reserve(static_cast<std::size_t>(grid) * grid);
+  for (int r = 0; r < grid; ++r) {
+    for (int c = 0; c < grid; ++c) {
+      const cv::Rect roi(c * tile_w, r * tile_h, tile_w, tile_h);
+      tile_scores.push_back(analyze_blur(gray(roi)));
+    }
+  }
+
+  // Take the second-sharpest tile: this rejects a lone specular or noisy tile
+  // that a plain max would latch onto, while a genuinely in-focus subject
+  // spans several tiles at this granularity and still registers.
+  std::ranges::sort(tile_scores);
+  const std::size_t pick =
+      tile_scores.size() >= 2 ? tile_scores.size() - 2 : 0;
+  return tile_scores[pick];
+}
+
+/**
  * Compute Histogram (Exposure)
  */
 auto analyze_exposure(const cv::Mat &gray, const quality_thresholds &thresholds)
@@ -148,6 +187,7 @@ auto compute_metrics(const std::filesystem::path &path,
   metrics.underexposed_ratio = under;
   metrics.overexposed_ratio = over;
   metrics.laplacian_variance = analyze_blur(img);
+  metrics.focus_peak_variance = analyze_blur_peak(img);
 
   return metrics;
 }
@@ -157,7 +197,10 @@ auto is_flagged(const local_image_metrics &metrics,
   if (!metrics.valid) {
     return false;
   }
-  const bool is_blurry = metrics.laplacian_variance < thresholds.blur_threshold;
+  // Compare against the sharpest region, not the whole frame, so an
+  // intentionally blurred background can't flag a sharp subject.
+  const bool is_blurry =
+      metrics.focus_peak_variance < thresholds.blur_threshold;
   const bool is_underexposed =
       metrics.underexposed_ratio > thresholds.underexposed_threshold;
   const bool is_overexposed =

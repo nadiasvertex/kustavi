@@ -17,6 +17,7 @@ class ImageCell extends StatelessWidget {
     this.keeper = false,
     this.suggestedKeeper = false,
     this.onTap,
+    this.onExpand,
   });
 
   final ImageInfo image;
@@ -28,7 +29,14 @@ class ImageCell extends StatelessWidget {
   /// Shows the amber keeper badge.
   final bool keeper;
   final bool suggestedKeeper;
+
+  /// Primary click on the cell. In the flagged-review layout this moves the
+  /// photo between the keep and delete sections.
   final VoidCallback? onTap;
+
+  /// When set, a corner button opens the full detail view without triggering
+  /// [onTap] (spec/frontend.md §7.1 "open a photo for a closer look").
+  final VoidCallback? onExpand;
 
   @override
   Widget build(BuildContext context) {
@@ -107,6 +115,25 @@ class ImageCell extends StatelessWidget {
                 top: 8,
                 left: 8,
                 child: KeeperBadge(suggested: suggestedKeeper),
+              ),
+            if (onExpand != null)
+              Positioned(
+                top: 4,
+                left: 4,
+                child: Material(
+                  color: Colors.black54,
+                  shape: const CircleBorder(),
+                  clipBehavior: Clip.antiAlias,
+                  child: IconButton(
+                    tooltip: 'Open',
+                    iconSize: 18,
+                    visualDensity: VisualDensity.compact,
+                    padding: const EdgeInsets.all(6),
+                    constraints: const BoxConstraints(),
+                    icon: const Icon(Icons.open_in_full, color: Colors.white),
+                    onPressed: onExpand,
+                  ),
+                ),
               ),
             if (image.isVideo)
               const Center(

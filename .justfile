@@ -54,6 +54,11 @@ test-video:
   bazel build //backend:video_test
   KUSTAVI_TEST_VIDEOS="$(pwd)/test/videos" bazel run //backend:video_test
 
+# Quality pass blur heuristic (tile-based peak sharpness). Synthetic in-memory
+# images, no fixtures or model download. Not part of `just test`.
+test-quality:
+  bazel run //backend:quality_test
+
 test: test-backend test-llama test-gui
 
 proto:
