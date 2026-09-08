@@ -34,6 +34,7 @@ auto kustavi_service::RunTripsPass(grpc::ServerContext *context,
     return *err;
   }
   pass_guard guard(pass_active_, true);
+  record_step(5); // WizardStep.trips
 
   std::vector<trip_member> members;
   try {

@@ -63,6 +63,7 @@ auto kustavi_service::RunQualityPass(grpc::ServerContext *context,
     return *err;
   }
   pass_guard guard(pass_active_, true);
+  record_step(1); // WizardStep.quality
 
   double blur = request->blur_threshold();
   double under = request->underexposed_threshold();

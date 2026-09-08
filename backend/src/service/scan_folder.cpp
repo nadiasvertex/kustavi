@@ -42,25 +42,34 @@ auto kustavi_service::ScanFolder(grpc::ServerContext *context,
             "folder does not exist: " + folder_str};
   }
 
-  // A new scan starts a fresh session: discard the previous index and cache.
+  const bool resume = request->resume();
+
   try {
     session_db_.open(folder);
-    store::reset_session(session_db_);
+    if (!resume) {
+      // A fresh scan discards the previous index, decisions, and working cache.
+      store::reset_session(session_db_);
+      store::set_wizard_step(session_db_, 0);
+    }
   } catch (const std::exception &e) {
     return {grpc::StatusCode::INTERNAL,
             std::string("failed to start session: ") + e.what()};
   }
 
-  const auto image_cache = config::image_cache_path(config::cache_path(folder));
-  if (fs::exists(image_cache)) {
-    std::error_code wipe_ec;
-    fs::remove_all(image_cache, wipe_ec);
-    fs::create_directories(image_cache, wipe_ec);
+  if (!resume) {
+    const auto image_cache =
+        config::image_cache_path(config::cache_path(folder));
+    if (fs::exists(image_cache)) {
+      std::error_code wipe_ec;
+      fs::remove_all(image_cache, wipe_ec);
+      fs::create_directories(image_cache, wipe_ec);
+    }
   }
 
   has_active_session_ = true;
   session_folder_ = folder;
-  spdlog::info("scan started for '{}'", folder_str);
+  spdlog::info("{} for '{}'", resume ? "session resume" : "scan started",
+               folder_str);
 
   event_queue<scan_event> queue;
   std::stop_source stop_source;
@@ -69,6 +78,23 @@ auto kustavi_service::ScanFolder(grpc::ServerContext *context,
 
   std::thread producer = run_producer(
       queue, stop_source, producer_error, [&](std::stop_token st) -> void {
+        if (resume) {
+          // No ingestion: re-emit the saved index so the GUI rebuilds its
+          // image list, then hand back the step the user left off at.
+          const auto records = store::get_image_records(session_db_);
+          for (const auto &record : records) {
+            if (st.stop_requested()) {
+              return;
+            }
+            queue.push(scan_meta_evt{record});
+          }
+          queue.push(scan_complete_evt{
+              .images = records.size(),
+              .resumed = true,
+              .resume_step = store::get_wizard_step(session_db_)});
+          return;
+        }
+
         const auto summary = image::execute_folder_ingestion_pass(
             session_db_, folder, request->recursive(), std::move(st),
             [&](std::size_t files_seen, std::size_t images_found,
@@ -122,11 +148,35 @@ auto kustavi_service::ScanFolder(grpc::ServerContext *context,
                 if (r.duration_ms.has_value()) {
                   m->set_duration_ms(*r.duration_ms);
                 }
+              } else if constexpr (std::is_same_v<evt, scan_meta_evt>) {
+                auto *m = proto.mutable_image();
+                const auto &r = e.record;
+                m->set_id(r.id);
+                m->set_path(r.absolute_path.string());
+                m->set_name(r.file_name.empty()
+                                ? r.absolute_path.filename().string()
+                                : r.file_name);
+                m->set_width(static_cast<uint32_t>(r.original_width));
+                m->set_height(static_cast<uint32_t>(r.original_height));
+                m->set_size_bytes(static_cast<uint64_t>(r.size_bytes));
+                if (r.taken_unix_ms.has_value()) {
+                  m->set_taken_unix_ms(*r.taken_unix_ms);
+                }
+                if (r.latitude.has_value() && r.longitude.has_value()) {
+                  auto *gps = m->mutable_gps();
+                  gps->set_latitude(*r.latitude);
+                  gps->set_longitude(*r.longitude);
+                }
+                m->set_thumbnail_path(r.working_path.string());
+                m->set_kind(r.kind == "video" ? MediaKind::VIDEO
+                                              : MediaKind::PHOTO);
               } else {
                 auto *c = proto.mutable_complete();
                 c->set_images(static_cast<uint32_t>(e.images));
                 c->set_skipped_files(static_cast<uint32_t>(e.skipped_files));
                 append_range(c->mutable_errors(), e.errors);
+                c->set_resumed(e.resumed);
+                c->set_resume_step(static_cast<uint32_t>(e.resume_step));
               }
             },
             ev);

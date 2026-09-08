@@ -51,6 +51,7 @@ struct options {
   bool cancel_check = false;
   bool concurrency_check = false;
   bool junk_check = false; // opt-in: downloads the ~3.7 GB vision model
+  bool resume_check = false;
 };
 
 auto parse_args(int argc, char **argv) -> options {
@@ -86,6 +87,8 @@ auto parse_args(int argc, char **argv) -> options {
       opts.concurrency_check = true;
     } else if (arg == "--junk-check") {
       opts.junk_check = true;
+    } else if (arg == "--resume-check") {
+      opts.resume_check = true;
     } else {
       fail("unknown argument: " + arg);
     }
@@ -885,6 +888,113 @@ void run_shutdown(const options &opts) {
 
 } // namespace
 
+// Opt-in (`--resume-check`): SaveSessionState -> InspectSession -> a resume
+// ScanFolder that re-emits the saved index -> GetSessionResults returns the
+// persisted decisions. Runs after the normal passes have populated the DB.
+void run_resume_check(const options &opts) {
+  auto stub = k::Kustavi::NewStub(make_channel(opts));
+
+  // 1. Persist a step + one keep + one delete decision.
+  {
+    k::SaveSessionStateRequest request;
+    request.set_step(4); // WizardStep.video
+    request.set_replace_decisions(true);
+    if (g_image_ids.size() >= 2) {
+      auto *keep = request.add_decisions();
+      keep->set_image_id(g_image_ids[0]);
+      keep->set_decision(k::Decision::KEEP);
+      auto *del = request.add_decisions();
+      del->set_image_id(g_image_ids[1]);
+      del->set_decision(k::Decision::DELETE);
+    }
+    grpc::ClientContext context;
+    add_auth_metadata(context, opts);
+    k::SaveSessionStateResponse response;
+    const auto status = stub->SaveSessionState(&context, request, &response);
+    if (!status.ok()) {
+      fail("SaveSessionState: " + status.error_message());
+    }
+  }
+
+  // 2. InspectSession must now see the saved session at step 4.
+  {
+    k::InspectSessionRequest request;
+    request.set_folder(opts.folder);
+    grpc::ClientContext context;
+    add_auth_metadata(context, opts);
+    k::InspectSessionResponse response;
+    const auto status = stub->InspectSession(&context, request, &response);
+    if (!status.ok()) {
+      fail("InspectSession: " + status.error_message());
+    }
+    if (!response.has_session() || response.resume_step() != 4) {
+      fail("InspectSession: expected has_session with resume_step=4, got " +
+           std::to_string(static_cast<int>(response.has_session())) + "/" +
+           std::to_string(response.resume_step()));
+    }
+    if (response.image_count() != g_image_ids.size()) {
+      fail("InspectSession: image_count " +
+           std::to_string(response.image_count()) + " != scanned " +
+           std::to_string(g_image_ids.size()));
+    }
+    std::println("ok: InspectSession has_session resume_step={} image_count={}",
+                 response.resume_step(), response.image_count());
+  }
+
+  // 3. A resume ScanFolder re-emits the saved index (no ingestion).
+  {
+    k::ScanFolderRequest request;
+    request.set_folder(opts.folder);
+    request.set_recursive(true);
+    request.set_resume(true);
+    grpc::ClientContext context;
+    add_auth_metadata(context, opts);
+    auto reader = stub->ScanFolder(&context, request);
+    k::ScanEvent event;
+    std::vector<std::string> ids;
+    bool resumed = false;
+    uint32_t resume_step = 0;
+    while (reader->Read(&event)) {
+      if (event.has_image()) {
+        ids.push_back(event.image().id());
+      } else if (event.has_complete()) {
+        resumed = event.complete().resumed();
+        resume_step = event.complete().resume_step();
+      }
+    }
+    const auto status = reader->Finish();
+    if (!status.ok()) {
+      fail("resume ScanFolder: " + status.error_message());
+    }
+    if (!resumed || resume_step != 4) {
+      fail("resume ScanFolder: complete.resumed/resume_step wrong");
+    }
+    if (ids != g_image_ids) {
+      fail("resume ScanFolder: re-emitted ids differ from the original scan");
+    }
+    std::println("ok: resume ScanFolder re-emitted {} ids (resume_step={})",
+                 ids.size(), resume_step);
+  }
+
+  // 4. GetSessionResults returns the persisted decisions.
+  {
+    k::GetSessionResultsRequest request;
+    grpc::ClientContext context;
+    add_auth_metadata(context, opts);
+    k::GetSessionResultsResponse response;
+    const auto status = stub->GetSessionResults(&context, request, &response);
+    if (!status.ok()) {
+      fail("GetSessionResults: " + status.error_message());
+    }
+    if (g_image_ids.size() >= 2 && response.decisions_size() != 2) {
+      fail("GetSessionResults: expected 2 decisions, got " +
+           std::to_string(response.decisions_size()));
+    }
+    std::println("ok: GetSessionResults decisions={} resume_step={}",
+                 response.decisions_size(), response.resume_step());
+  }
+}
+
 auto main(int argc, char **argv) -> int {
   try {
     auto opts = parse_args(argc, argv);
@@ -933,6 +1043,9 @@ auto main(int argc, char **argv) -> int {
         std::error_code ec;
         fs::remove_all(opts.destination, ec);
         run_commit(opts);
+      }
+      if (opts.resume_check) {
+        run_resume_check(opts);
       }
       if (opts.concurrency_check) {
         run_concurrency_check(opts);

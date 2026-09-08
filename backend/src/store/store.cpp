@@ -3,9 +3,12 @@
 #include "store/store.h"
 #include "store/database.h"
 
+#include <ctime>
+#include <exception>
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -61,7 +64,8 @@ auto get_image_records(database &db) -> std::vector<image_record> {
 
   sqlite_statement stmt = db.prepare(
       "SELECT id, absolute_path, working_image_path, taken_unix_ms, latitude, "
-      "longitude, kind FROM images;");
+      "longitude, kind, file_name, original_width, original_height, size_bytes "
+      "FROM images;");
 
   while (stmt.step() == SQLITE_ROW) {
     image_record record;
@@ -96,6 +100,14 @@ auto get_image_records(database &db) -> std::vector<image_record> {
     if (kind != nullptr) {
       record.kind = kind;
     }
+    const auto *file_name =
+        reinterpret_cast<const char *>(sqlite3_column_text(raw, 7));
+    if (file_name != nullptr) {
+      record.file_name = file_name;
+    }
+    record.original_width = sqlite3_column_int64(raw, 8);
+    record.original_height = sqlite3_column_int64(raw, 9);
+    record.size_bytes = sqlite3_column_int64(raw, 10);
 
     records.push_back(std::move(record));
   }
@@ -127,6 +139,93 @@ auto get_quality_scores(database &db)
 auto reset_session(database &db) -> void {
   db.execute("DELETE FROM images; DELETE FROM junk_flags; DELETE FROM "
              "quality_flags; DELETE FROM similar_groups; DELETE FROM "
-             "user_decisions;");
+             "video_flags; DELETE FROM user_decisions; DELETE FROM "
+             "session_state;");
+}
+
+auto session_has_index(database &db) -> bool {
+  auto stmt = db.prepare("SELECT 1 FROM images LIMIT 1;");
+  return stmt.step() == SQLITE_ROW;
+}
+
+auto get_session_value(database &db, std::string_view key)
+    -> std::optional<std::string> {
+  auto stmt = db.prepare("SELECT value FROM session_state WHERE key = ?;");
+  stmt.bind_text(1, std::string(key));
+  if (stmt.step() != SQLITE_ROW) {
+    return std::nullopt;
+  }
+  const auto *value =
+      reinterpret_cast<const char *>(sqlite3_column_text(stmt.raw(), 0));
+  if (value == nullptr) {
+    return std::nullopt;
+  }
+  return std::string(value);
+}
+
+auto set_session_value(database &db, std::string_view key,
+                       std::string_view value) -> void {
+  auto stmt = db.prepare(
+      "INSERT OR REPLACE INTO session_state (key, value) VALUES (?, ?);");
+  stmt.bind_text(1, std::string(key));
+  stmt.bind_text(2, std::string(value));
+  stmt.step();
+}
+
+auto set_wizard_step(database &db, int step) -> void {
+  set_session_value(db, "wizard_step", std::to_string(step));
+  set_session_value(db, "wizard_step_updated_at",
+                    std::to_string(std::time(nullptr)));
+}
+
+auto get_wizard_step(database &db) -> int {
+  const auto raw = get_session_value(db, "wizard_step");
+  if (!raw) {
+    return 0;
+  }
+  try {
+    return std::stoi(*raw);
+  } catch (const std::exception &) {
+    return 0;
+  }
+}
+
+auto get_user_decisions(database &db) -> std::vector<user_decision_row> {
+  std::vector<user_decision_row> rows;
+  auto stmt = db.prepare("SELECT image_id, decision FROM user_decisions;");
+  while (stmt.step() == SQLITE_ROW) {
+    const auto *id =
+        reinterpret_cast<const char *>(sqlite3_column_text(stmt.raw(), 0));
+    const auto *decision =
+        reinterpret_cast<const char *>(sqlite3_column_text(stmt.raw(), 1));
+    if (id == nullptr || decision == nullptr) {
+      continue;
+    }
+    rows.push_back({.image_id = id,
+                    .remove = std::string_view(decision) == "EXPLICIT_DELETE"});
+  }
+  return rows;
+}
+
+auto replace_user_decisions(database &db,
+                            const std::vector<user_decision_row> &rows)
+    -> void {
+  db.begin_transaction();
+  try {
+    db.execute("DELETE FROM user_decisions;");
+    auto stmt = db.prepare("INSERT OR REPLACE INTO user_decisions (image_id, "
+                           "decision, updated_at) "
+                           "VALUES (?, ?, strftime('%s','now'));");
+    for (const auto &row : rows) {
+      stmt.bind_text(1, row.image_id);
+      stmt.bind_text(2, row.remove ? "EXPLICIT_DELETE" : "EXPLICIT_KEEP");
+      stmt.step();
+      stmt.reset();
+    }
+    db.commit_transaction();
+  } catch (...) {
+    db.rollback_transaction();
+    throw;
+  }
 }
 } // namespace kustavi::store

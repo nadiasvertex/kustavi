@@ -30,7 +30,7 @@ test-backend:
   tmp="$(mktemp -d)" && \
   trap 'rm -rf "$tmp"' EXIT && \
   cp -R test/photos "$tmp/photos" && \
-  bazel run //backend:smoke_client -- --folder "$tmp/photos" --destination "$tmp/committed" --concurrency-check --cancel-check
+  bazel run //backend:smoke_client -- --folder "$tmp/photos" --destination "$tmp/committed" --concurrency-check --cancel-check --resume-check
 
 # llama.cpp smoke test: links the vendored llama.cpp and prints the compute
 # devices the platform backend discovered (Metal GPU on macOS).

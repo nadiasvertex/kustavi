@@ -19,9 +19,9 @@ import 'errors.dart';
 import 'format.dart';
 import 'junk_prep.dart';
 import 'junk_review.dart';
-import 'placeholder.dart';
 import 'quality_review.dart';
 import 'scanning.dart';
+import 'session_restore.dart';
 import 'similar_review.dart';
 import 'start.dart';
 import 'trips_review.dart';
@@ -187,8 +187,16 @@ class _WizardShellState extends ConsumerState<WizardShell> {
             done: done,
             total: total,
           ),
-        WizardSessionRestore() =>
-          const PlaceholderScreen('Saved session restore'),
+        WizardSessionRestore(
+              :final folder,
+              :final imageCount,
+              :final savedStepIndex,
+            ) =>
+          SessionRestoreScreen(
+            folder: folder,
+            imageCount: imageCount,
+            savedStepIndex: savedStepIndex,
+          ),
         WizardSimilarReview(:final groupCount, :final markedCount) =>
           SimilarReviewScreen(
             groupCount: groupCount,

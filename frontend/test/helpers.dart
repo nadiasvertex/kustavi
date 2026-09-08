@@ -44,11 +44,51 @@ pb.ScanEvent scanImage(
   return pb.ScanEvent()..image = meta;
 }
 
-pb.ScanEvent scanComplete({int images = 0, List<String> errors = const []}) {
+pb.ScanEvent scanComplete({
+  int images = 0,
+  List<String> errors = const [],
+  bool resumed = false,
+  int resumeStep = 0,
+}) {
   return pb.ScanEvent()
     ..complete = (pb.ScanComplete()
       ..images = images
-      ..errors.addAll(errors));
+      ..errors.addAll(errors)
+      ..resumed = resumed
+      ..resumeStep = resumeStep);
+}
+
+pb.InspectSessionResponse inspectSession({
+  bool hasSession = true,
+  int imageCount = 0,
+  int resumeStep = 0,
+}) {
+  return pb.InspectSessionResponse()
+    ..hasSession = hasSession
+    ..imageCount = imageCount
+    ..resumeStep = resumeStep;
+}
+
+pb.GetSessionResultsResponse sessionResults({
+  int resumeStep = 0,
+  int videoTotal = 0,
+  List<pb.JunkFlag> junkFlags = const [],
+  List<pb.VideoFlag> videoFlags = const [],
+  Map<String, bool> decisions = const {}, // image id -> true means delete
+  Map<int, String> groupKeepers = const {},
+}) {
+  final response = pb.GetSessionResultsResponse()
+    ..resumeStep = resumeStep
+    ..videoTotal = videoTotal
+    ..junkFlags.addAll(junkFlags)
+    ..videoFlags.addAll(videoFlags);
+  decisions.forEach((id, remove) {
+    response.decisions.add(pb.DecisionEntry()
+      ..imageId = id
+      ..decision = remove ? pb.Decision.DELETE : pb.Decision.KEEP);
+  });
+  groupKeepers.forEach((k, v) => response.groupKeepers[k] = v);
+  return response;
 }
 
 pb.QualityEvent qualityFlag(

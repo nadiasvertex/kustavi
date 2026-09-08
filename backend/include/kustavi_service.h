@@ -5,6 +5,7 @@
 #include "pass/quality.h"
 #include "pass/trips.h"
 #include "store/database.h"
+#include "store/store.h"
 
 #include <grpcpp/grpcpp.h>
 #include <proto/service.grpc.pb.h>
@@ -40,13 +41,19 @@ struct scan_progress_evt {
 struct scan_image_evt {
   image::ingestion_result result;
 };
+// Re-emitted from the saved image index on a resume scan (no ingestion).
+struct scan_meta_evt {
+  store::image_record record;
+};
 struct scan_complete_evt {
   std::size_t images = 0;
   std::size_t skipped_files = 0;
   std::vector<std::string> errors;
+  bool resumed = false;
+  int resume_step = 0;
 };
-using scan_event =
-    std::variant<scan_progress_evt, scan_image_evt, scan_complete_evt>;
+using scan_event = std::variant<scan_progress_evt, scan_image_evt,
+                                scan_meta_evt, scan_complete_evt>;
 
 struct quality_progress_evt {
   std::size_t done = 0;
@@ -255,6 +262,16 @@ public:
                         const ShutdownRequest *request,
                         ShutdownResponse *response) override;
 
+  grpc::Status InspectSession(grpc::ServerContext *context,
+                              const InspectSessionRequest *request,
+                              InspectSessionResponse *response) override;
+  grpc::Status GetSessionResults(grpc::ServerContext *context,
+                                 const GetSessionResultsRequest *request,
+                                 GetSessionResultsResponse *response) override;
+  grpc::Status SaveSessionState(grpc::ServerContext *context,
+                                const SaveSessionStateRequest *request,
+                                SaveSessionStateResponse *response) override;
+
   grpc::Status ScanFolder(grpc::ServerContext *context,
                           const ScanFolderRequest *request,
                           grpc::ServerWriter<ScanEvent> *writer) override;
@@ -286,6 +303,11 @@ private:
   auto check_auth(const grpc::ServerContext *context) const -> bool;
   auto require_session() -> std::optional<grpc::Status>;
   auto try_begin_pass() -> std::optional<grpc::Status>;
+
+  /// Best-effort: record the wizard's current step in the session DB so a
+  /// later launch can offer to resume here. Logs and swallows DB errors —
+  /// failing to checkpoint must never abort a pass.
+  void record_step(int step) noexcept;
 
   static auto unauthenticated() -> grpc::Status {
     return grpc::Status(grpc::StatusCode::UNAUTHENTICATED,

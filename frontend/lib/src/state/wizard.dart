@@ -87,6 +87,21 @@ class Wizard extends _$Wizard {
   pb.ScanComplete? _pendingScanComplete;
   WizardPhase? _returnPhase;
 
+  /// Set while a resume is fast-forwarding through the pipeline: the target
+  /// [WizardStep] index to stop at. Null during normal operation. While set,
+  /// the quality/similar/trips "done" handlers advance the resume chain
+  /// instead of publishing their review screen, and progress write-through
+  /// is suppressed.
+  int? _resumeTargetStep;
+
+  /// True from a resume ScanFolder until [_onResumeScanDone] finishes wiring
+  /// the restored state — suppresses progress/decision write-through.
+  bool _resuming = false;
+
+  /// True while [DeletionPlan.hydrate] runs, so the decision-plan listener
+  /// does not echo the restored state straight back to the back end.
+  bool _hydratingDecisions = false;
+
   /// The scanned source folder; the commit step suggests a `<name>-kept`
   /// sibling of it as the default destination.
   String _sourceFolder = '';
@@ -515,7 +530,95 @@ class Wizard extends _$Wizard {
         _startJunkPass();
       }
     });
+
+    // Persist the wizard's position + tunables whenever it settles on a
+    // resting screen, so a later launch can offer to resume here.
+    listenSelf((previous, next) {
+      if (_resuming || _resumeTargetStep != null) {
+        return;
+      }
+      final phase = next.value;
+      if (phase != null && _isRestingPhase(phase)) {
+        _persistProgress(phase);
+      }
+    });
+
+    // Mirror the user's keep/delete choices to the back end. Each call is a
+    // small idempotent "replace" against a local process, so it is fine to
+    // fire on every toggle without debouncing.
+    ref.listen(deletionPlanProvider, (previous, next) {
+      if (_hydratingDecisions) {
+        return;
+      }
+      _persistDecisions(next);
+    });
+
     return const WizardStart();
+  }
+
+  static bool _isRestingPhase(WizardPhase phase) =>
+      phase is WizardConfirmFolder ||
+      phase is WizardQualityReview ||
+      phase is WizardSimilarReview ||
+      phase is WizardJunkReview ||
+      phase is WizardVideoReview ||
+      phase is WizardTripsReview ||
+      phase is WizardCommitSummary;
+
+  void _persistProgress(WizardPhase phase) {
+    final client = ref.read(kustaviClientProvider).value;
+    if (client == null) {
+      return;
+    }
+    final request = pb.SaveSessionStateRequest()
+      ..step = phase.stepIndex
+      ..qualityThresholds = (pb.RunQualityPassRequest()
+        ..blurThreshold = _blurThreshold
+        ..underexposedThreshold = _underexposedThreshold
+        ..overexposedThreshold = _overexposedThreshold)
+      ..tripParams = _tripsRequest();
+    unawaited(_safeSave(client, request));
+  }
+
+  void _persistDecisions(DeletionIntent plan) {
+    final client = ref.read(kustaviClientProvider).value;
+    if (client == null) {
+      return;
+    }
+    final phase = state.value;
+    if (phase == null ||
+        phase is WizardStart ||
+        phase is WizardScanning ||
+        phase is WizardSessionRestore) {
+      return;
+    }
+    final request = pb.SaveSessionStateRequest()..replaceDecisions = true;
+    for (final id in plan.explicitKept) {
+      request.decisions.add(pb.DecisionEntry()
+        ..imageId = id
+        ..decision = pb.Decision.KEEP);
+    }
+    for (final id in plan.explicitDeleted) {
+      request.decisions.add(pb.DecisionEntry()
+        ..imageId = id
+        ..decision = pb.Decision.DELETE);
+    }
+    plan.groupKeepers.forEach((groupId, keeperId) {
+      request.groupKeepers[groupId] = keeperId;
+    });
+    unawaited(_safeSave(client, request));
+  }
+
+  Future<void> _safeSave(
+    KustaviClient client,
+    pb.SaveSessionStateRequest request,
+  ) async {
+    try {
+      await client.saveSessionState(request);
+    } on Object {
+      // Progress persistence is best-effort; a failure must not disrupt the
+      // wizard. The next resting screen will try again.
+    }
   }
 
   // --- S0 -> S1 ----------------------------------------------------------
@@ -526,14 +629,12 @@ class Wizard extends _$Wizard {
     }
     _clearPassResults();
     _returnPhase = null;
+    _resumeTargetStep = null;
+    _resuming = false;
     _sourceFolder = folder;
-    state = AsyncValue.data(WizardScanning(folder: folder));
     final client = ref.read(kustaviClientProvider);
     if (client case AsyncData<KustaviClient>(:final value)) {
-      final request = pb.ScanFolderRequest()
-        ..folder = folder
-        ..recursive = true;
-      _subscribe(value.scanFolder(request), _onScanEvent, _onScanDone);
+      unawaited(_beginFromFolder(value, folder));
     } else if (client case AsyncError(:final error, :final stackTrace)) {
       state = AsyncValue.error(error, stackTrace);
     } else {
@@ -546,6 +647,245 @@ class Wizard extends _$Wizard {
         StackTrace.current,
       );
     }
+  }
+
+  /// Probe the folder for saved progress before scanning: a resumable session
+  /// routes to [WizardSessionRestore]; otherwise a fresh scan starts.
+  Future<void> _beginFromFolder(KustaviClient client, String folder) async {
+    pb.InspectSessionResponse probe;
+    try {
+      probe = await client.inspectSession(folder);
+    } on Object {
+      probe = pb.InspectSessionResponse(); // treat a probe failure as "fresh"
+    }
+    if (state.value is! WizardStart) {
+      return; // the user navigated away while the probe was in flight
+    }
+    if (probe.hasSession && probe.imageCount > 0) {
+      state = AsyncValue.data(
+        WizardSessionRestore(
+          folder: folder,
+          imageCount: probe.imageCount,
+          savedStepIndex: probe.resumeStep,
+        ),
+      );
+    } else {
+      _startFreshScan(client, folder);
+    }
+  }
+
+  void _startFreshScan(KustaviClient client, String folder) {
+    state = AsyncValue.data(WizardScanning(folder: folder));
+    final request = pb.ScanFolderRequest()
+      ..folder = folder
+      ..recursive = true
+      ..resume = false;
+    _subscribe(client.scanFolder(request), _onScanEvent, _onScanDone);
+  }
+
+  // --- S0-B: resume a saved session ------------------------------------------
+
+  /// [WizardSessionRestore] "Resume": re-emit the saved index, then rehydrate
+  /// results/decisions and re-enter the pipeline at the saved step.
+  void resumeSession() {
+    if (state.value is! WizardSessionRestore) {
+      return;
+    }
+    final folder = (state.value as WizardSessionRestore).folder;
+    _clearPassResults();
+    _sourceFolder = folder;
+    _resuming = true;
+    state = AsyncValue.data(WizardScanning(folder: folder));
+    final client = ref.read(kustaviClientProvider).requireValue;
+    final request = pb.ScanFolderRequest()
+      ..folder = folder
+      ..recursive = true
+      ..resume = true;
+    _subscribe(client.scanFolder(request), _onScanEvent, _onResumeScanDone);
+  }
+
+  /// [WizardSessionRestore] "Start fresh": discard saved progress and scan.
+  void startFreshFromRestore() {
+    if (state.value is! WizardSessionRestore) {
+      return;
+    }
+    final folder = (state.value as WizardSessionRestore).folder;
+    _clearPassResults();
+    _returnPhase = null;
+    _resumeTargetStep = null;
+    _resuming = false;
+    _sourceFolder = folder;
+    final client = ref.read(kustaviClientProvider).requireValue;
+    _startFreshScan(client, folder);
+  }
+
+  Future<void> _onResumeScanDone() async {
+    if (state.value is! WizardScanning) {
+      return;
+    }
+    final complete = _pendingScanComplete;
+    _pendingScanComplete = null;
+    if (complete == null || complete.images == 0) {
+      _resuming = false;
+      state = AsyncValue.data(
+        WizardConfirmFolder(
+          folder: _sourceFolder,
+          imageCount: _orderedIds.length,
+        ),
+      );
+      return;
+    }
+
+    final client = ref.read(kustaviClientProvider).requireValue;
+    pb.GetSessionResultsResponse results;
+    try {
+      results = await client.getSessionResults();
+    } on Object catch (error, stackTrace) {
+      _resuming = false;
+      state = AsyncValue.error(
+        error is BackendError ? error : mapToBackendError(error),
+        stackTrace,
+      );
+      return;
+    }
+
+    // Restore tunables (proto3 zeroes unset fields -> keep the defaults).
+    final t = results.qualityThresholds;
+    if (t.blurThreshold > 0) _blurThreshold = t.blurThreshold;
+    if (t.underexposedThreshold > 0) {
+      _underexposedThreshold = t.underexposedThreshold;
+    }
+    if (t.overexposedThreshold > 0) {
+      _overexposedThreshold = t.overexposedThreshold;
+    }
+    final p = results.tripParams;
+    if (p.maxGapHours > 0) _tripGapHours = p.maxGapHours;
+    if (p.maxDistanceKm > 0) _tripDistanceKm = p.maxDistanceKm;
+    if (p.homeRadiusKm > 0) _tripHomeRadiusKm = p.homeRadiusKm;
+    if (p.legRadiusKm > 0) _tripLegRadiusKm = p.legRadiusKm;
+    _saveLastRunThresholds();
+
+    // Restore the slow passes' flags (quality + similar re-run below).
+    _junkFlags.clear();
+    for (final flag in results.junkFlags) {
+      _junkFlags[flag.imageId] = JunkFlagInfo.fromFlag(flag);
+    }
+    _videoFlags.clear();
+    for (final flag in results.videoFlags) {
+      _videoFlags[flag.videoId] = VideoFlagInfo.fromFlag(flag);
+    }
+    _videoTotal = results.videoTotal;
+
+    // Restore the user's keep/delete choices.
+    final kept = <String>{};
+    final deleted = <String>{};
+    for (final entry in results.decisions) {
+      if (entry.decision == pb.Decision.DELETE) {
+        deleted.add(entry.imageId);
+      } else if (entry.decision == pb.Decision.KEEP) {
+        kept.add(entry.imageId);
+      }
+    }
+    final keepers = <int, String>{};
+    results.groupKeepers.forEach((groupId, keeperId) {
+      keepers[groupId] = keeperId;
+    });
+    _hydratingDecisions = true;
+    ref
+        .read(deletionPlanProvider.notifier)
+        .hydrate(kept: kept, deleted: deleted, keepers: keepers);
+    _hydratingDecisions = false;
+
+    _resuming = false;
+
+    // Re-enter the pipeline. Quality + similar are cheap and always re-run so
+    // later steps have their inputs; junk/video were restored above.
+    final target = complete.resumeStep;
+    if (target < WizardStep.quality.index) {
+      state = AsyncValue.data(
+        WizardConfirmFolder(
+          folder: _sourceFolder,
+          imageCount: _orderedIds.length,
+        ),
+      );
+      return;
+    }
+    _resumeTargetStep = target;
+    _qualityFlags.clear();
+    state = const AsyncValue.data(WizardQualityRunning());
+    _subscribe(
+      client.runQualityPass(
+        blurThreshold: _blurThreshold,
+        underexposedThreshold: _underexposedThreshold,
+        overexposedThreshold: _overexposedThreshold,
+      ),
+      _onQualityEvent,
+      _onQualityDone,
+    );
+  }
+
+  void _advanceResumeAfterQuality() {
+    _saveLastRunThresholds();
+    if (_resumeTargetStep == WizardStep.quality.index) {
+      _resumeTargetStep = null;
+      _returnPhase = _qualityReviewPhase;
+      state = AsyncValue.data(_qualityReviewPhase);
+      return;
+    }
+    _similarGroups.clear();
+    state = const AsyncValue.data(WizardSimilarRunning());
+    final client = ref.read(kustaviClientProvider).requireValue;
+    _subscribe(
+      client.runSimilarPass(skipImageIds: _deletedBeforeSimilar()),
+      _onSimilarEvent,
+      _onSimilarDone,
+    );
+  }
+
+  void _advanceResumeAfterSimilar() {
+    final target = _resumeTargetStep!;
+    if (target == WizardStep.duplicates.index) {
+      _resumeTargetStep = null;
+      _returnPhase = _similarReviewPhase;
+      state = AsyncValue.data(_similarReviewPhase);
+      return;
+    }
+    if (target == WizardStep.junk.index) {
+      _resumeTargetStep = null;
+      _returnPhase = _similarReviewPhase;
+      // The junk pass resumes from its DB checkpoint; restored flags stay.
+      if (_modelReady) {
+        _startJunkPass();
+      } else {
+        state = const AsyncValue.data(WizardJunkPrep());
+      }
+      return;
+    }
+    if (target == WizardStep.video.index) {
+      _resumeTargetStep = null;
+      _returnPhase = _junkReviewPhase;
+      // Keep the restored (possibly partial) video flags; the video pass
+      // resumes from its DB checkpoint and only emits newly-analyzed clips.
+      state = const AsyncValue.data(WizardVideoRunning());
+      final client = ref.read(kustaviClientProvider).requireValue;
+      _subscribe(
+        client.runVideoPass(skipVideoIds: _deletedBeforeVideo()),
+        _onVideoEvent,
+        _onVideoDone,
+      );
+      return;
+    }
+    // target is trips or copy: junk + video already restored from the DB.
+    _returnPhase = _videoReviewPhase;
+    _tripResults.clear();
+    _resetTripEdits();
+    state = const AsyncValue.data(WizardTripsRunning());
+    final client = ref.read(kustaviClientProvider).requireValue;
+    _subscribe(
+      client.runTripsPass(_tripsRequest()),
+      _onTripsEvent,
+      _onTripsDone,
+    );
   }
 
   void cancelScan() {
@@ -602,9 +942,8 @@ class Wizard extends _$Wizard {
     if (complete.images == 0) {
       state = AsyncValue.data(WizardNoImages(folder: folder));
     } else {
-      // A saved session (`resumed_session`) would fast-forward to
-      // WizardSessionRestore; the current wire contract does not carry the
-      // field yet, so every scan is treated as a fresh session.
+      // Fresh scan: a saved session is detected earlier (in [selectFolder] via
+      // InspectSession) and handled by [resumeSession] / [_onResumeScanDone].
       state = AsyncValue.data(
         WizardConfirmFolder(
           folder: folder,
@@ -671,6 +1010,10 @@ class Wizard extends _$Wizard {
 
   void _onQualityDone() {
     if (state.value is! WizardQualityRunning) {
+      return;
+    }
+    if (_resumeTargetStep != null) {
+      _advanceResumeAfterQuality();
       return;
     }
     _saveLastRunThresholds();
@@ -1053,6 +1396,10 @@ class Wizard extends _$Wizard {
     if (state.value is! WizardSimilarRunning) {
       return;
     }
+    if (_resumeTargetStep != null) {
+      _advanceResumeAfterSimilar();
+      return;
+    }
     state = AsyncValue.data(_similarReviewPhase);
   }
 
@@ -1082,6 +1429,15 @@ class Wizard extends _$Wizard {
   void _onTripsDone() {
     if (state.value is! WizardTripsRunning) {
       return;
+    }
+    if (_resumeTargetStep != null) {
+      final target = _resumeTargetStep;
+      _resumeTargetStep = null;
+      if (target == WizardStep.copy.index) {
+        _returnPhase = _tripsReviewPhase;
+        state = AsyncValue.data(_commitSummaryPhase);
+        return;
+      }
     }
     state = AsyncValue.data(_tripsReviewPhase);
   }
@@ -1518,6 +1874,8 @@ class Wizard extends _$Wizard {
     _commitCopied = 0;
     _commitSkipped = 0;
     _commitErrors = const <String>[];
+    _resumeTargetStep = null;
+    _resuming = false;
     if (!keepReturnPhase) {
       _returnPhase = null;
     }

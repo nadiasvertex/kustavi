@@ -117,6 +117,19 @@ class DeletionPlan extends _$DeletionPlan {
   void assignKeeper(int groupId, String keeperId) =>
       state = state.withKeeper(groupId, keeperId);
 
+  /// Seeds intent from a resumed session (replaces the current state wholesale).
+  void hydrate({
+    Set<String> kept = const <String>{},
+    Set<String> deleted = const <String>{},
+    Map<int, String> keepers = const <int, String>{},
+  }) {
+    state = DeletionIntent(
+      explicitKept: UnmodifiableSetView(Set<String>.of(kept)),
+      explicitDeleted: UnmodifiableSetView(Set<String>.of(deleted)),
+      groupKeepers: UnmodifiableMapView(Map<int, String>.of(keepers)),
+    );
+  }
+
   /// Forgets all intent (new session / start over).
   void reset() => state = const DeletionIntent();
 }

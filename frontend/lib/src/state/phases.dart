@@ -64,11 +64,8 @@ final class WizardScanning extends WizardPhase {
   int get stepIndex => WizardStep.select.index;
 }
 
-/// S0-B — a saved session was detected; the user chooses resume or fresh.
-///
-/// Requires the back end's `resumed_session`/`saved_wizard_phase` payload,
-/// which the current wire contract does not carry yet; modeled here so the
-/// state machine is complete.
+/// S0-B — a saved session was detected (InspectSession reported one for the
+/// picked folder); the user chooses resume or start fresh.
 final class WizardSessionRestore extends WizardPhase {
   const WizardSessionRestore({
     required this.folder,

@@ -35,6 +35,7 @@ auto kustavi_service::Commit(grpc::ServerContext *context,
     return *err;
   }
   pass_guard guard(pass_active_, true);
+  record_step(6); // WizardStep.copy
 
   const auto &destination_str = request->destination();
   if (destination_str.empty()) {

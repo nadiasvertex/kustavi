@@ -20,6 +20,16 @@ struct image_record {
   std::optional<double> latitude;
   std::optional<double> longitude;
   std::string kind = "photo"; //! "photo" or "video"
+  std::string file_name;
+  std::int64_t original_width = 0;
+  std::int64_t original_height = 0;
+  std::int64_t size_bytes = 0;
+};
+
+/** One persisted keep/delete choice. */
+struct user_decision_row {
+  std::string image_id;
+  bool remove = false; //! true = EXPLICIT_DELETE, false = EXPLICIT_KEEP
 };
 
 /** Get the cached image paths from the database */
@@ -38,5 +48,32 @@ auto get_quality_scores(database &db)
 
 /** Clear all of the data from the database. */
 auto reset_session(database &db) -> void;
+
+/** True when the session already holds a scanned image index. */
+auto session_has_index(database &db) -> bool;
+
+/** Read one `session_state` value, or nullopt when the key is absent. */
+auto get_session_value(database &db, std::string_view key)
+    -> std::optional<std::string>;
+
+/** Upsert one `session_state` key/value pair. */
+auto set_session_value(database &db, std::string_view key,
+                       std::string_view value) -> void;
+
+/**
+ * Record the wizard's current step (a `WizardStep` index) plus a wall-clock
+ * timestamp, so a later launch can offer to resume at that step.
+ */
+auto set_wizard_step(database &db, int step) -> void;
+
+/** The saved wizard step, or 0 when none was recorded. */
+auto get_wizard_step(database &db) -> int;
+
+/** Every persisted keep/delete choice. */
+auto get_user_decisions(database &db) -> std::vector<user_decision_row>;
+
+/** Replace the whole `user_decisions` table with `rows` (one transaction). */
+auto replace_user_decisions(database &db,
+                            const std::vector<user_decision_row> &rows) -> void;
 
 } // namespace kustavi::store

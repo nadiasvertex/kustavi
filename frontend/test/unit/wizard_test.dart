@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kustavi/src/backend/client_provider.dart';
+import 'package:kustavi/src/generated/kustavi/service.pb.dart' as pb;
 import 'package:kustavi/src/state/decisions.dart';
 import 'package:kustavi/src/state/domain.dart';
 import 'package:kustavi/src/state/model_status.dart';
@@ -997,6 +998,107 @@ void main() {
 
       container.read(wizardProvider.notifier).resetToStart();
       expect(container.read(deletionPlanProvider).explicitDeleted, isEmpty);
+    });
+  });
+
+  group('resume a saved session (S0-B)', () {
+    test('a saved session routes select → WizardSessionRestore', () async {
+      final client = FakeKustaviClient(
+        inspectSessionResponse: inspectSession(imageCount: 42, resumeStep: 4),
+      );
+      container = makeContainer(client);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardStart,
+      );
+
+      container.read(wizardProvider.notifier).selectFolder('/photos');
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardSessionRestore,
+      );
+      final phase =
+          container.read(wizardProvider).value as WizardSessionRestore;
+      expect(phase.folder, '/photos');
+      expect(phase.imageCount, 42);
+      expect(phase.savedStepIndex, 4);
+    });
+
+    test('resume rehydrates flags + decisions and lands at the saved step',
+        () async {
+      final client = FakeKustaviClient(
+        inspectSessionResponse: inspectSession(imageCount: 3, resumeStep: 4),
+        scanEvents: [
+          scanImage('a.jpg'),
+          scanImage('b.jpg'),
+          scanImage('c.jpg'),
+          scanComplete(images: 3, resumed: true, resumeStep: 4),
+        ],
+        sessionResults: sessionResults(
+          resumeStep: 4,
+          videoTotal: 1,
+          junkFlags: [
+            pb.JunkFlag()
+              ..imageId = 'b.jpg'
+              ..reason = 'screenshot',
+          ],
+          decisions: {'a.jpg': false, 'c.jpg': true},
+        ),
+        qualityEvents: const [],
+        similarEvents: const [],
+        videoEvents: const [],
+      );
+      container = makeContainer(client);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardStart,
+      );
+
+      container.read(wizardProvider.notifier).selectFolder('/photos');
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardSessionRestore,
+      );
+      container.read(wizardProvider.notifier).resumeSession();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardVideoReview,
+      );
+
+      expect(client.lastScanRequest?.resume, isTrue);
+      final wizard = container.read(wizardProvider.notifier);
+      expect(wizard.imageIds, ['a.jpg', 'b.jpg', 'c.jpg']);
+      expect(wizard.junkFlags.keys, contains('b.jpg'));
+      final plan = container.read(deletionPlanProvider);
+      expect(plan.explicitKept, contains('a.jpg'));
+      expect(plan.explicitDeleted, contains('c.jpg'));
+      // quality + similar re-ran on resume; video did not.
+      expect(client.qualityPassCount, 1);
+      expect(client.lastVideoSkipIds, isNotEmpty);
+    });
+
+    test('start fresh from the restore prompt scans normally', () async {
+      final client = FakeKustaviClient(
+        inspectSessionResponse: inspectSession(imageCount: 5, resumeStep: 3),
+        scanEvents: [scanImage('a.jpg'), scanComplete(images: 1)],
+      );
+      container = makeContainer(client);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardStart,
+      );
+
+      container.read(wizardProvider.notifier).selectFolder('/photos');
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardSessionRestore,
+      );
+      container.read(wizardProvider.notifier).startFreshFromRestore();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardConfirmFolder,
+      );
+      expect(client.lastScanRequest?.resume, isFalse);
     });
   });
 }

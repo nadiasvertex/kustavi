@@ -193,6 +193,10 @@ auto kustavi_service::RunJunkPass(grpc::ServerContext *context,
   }
   pass_guard guard(pass_active_, true);
 
+  // Stamp the step so an interrupted run resumes back into the junk pass
+  // (see session_resume.cpp for the WizardStep index map).
+  record_step(3);
+
   std::vector<store::image_record> records;
   std::unordered_set<std::string> already_done;
   try {
@@ -233,6 +237,40 @@ auto kustavi_service::RunJunkPass(grpc::ServerContext *context,
           std::string reason;
           double confidence = 0.0;
         };
+        // The junk pass is the slowest in the pipeline (local VLM inference).
+        // Flush classified rows to the DB in small batches so an interrupted
+        // run resumes near where it stopped rather than from the start.
+        constexpr std::size_t k_checkpoint_batch = 16;
+        const auto flush = [&](std::vector<scored_row> &pending) -> void {
+          if (pending.empty()) {
+            return;
+          }
+          session_db_.begin_transaction();
+          try {
+            auto stmt = session_db_.prepare(
+                "INSERT OR REPLACE INTO junk_flags (image_id, is_junk, reason, "
+                "confidence, processed_at) VALUES (?, ?, ?, ?, "
+                "strftime('%s','now'));");
+            for (const auto &row : pending) {
+              stmt.bind_text(1, row.id);
+              stmt.bind_int(2, row.is_junk ? 1 : 0);
+              if (row.reason.empty()) {
+                stmt.bind_null(3);
+              } else {
+                stmt.bind_text(3, row.reason);
+              }
+              stmt.bind_double(4, row.confidence);
+              stmt.step();
+              stmt.reset();
+            }
+            session_db_.commit_transaction();
+          } catch (...) {
+            session_db_.rollback_transaction();
+            throw;
+          }
+          pending.clear();
+        };
+
         std::vector<scored_row> rows;
         const std::size_t total = records.size();
         std::size_t done = 0;
@@ -240,6 +278,7 @@ auto kustavi_service::RunJunkPass(grpc::ServerContext *context,
 
         for (const auto &record : records) {
           if (st.stop_requested()) {
+            flush(rows);
             return;
           }
           ++done;
@@ -264,33 +303,13 @@ auto kustavi_service::RunJunkPass(grpc::ServerContext *context,
                                        .confidence = result.confidence});
             }
           }
+          if (rows.size() >= k_checkpoint_batch) {
+            flush(rows);
+          }
           queue.push(junk_progress_evt{.done = done, .total = total});
         }
 
-        session_db_.begin_transaction();
-        try {
-          auto stmt = session_db_.prepare(
-              "INSERT OR REPLACE INTO junk_flags (image_id, is_junk, reason, "
-              "confidence, processed_at) VALUES (?, ?, ?, ?, "
-              "strftime('%s','now'));");
-          for (const auto &row : rows) {
-            stmt.bind_text(1, row.id);
-            stmt.bind_int(2, row.is_junk ? 1 : 0);
-            if (row.reason.empty()) {
-              stmt.bind_null(3);
-            } else {
-              stmt.bind_text(3, row.reason);
-            }
-            stmt.bind_double(4, row.confidence);
-            stmt.step();
-            stmt.reset();
-          }
-          session_db_.commit_transaction();
-        } catch (...) {
-          session_db_.rollback_transaction();
-          throw;
-        }
-
+        flush(rows);
         queue.push(junk_complete_evt{.flagged = flagged, .total = total});
       });
 

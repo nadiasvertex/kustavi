@@ -7,6 +7,18 @@ service Kustavi {
   rpc GetInfo(GetInfoRequest) returns (GetInfoResponse);
   rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
 
+  // --- resume ----------------------------------------------------------
+  // Probe a folder for a saved session before scanning it. Read-only; does
+  // not open or disturb the active session.
+  rpc InspectSession(InspectSessionRequest) returns (InspectSessionResponse);
+  // Fetch every persisted pass result + the user's decisions for the active
+  // session (called right after a resume ScanFolder completes).
+  rpc GetSessionResults(GetSessionResultsRequest)
+      returns (GetSessionResultsResponse);
+  // Persist the wizard's current step, tunables, and keep/delete decisions
+  // so a later launch can resume. Write-through; called as the user works.
+  rpc SaveSessionState(SaveSessionStateRequest) returns (SaveSessionStateResponse);
+
   // --- pass 1: scan & thumbnails ---------------------------------------
   rpc ScanFolder(ScanFolderRequest) returns (stream ScanEvent);
 
@@ -43,6 +55,60 @@ message GetInfoResponse {
 message ShutdownRequest {}
 message ShutdownResponse {}
 
+// --- resume -----------------------------------------------------------
+
+message InspectSessionRequest {
+  string folder = 1;   // absolute path to the source folder to probe
+}
+
+message InspectSessionResponse {
+  bool   has_session     = 1;  // a scannable image index already exists
+  uint32 image_count     = 2;  // rows in the saved image index
+  uint32 resume_step     = 3;  // saved WizardStep index (0 when none recorded)
+  int64  updated_unix_ms = 4;  // last time the saved step was written
+}
+
+message GetSessionResultsRequest {}
+
+// The quality and similar passes are cheap and re-run on resume, so their
+// results are not carried here — only the slow passes' flags plus everything
+// the user chose by hand.
+message GetSessionResultsResponse {
+  repeated JunkFlag     junk_flags     = 1;   // is_junk = 1 rows (may be partial)
+  repeated VideoFlag    video_flags    = 2;   // is_junk = 1 rows (may be partial)
+  uint32                video_total    = 3;   // video rows in the image index
+  repeated DecisionEntry decisions     = 4;   // persisted keep/delete choices
+  uint32                resume_step    = 5;   // saved WizardStep index
+  RunQualityPassRequest quality_thresholds = 6;  // saved thresholds (0 => default)
+  RunTripsPassRequest   trip_params        = 7;  // saved trip tunables (0 => default)
+  map<uint32, string>   group_keepers      = 8;  // similar group id -> keeper image id
+}
+
+enum Decision {
+  DECISION_UNSPECIFIED = 0;
+  KEEP = 1;
+  DELETE = 2;
+}
+
+message DecisionEntry {
+  string   image_id = 1;
+  Decision decision = 2;
+}
+
+message SaveSessionStateRequest {
+  optional uint32                step               = 1;  // WizardStep index
+  optional RunQualityPassRequest quality_thresholds = 2;
+  optional RunTripsPassRequest   trip_params        = 3;
+  // When true, `decisions` is the authoritative full set: the stored
+  // user_decisions table is replaced to match it.
+  optional bool                  replace_decisions  = 4;
+  repeated DecisionEntry         decisions          = 5;
+  // Replaces the stored similar-group keeper overrides when non-empty.
+  map<uint32, string>            group_keepers      = 6;
+}
+
+message SaveSessionStateResponse {}
+
 // --- shared -------------------------------------------------------------
 
 message GpsPoint {
@@ -75,6 +141,9 @@ message ImageMeta {
 message ScanFolderRequest {
   string folder = 1;           // absolute path to the source folder
   bool recursive = 2;          // include subfolders
+  // Resume a saved session: skip ingestion and the reset/cache-wipe, and
+  // re-emit the saved image index instead of walking the folder.
+  bool resume = 3;
 }
 
 message ScanEvent {
@@ -95,6 +164,8 @@ message ScanComplete {
   uint32 images = 1;
   uint32 skipped_files = 2;    // non-image files
   repeated string errors = 3;  // unreadable image files: "<id>: <reason>"
+  bool   resumed = 4;          // this scan re-emitted a saved index
+  uint32 resume_step = 5;      // saved WizardStep index to re-enter at
 }
 
 // --- pass 2: quality -------------------------------------------------------

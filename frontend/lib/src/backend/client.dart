@@ -20,6 +20,17 @@ Map<String, String> authMetadata(String token) => {
 abstract interface class KustaviClient {
   Future<GetInfoResponse> getInfo();
   Future<void> shutdown();
+
+  /// Probe [folder] for a resumable session before scanning it (read-only).
+  Future<InspectSessionResponse> inspectSession(String folder);
+
+  /// Fetch every persisted slow-pass result and the user's decisions for the
+  /// active session (called after a resume [scanFolder]).
+  Future<GetSessionResultsResponse> getSessionResults();
+
+  /// Persist the wizard's step, tunables, and keep/delete decisions.
+  Future<void> saveSessionState(SaveSessionStateRequest request);
+
   Stream<ScanEvent> scanFolder(ScanFolderRequest request);
   Stream<QualityEvent> runQualityPass({
     required double blurThreshold,
@@ -68,6 +79,39 @@ class GrpcKustaviClient implements KustaviClient {
   Future<void> shutdown() {
     return _client
         .shutdown(ShutdownRequest(), options: _options)
+        .then(
+          (_) {},
+          onError: (Object error) => throw mapToBackendError(error),
+        );
+  }
+
+  @override
+  Future<InspectSessionResponse> inspectSession(String folder) {
+    return _client
+        .inspectSession(
+          InspectSessionRequest(folder: folder),
+          options: _options,
+        )
+        .then(
+          (response) => response,
+          onError: (Object error) => throw mapToBackendError(error),
+        );
+  }
+
+  @override
+  Future<GetSessionResultsResponse> getSessionResults() {
+    return _client
+        .getSessionResults(GetSessionResultsRequest(), options: _options)
+        .then(
+          (response) => response,
+          onError: (Object error) => throw mapToBackendError(error),
+        );
+  }
+
+  @override
+  Future<void> saveSessionState(SaveSessionStateRequest request) {
+    return _client
+        .saveSessionState(request, options: _options)
         .then(
           (_) {},
           onError: (Object error) => throw mapToBackendError(error),

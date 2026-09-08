@@ -15,6 +15,24 @@ class FakeKustavi extends KustaviServiceBase {
   ) => Future.value(ShutdownResponse());
 
   @override
+  Future<InspectSessionResponse> inspectSession(
+    ServiceCall call,
+    InspectSessionRequest request,
+  ) => Future.value(InspectSessionResponse());
+
+  @override
+  Future<GetSessionResultsResponse> getSessionResults(
+    ServiceCall call,
+    GetSessionResultsRequest request,
+  ) => Future.value(GetSessionResultsResponse());
+
+  @override
+  Future<SaveSessionStateResponse> saveSessionState(
+    ServiceCall call,
+    SaveSessionStateRequest request,
+  ) => Future.value(SaveSessionStateResponse());
+
+  @override
   Stream<ScanEvent> scanFolder(ServiceCall call, ScanFolderRequest request) =>
       const Stream.empty();
 
@@ -79,6 +97,64 @@ void main() {
         client.commit,
         isA<ResponseStream<CommitEvent> Function(CommitRequest)>(),
       );
+      expect(
+        client.inspectSession,
+        isA<
+          ResponseFuture<InspectSessionResponse> Function(InspectSessionRequest)
+        >(),
+      );
+      expect(
+        client.getSessionResults,
+        isA<
+          ResponseFuture<GetSessionResultsResponse> Function(
+            GetSessionResultsRequest,
+          )
+        >(),
+      );
+      expect(
+        client.saveSessionState,
+        isA<
+          ResponseFuture<SaveSessionStateResponse> Function(
+            SaveSessionStateRequest,
+          )
+        >(),
+      );
+    });
+
+    test('ScanFolderRequest.resume and ScanComplete resume fields round-trip', () {
+      final request = ScanFolderRequest()
+        ..folder = '/photos'
+        ..recursive = true
+        ..resume = true;
+      expect(
+        ScanFolderRequest.fromBuffer(request.writeToBuffer()).resume,
+        isTrue,
+      );
+
+      final complete = ScanComplete()
+        ..images = 12
+        ..resumed = true
+        ..resumeStep = 4;
+      final decoded = ScanComplete.fromBuffer(complete.writeToBuffer());
+      expect(decoded.resumed, isTrue);
+      expect(decoded.resumeStep, 4);
+    });
+
+    test('SaveSessionStateRequest carries step, decisions and keepers', () {
+      final request = SaveSessionStateRequest()
+        ..step = 3
+        ..replaceDecisions = true
+        ..decisions.add(DecisionEntry()
+          ..imageId = 'a.jpg'
+          ..decision = Decision.DELETE)
+        ..groupKeepers[7] = 'b.jpg';
+      final decoded = SaveSessionStateRequest.fromBuffer(
+        request.writeToBuffer(),
+      );
+      expect(decoded.hasStep(), isTrue);
+      expect(decoded.step, 3);
+      expect(decoded.decisions.single.decision, Decision.DELETE);
+      expect(decoded.groupKeepers[7], 'b.jpg');
     });
 
     test('ScanEvent progress round-trips through the wire format', () {

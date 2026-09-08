@@ -85,6 +85,10 @@ auto kustavi_service::RunVideoPass(grpc::ServerContext *context,
   }
   pass_guard guard(pass_active_, true);
 
+  // Stamp the step so an interrupted run resumes back into the video pass
+  // (see session_resume.cpp for the WizardStep index map).
+  record_step(4);
+
   // The vision classifier is optional: without it the pass still catches
   // too-short/corrupt/blurry/static clips, just not non-photographic content.
   const auto text = text_model_asset();
@@ -138,6 +142,41 @@ auto kustavi_service::RunVideoPass(grpc::ServerContext *context,
           double confidence = 0.0;
           std::int64_t duration_ms = 0;
         };
+        // Decoding + optional vision classification per clip is slow; flush in
+        // small batches so an interrupted run resumes near where it stopped.
+        constexpr std::size_t k_checkpoint_batch = 16;
+        const auto flush = [&](std::vector<scored_row> &pending) -> void {
+          if (pending.empty()) {
+            return;
+          }
+          session_db_.begin_transaction();
+          try {
+            auto stmt = session_db_.prepare(
+                "INSERT OR REPLACE INTO video_flags (video_id, is_junk, "
+                "reason, "
+                "confidence, duration_ms, processed_at) VALUES (?, ?, ?, ?, ?, "
+                "strftime('%s','now'));");
+            for (const auto &row : pending) {
+              stmt.bind_text(1, row.id);
+              stmt.bind_int(2, row.is_junk ? 1 : 0);
+              if (row.reason.empty()) {
+                stmt.bind_null(3);
+              } else {
+                stmt.bind_text(3, row.reason);
+              }
+              stmt.bind_double(4, row.confidence);
+              stmt.bind_int64(5, row.duration_ms);
+              stmt.step();
+              stmt.reset();
+            }
+            session_db_.commit_transaction();
+          } catch (...) {
+            session_db_.rollback_transaction();
+            throw;
+          }
+          pending.clear();
+        };
+
         std::vector<scored_row> rows;
         const std::size_t total = records.size();
         std::size_t done = 0;
@@ -145,6 +184,7 @@ auto kustavi_service::RunVideoPass(grpc::ServerContext *context,
 
         for (const auto &record : records) {
           if (st.stop_requested()) {
+            flush(rows);
             return;
           }
           ++done;
@@ -174,34 +214,13 @@ auto kustavi_service::RunVideoPass(grpc::ServerContext *context,
                                       .reason = reason,
                                       .confidence = confidence});
           }
+          if (rows.size() >= k_checkpoint_batch) {
+            flush(rows);
+          }
           queue.push(video_progress_evt{.done = done, .total = total});
         }
 
-        session_db_.begin_transaction();
-        try {
-          auto stmt = session_db_.prepare(
-              "INSERT OR REPLACE INTO video_flags (video_id, is_junk, reason, "
-              "confidence, duration_ms, processed_at) VALUES (?, ?, ?, ?, ?, "
-              "strftime('%s','now'));");
-          for (const auto &row : rows) {
-            stmt.bind_text(1, row.id);
-            stmt.bind_int(2, row.is_junk ? 1 : 0);
-            if (row.reason.empty()) {
-              stmt.bind_null(3);
-            } else {
-              stmt.bind_text(3, row.reason);
-            }
-            stmt.bind_double(4, row.confidence);
-            stmt.bind_int64(5, row.duration_ms);
-            stmt.step();
-            stmt.reset();
-          }
-          session_db_.commit_transaction();
-        } catch (...) {
-          session_db_.rollback_transaction();
-          throw;
-        }
-
+        flush(rows);
         queue.push(video_complete_evt{.flagged = flagged, .total = total});
       });
 

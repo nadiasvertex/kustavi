@@ -38,6 +38,7 @@ auto kustavi_service::RunSimilarPass(grpc::ServerContext *context,
     return *err;
   }
   pass_guard guard(pass_active_, true);
+  record_step(2); // WizardStep.duplicates
 
   std::vector<fs::path> paths;
   std::unordered_map<std::string, std::string> path_to_id;

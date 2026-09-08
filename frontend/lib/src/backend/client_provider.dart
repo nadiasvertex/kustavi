@@ -37,6 +37,8 @@ class FakeKustaviClient implements KustaviClient {
     this.tripsEvents = const <TripsEvent>[],
     this.videoEvents = const <VideoEvent>[],
     this.commitEvents = const <CommitEvent>[],
+    this.inspectSessionResponse,
+    this.sessionResults,
     this.scanError,
     this.qualityError,
     this.junkError,
@@ -80,6 +82,12 @@ class FakeKustaviClient implements KustaviClient {
   /// observe the in-progress scan screen.
   final bool scanStreamStaysOpen;
 
+  /// Returned by [inspectSession]; defaults to "no saved session".
+  final InspectSessionResponse? inspectSessionResponse;
+
+  /// Returned by [getSessionResults] on resume; defaults to empty.
+  final GetSessionResultsResponse? sessionResults;
+
   ScanFolderRequest? lastScanRequest;
   RunQualityPassRequest? lastQualityRequest;
   CommitRequest? lastCommitRequest;
@@ -87,6 +95,7 @@ class FakeKustaviClient implements KustaviClient {
   List<String> lastJunkSkipIds = const [];
   List<String> lastSimilarSkipIds = const [];
   List<String> lastVideoSkipIds = const [];
+  final List<SaveSessionStateRequest> savedSessionStates = [];
   int shutdownCount = 0;
   int qualityPassCount = 0;
 
@@ -123,6 +132,21 @@ class FakeKustaviClient implements KustaviClient {
   @override
   Future<void> shutdown() async {
     shutdownCount++;
+  }
+
+  @override
+  Future<InspectSessionResponse> inspectSession(String folder) async {
+    return inspectSessionResponse ?? InspectSessionResponse();
+  }
+
+  @override
+  Future<GetSessionResultsResponse> getSessionResults() async {
+    return sessionResults ?? GetSessionResultsResponse();
+  }
+
+  @override
+  Future<void> saveSessionState(SaveSessionStateRequest request) async {
+    savedSessionStates.add(request);
   }
 
   @override
