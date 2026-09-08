@@ -121,24 +121,30 @@ class _FlaggedReviewState extends ConsumerState<FlaggedReview> {
             ],
           ),
         ),
-        // The keep section gets the larger share of the slack; the delete
-        // panel takes the rest when expanded, or just its header when not.
-        Expanded(
-          flex: 3,
-          child: keepImages.isEmpty
-              ? Center(
-                  child: Text(
-                    'Tap a photo below to keep it',
-                    style: theme.textTheme.bodyLarge?.copyWith(
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                )
-              : _grid(context, wizard, keepImages, inDeleteSection: false),
-        ),
+        // With keepers, the two sections split the slack 3:2. Until the first
+        // photo is rescued the keep area is just a hint line so the delete
+        // grid — which holds everything — fills the screen.
+        if (keepImages.isEmpty)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+            child: Text(
+              'Tap a photo below to keep it',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          )
+        else
+          Expanded(
+            flex: 3,
+            child: _grid(context, wizard, keepImages, inDeleteSection: false),
+          ),
         const Divider(height: 1),
-        if (_deletePanelExpanded)
-          Flexible(
+        if (!_deletePanelExpanded)
+          _deletePanelHeader(theme, deleteImages.length)
+        else
+          _flex(
+            keepImages.isEmpty,
             flex: 2,
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -165,12 +171,16 @@ class _FlaggedReviewState extends ConsumerState<FlaggedReview> {
                 ),
               ],
             ),
-          )
-        else
-          _deletePanelHeader(theme, deleteImages.length),
+          ),
       ],
     );
   }
+
+  /// [Expanded] when [fill] (the delete panel should take all remaining
+  /// space), otherwise a [Flexible] with the given [flex] so it shares the
+  /// slack with the keep grid.
+  Widget _flex(bool fill, {required int flex, required Widget child}) =>
+      fill ? Expanded(child: child) : Flexible(flex: flex, child: child);
 
   Widget _deletePanelHeader(ThemeData theme, int count) {
     return InkWell(
