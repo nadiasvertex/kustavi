@@ -100,6 +100,21 @@ http_archive(
     url = "https://sourceforge.net/projects/mdk-sdk/files/nightly/mdk-sdk-apple.tar.xz",
 )
 
+# Windows counterpart of mdk_sdk_apple above — the same nightly archive
+# fvp's own windows/cmake/deps.cmake downloads (mdk-sdk-windows-x64.7z) when
+# building via Flutter's own CMake tooling. `.7z` is one of the archive
+# types Bazel's downloader can extract natively (needed anyway for its own
+# Windows LLVM toolchain distributions), so no repository_rule shelling out
+# to a host 7z.exe is required.
+http_archive(
+    name = "mdk_sdk_windows",
+    build_file = "//third_party:mdk_sdk_windows.BUILD.bazel",
+    sha256 = "04db531300e27b9414be0bf7b96cbb0ff0f83181a5d6fb50b3502fb6dfcfced1",
+    strip_prefix = "mdk-sdk",
+    type = "7z",
+    url = "https://sourceforge.net/projects/mdk-sdk/files/nightly/mdk-sdk-windows-x64.7z",
+)
+
 # Flutter support
 
 # rules_flutter is built against this fork version; 0.4.10 has API changes
@@ -133,6 +148,12 @@ git_override(
         # (not `deps`) is invisible to rules_apple's framework
         # auto-embedding aspect.
         "//patches:rules_flutter-apple-plugins-framework-import.patch",
+        # flutter_windows_plugin_library had no way to attach a prebuilt
+        # SDK's cc_import (e.g. fvp's mdk-sdk on Windows) to the runner's
+        # compile/link steps — only srcs/hdrs/includes. Adds a `deps` attr
+        # whose merged CcInfo folds into the runner build, mirroring the
+        # macOS mdk-sdk plumbing above.
+        "//patches:rules_flutter-windows-plugin-cc-deps.patch",
     ],
     remote = "https://github.com/aran/rules_flutter.git",
 )

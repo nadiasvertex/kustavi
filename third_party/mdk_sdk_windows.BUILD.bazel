@@ -1,0 +1,44 @@
+# `mdk-sdk-windows-x64.7z` — the same archive fvp's own
+# windows/cmake/deps.cmake downloads (via FindMDK.cmake) when Flutter's own
+# CMake tooling builds the plugin. Our Bazel build has no CMake integration
+# for Windows plugins either, so plugin_overlays/fvp/0/BUILD.bazel.tpl
+# depends on this repo instead (mirrors third_party/mdk_sdk_apple.BUILD.bazel
+# for macOS/iOS).
+#
+# Layout inside the archive:
+#   mdk-sdk/include/mdk/*.h        — public C++ headers
+#   mdk-sdk/lib/x64/mdk.lib        — import library
+#   mdk-sdk/bin/x64/mdk.dll        — runtime (MDK_RUNTIME in FindMDK.cmake)
+#   mdk-sdk/bin/x64/ffmpeg-9.dll   — bundled ffmpeg (MDK_FFMPEG)
+#   mdk-sdk/bin/x64/libass.dll     — bundled libass (MDK_LIBASS)
+#   mdk-sdk/bin/x64/mdk-*.dll      — decoder plugins (MDK_PLUGINS: braw, nvjp2k, r3d)
+
+cc_import(
+    name = "mdk_windows_import",
+    hdrs = glob(["include/mdk/**/*.h"]),
+    includes = ["include"],
+    interface_library = "lib/x64/mdk.lib",
+    shared_library = "bin/x64/mdk.dll",
+    target_compatible_with = ["@platforms//os:windows"],
+    visibility = ["//visibility:public"],
+)
+
+# Runtime DLLs that must sit next to the app executable — mdk.dll dlopens
+# its decoder/demuxer plugins and ffmpeg/libass by relative path at
+# runtime, so they can't just ride along as mdk.dll's own transitive link
+# input. Wired into //frontend:kustavi_app's `native_deps` so rules_flutter
+# bundles them (see FLUTTER_APPLICATION_ATTRS' native_deps -> native_libs ->
+# desktop bundle copy path).
+filegroup(
+    name = "mdk_windows_runtime",
+    srcs = [
+        "bin/x64/ffmpeg-9.dll",
+        "bin/x64/libass.dll",
+        "bin/x64/mdk-braw.dll",
+        "bin/x64/mdk-nvjp2k.dll",
+        "bin/x64/mdk-r3d.dll",
+        "bin/x64/mdk.dll",
+    ],
+    target_compatible_with = ["@platforms//os:windows"],
+    visibility = ["//visibility:public"],
+)

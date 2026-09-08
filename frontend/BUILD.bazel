@@ -10,6 +10,17 @@ flutter_application(
     package_name = "kustavi",  # must match pubspec.yaml name:
     main = "lib/main.dart",
     srcs = glob(["lib/**/*.dart"]),
+    # mdk.dll (and the ffmpeg/libass/decoder-plugin DLLs it dlopens by
+    # relative path at runtime) have to sit next to kustavi.exe on Windows —
+    # fvp's own windows/CMakeLists.txt bundles the same set via
+    # `fvp_bundled_libraries`. `native_deps` is rules_flutter's generic
+    # dart:ffi hook for shipping prebuilt shared libraries; it collects any
+    # .dll/.so/.dylib from these targets' DefaultInfo into the bundle root.
+    # See //third_party:mdk_sdk_windows.BUILD.bazel.
+    native_deps = select({
+        "@platforms//os:windows": ["@@+http_archive+mdk_sdk_windows//:mdk_windows_runtime"],
+        "//conditions:default": [],
+    }),
     deps = [
         "@deps//:cupertino_icons",
         "@deps//:file_picker",

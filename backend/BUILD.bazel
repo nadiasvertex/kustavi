@@ -11,6 +11,10 @@ cc_binary(
         "//backend/data:keeper_models",
     ],
     includes = ["include"],
+    linkopts = select({
+        "@platforms//os:windows": ["-DEFAULTLIB:oleaut32.lib"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//proto:service_cc_grpc",
         "@curl//:curl",
@@ -100,6 +104,10 @@ cc_binary(
         "include/exec/*.h",
     ]),
     includes = ["include"],
+    linkopts = select({
+        "@platforms//os:windows": ["-DEFAULTLIB:oleaut32.lib"],
+        "//conditions:default": [],
+    }),
     deps = [
         "@llama_cpp",
         "@opencv//:core",

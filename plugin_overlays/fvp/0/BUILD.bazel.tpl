@@ -237,6 +237,14 @@ flutter_windows_plugin_library(
         allow_empty = True,
     ),
     includes = ["windows/include"],
+    # fvp's Windows plugin links against libmdk (`target_link_libraries(fvp_plugin
+    # PRIVATE mdk)` in its own windows/CMakeLists.txt, fetched there via
+    # cmake/deps.cmake). Our Bazel build has no CMake step to fetch it, so this
+    # points at the same mdk-sdk-windows-x64.7z archive instead (see
+    # //third_party:mdk_sdk_windows.BUILD.bazel and the
+    # rules_flutter-windows-plugin-cc-deps.patch that lets a Windows plugin
+    # library attach a cc_import's CcInfo to the runner's compile/link steps).
+    deps = ["@@+http_archive+mdk_sdk_windows//:mdk_windows_import"],
     visibility = ["//visibility:public"],
 )
 

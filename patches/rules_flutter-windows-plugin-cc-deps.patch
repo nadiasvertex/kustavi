@@ -1,0 +1,154 @@
+diff --git flutter/private/flutter_desktop_plugin_info.bzl flutter/private/flutter_desktop_plugin_info.bzl
+--- flutter/private/flutter_desktop_plugin_info.bzl
++++ flutter/private/flutter_desktop_plugin_info.bzl
+@@ -24,5 +24,9 @@
+         "srcs": "depset[File]: source files to compile.",
+         "hdrs": "depset[File]: header files (made available on the include path).",
+         "include_dirs": "depset[str]: relative include directories under the plugin package root.",
++        "cc_info": "CcInfo or None: merged CcInfo from the plugin library's " +
++                    "`deps` (e.g. a vendored SDK's cc_import) — its " +
++                    "compilation_context and linking_context are folded " +
++                    "into the runner's compile and link steps.",
+     },
+ )
+diff --git flutter/private/flutter_windows_plugin_library.bzl flutter/private/flutter_windows_plugin_library.bzl
+--- flutter/private/flutter_windows_plugin_library.bzl
++++ flutter/private/flutter_windows_plugin_library.bzl
+@@ -16,14 +16,19 @@
+ would push that divergence into per-rule conditionals.
+ """
+ 
++load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
++load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+ load("//flutter/private:flutter_desktop_plugin_info.bzl", "FlutterWindowsPluginInfo")
+ 
+ def _flutter_windows_plugin_library_impl(ctx):
++    cc_infos = [dep[CcInfo] for dep in ctx.attr.deps if CcInfo in dep]
++    merged_cc_info = cc_common.merge_cc_infos(cc_infos = cc_infos) if cc_infos else None
+     return [
+         FlutterWindowsPluginInfo(
+             srcs = depset(ctx.files.srcs),
+             hdrs = depset(ctx.files.hdrs),
+             include_dirs = depset(ctx.attr.includes),
++            cc_info = merged_cc_info,
+         ),
+         DefaultInfo(files = depset(ctx.files.srcs + ctx.files.hdrs)),
+     ]
+@@ -44,6 +49,13 @@
+                   "root (e.g. `[\"windows/include\"]`). The runner adds them " +
+                   "as `-I` flags when compiling plugin srcs.",
+         ),
++        "deps": attr.label_list(
++            doc = "Optional cc_* targets (e.g. a vendored SDK's cc_import) " +
++                  "whose CcInfo is merged into the runner's compile and " +
++                  "link steps — for a plugin whose Windows sources need a " +
++                  "prebuilt import library beyond the Flutter engine itself.",
++            providers = [CcInfo],
++        ),
+     },
+     doc = "Bundle a Flutter Windows plugin's C++ sources for the runner to compile + link.",
+ )
+diff --git flutter/private/flutter_windows_application.bzl flutter/private/flutter_windows_application.bzl
+--- flutter/private/flutter_windows_application.bzl
++++ flutter/private/flutter_windows_application.bzl
+@@ -113,11 +113,14 @@
+     plugin_srcs = []
+     plugin_hdrs = []
+     plugin_include_dirs = []
++    plugin_cc_infos = []
+     if ctx.attr.application:
+         for entry in ctx.attr.application[FlutterInfo].windows_plugin_libraries.to_list():
+             plugin_srcs.extend(entry.srcs.to_list())
+             plugin_hdrs.extend(entry.hdrs.to_list())
+             plugin_include_dirs.extend(entry.include_dirs.to_list())
++            if entry.cc_info != None:
++                plugin_cc_infos.append(entry.cc_info)
+ 
+     # Compile any flutter create `windows/runner/*.rc` scripts and link the
+     # resulting `.res` blobs into the runner so its app icon and VERSIONINFO
+@@ -135,6 +138,7 @@
+         plugin_srcs = plugin_srcs,
+         plugin_hdrs = plugin_hdrs,
+         plugin_include_dirs = plugin_include_dirs,
++        plugin_cc_infos = plugin_cc_infos,
+         res_files = res_files,
+     )
+ 
+@@ -143,7 +147,7 @@
+         executable = runner_binary,
+     )]
+ 
+-def _compile_windows_runner(ctx, runner_srcs, engine_files, is_debug, registrant_srcs = [], registrant_hdrs = [], runner_hdrs = [], plugin_srcs = [], plugin_hdrs = [], plugin_include_dirs = [], res_files = []):
++def _compile_windows_runner(ctx, runner_srcs, engine_files, is_debug, registrant_srcs = [], registrant_hdrs = [], runner_hdrs = [], plugin_srcs = [], plugin_hdrs = [], plugin_include_dirs = [], plugin_cc_infos = [], res_files = []):
+     """Compile the C++ Win32 runner binary.
+ 
+     Uses cc_common.compile() + cc_common.link() with Bazel's hermetic CC
+@@ -168,6 +172,9 @@
+         plugin_include_dirs: Plugin-relative include directories,
+             resolved against each plugin's package root via additional
+             `-I` flags.
++        plugin_cc_infos: CcInfo providers from plugin libraries' `deps`
++            (e.g. a vendored SDK's cc_import), folded into the runner's
++            compile and link steps.
+ 
+     Returns:
+         The compiled runner executable File.
+@@ -280,6 +287,7 @@
+         # A `.res` passed straight to link.exe embeds its resources in the exe.
+         extra_link_flags = ["/SUBSYSTEM:WINDOWS", "user32.lib", "ole32.lib", "dwmapi.lib", "shell32.lib", "advapi32.lib"] +
+                            [r.path for r in res_files],
++        extra_cc_infos = plugin_cc_infos,
+         extra_defines = defines,
+         additional_srcs = additional_srcs + plugin_srcs,
+         additional_inputs = res_files,
+diff --git flutter/private/cc_runner_compile.bzl flutter/private/cc_runner_compile.bzl
+--- flutter/private/cc_runner_compile.bzl
++++ flutter/private/cc_runner_compile.bzl
+@@ -16,7 +16,8 @@
+         extra_defines = [],
+         additional_srcs = [],
+         system_include_dirs = [],
+-        additional_inputs = []):
++        additional_inputs = [],
++        extra_cc_infos = []):
+     """Compile C++ sources and link into an executable using cc_common.
+ 
+     Uses Bazel's hermetic CC toolchain for both compilation and linking.
+@@ -39,6 +40,9 @@
+         additional_srcs: Additional source files to compile (e.g., native registrant).
+         system_include_dirs: System include directories passed to cc_common.compile(system_includes=...).
+         additional_inputs: Additional input files (e.g., sysroot files).
++        extra_cc_infos: Additional CcInfo providers (e.g. from a plugin's
++            vendored SDK cc_import) whose compilation_context and
++            linking_context are folded into this compile + link.
+ 
+     Returns:
+         The executable File produced by cc_common.link().
+@@ -77,6 +81,7 @@
+         local_defines = extra_defines,
+         user_compile_flags = other_flags,
+         additional_inputs = all_additional_inputs,
++        compilation_contexts = [cc_info.compilation_context for cc_info in extra_cc_infos],
+     )
+ 
+     # Build a linking context for the engine shared library (and any system
+@@ -114,7 +119,7 @@
+         cc_toolchain = cc_toolchain,
+         name = name,
+         compilation_outputs = compilation_outputs,
+-        linking_contexts = [engine_linking_context],
++        linking_contexts = [engine_linking_context] + [cc_info.linking_context for cc_info in extra_cc_infos],
+         user_link_flags = extra_link_flags,
+         output_type = "executable",
+         additional_inputs = depset(additional_inputs),
+diff --git flutter/private/flutter_plugin.bzl flutter/private/flutter_plugin.bzl
+--- flutter/private/flutter_plugin.bzl
++++ flutter/private/flutter_plugin.bzl
+@@ -119,6 +119,7 @@
+             hdrs = info.hdrs,
+             include_dirs = info.include_dirs,
+             package = package_name,
++            cc_info = info.cc_info,
+         ))
+ 
+     # Android plugin libraries — kt_android_library / android_library
