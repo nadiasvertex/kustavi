@@ -26,13 +26,15 @@ auto quality_reasons(const image::local_image_metrics &metrics,
                      const image::quality_thresholds &thresholds)
     -> std::vector<QualityReason> {
   std::vector<QualityReason> reasons;
-  if (metrics.focus_peak_variance < thresholds.blur_threshold) {
+  // is_blurry() already suppresses itself on a badly exposed frame, where the
+  // sharpness measure is unreliable.
+  if (image::is_blurry(metrics, thresholds)) {
     reasons.push_back(BLURRY);
   }
-  if (metrics.underexposed_ratio > thresholds.underexposed_threshold) {
+  if (image::is_underexposed(metrics, thresholds)) {
     reasons.push_back(UNDER_EXPOSED);
   }
-  if (metrics.overexposed_ratio > thresholds.overexposed_threshold) {
+  if (image::is_overexposed(metrics, thresholds)) {
     reasons.push_back(OVER_EXPOSED);
   }
   return reasons;

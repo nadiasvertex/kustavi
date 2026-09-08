@@ -116,8 +116,7 @@ auto analyze_blur_peak(const cv::Mat &gray, int grid) -> double {
   // that a plain max would latch onto, while a genuinely in-focus subject
   // spans several tiles at this granularity and still registers.
   std::ranges::sort(tile_scores);
-  const std::size_t pick =
-      tile_scores.size() >= 2 ? tile_scores.size() - 2 : 0;
+  const std::size_t pick = tile_scores.size() >= 2 ? tile_scores.size() - 2 : 0;
   return tile_scores[pick];
 }
 
@@ -161,12 +160,23 @@ auto analyze_exposure(const cv::Mat &gray, const quality_thresholds &thresholds)
   // 3. Contextual Override
   // If enough local zones are well-exposed, ignore a high global underexposure
   // score (This saves our low-key and dark background photos from getting
-  // flagged)
-  if (well_exposed_cells >= thresholds.min_passing_cells) {
-    return {0.0, global_over};
-  }
+  // flagged).
+  double under =
+      well_exposed_cells >= thresholds.min_passing_cells ? 0.0 : global_under;
 
-  return {global_under, global_over};
+  // 4. Overall darkness. The clipping score only catches shadows crushed to
+  // black; a frame that is simply too dim (nothing near 0, but a low mean)
+  // slips past it, and the well-exposed-cell override then clears it entirely.
+  // Fold in how far the mean luminance falls below the acceptable floor so a
+  // uniformly dark frame still reads as underexposed.
+  const double mean_lum = cv::mean(gray)[0];
+  const double darkness_deficit =
+      std::clamp((thresholds.min_acceptable_mean - mean_lum) /
+                     thresholds.min_acceptable_mean,
+                 0.0, 1.0);
+  under = std::max(under, darkness_deficit);
+
+  return {under, global_over};
 }
 
 /**
@@ -192,21 +202,46 @@ auto compute_metrics(const std::filesystem::path &path,
   return metrics;
 }
 
-auto is_flagged(const local_image_metrics &metrics,
-                const quality_thresholds &thresholds) -> bool {
+auto is_underexposed(const local_image_metrics &metrics,
+                     const quality_thresholds &thresholds) -> bool {
+  return metrics.valid &&
+         metrics.underexposed_ratio > thresholds.underexposed_threshold;
+}
+
+auto is_overexposed(const local_image_metrics &metrics,
+                    const quality_thresholds &thresholds) -> bool {
+  return metrics.valid &&
+         metrics.overexposed_ratio > thresholds.overexposed_threshold;
+}
+
+auto is_blurry(const local_image_metrics &metrics,
+               const quality_thresholds &thresholds) -> bool {
   if (!metrics.valid) {
     return false;
   }
+  // Sharpness can't be judged on a badly exposed frame: a dark image has a
+  // compressed tonal range (low Laplacian variance even in focus) and a
+  // blown-out one has none.
+  if (is_underexposed(metrics, thresholds) ||
+      is_overexposed(metrics, thresholds)) {
+    return false;
+  }
   // Compare against the sharpest region, not the whole frame, so an
-  // intentionally blurred background can't flag a sharp subject.
-  const bool is_blurry =
-      metrics.focus_peak_variance < thresholds.blur_threshold;
-  const bool is_underexposed =
-      metrics.underexposed_ratio > thresholds.underexposed_threshold;
-  const bool is_overexposed =
-      metrics.overexposed_ratio > thresholds.overexposed_threshold;
+  // intentionally blurred background can't flag a sharp subject. Require the
+  // peak to be both below the absolute threshold and not markedly sharper than
+  // the frame overall — the latter is what a portrait-mode subject clears.
+  const double peak_ceiling =
+      std::max(metrics.laplacian_variance * thresholds.blur_peak_ratio,
+               thresholds.blur_peak_floor);
+  return metrics.focus_peak_variance < thresholds.blur_threshold &&
+         metrics.focus_peak_variance < peak_ceiling;
+}
 
-  return is_blurry || is_underexposed || is_overexposed;
+auto is_flagged(const local_image_metrics &metrics,
+                const quality_thresholds &thresholds) -> bool {
+  return is_blurry(metrics, thresholds) ||
+         is_underexposed(metrics, thresholds) ||
+         is_overexposed(metrics, thresholds);
 }
 
 auto analyze_images(quality_thresholds thresholds,

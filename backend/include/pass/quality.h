@@ -12,6 +12,14 @@ namespace kustavi::image {
 struct quality_thresholds {
   // Sharpness (Laplacian Variance)
   double blur_threshold = 100.0; //! Lower means blurrier
+  //! A frame is only "blurry" if its sharpest region is also no more than this
+  //! multiple of the whole-frame sharpness. A portrait-mode shot has a sharp
+  //! subject sitting well above its deliberately blurred surround, so its
+  //! peak/whole ratio clears this and it is not flagged.
+  double blur_peak_ratio = 3.0;
+  //! Floor for the ratio test above, so a near-uniform frame (tiny whole-frame
+  //! variance) still needs a genuinely sharp region to count as in focus.
+  double blur_peak_floor = 12.0;
 
   // Exposure (Histogram)
   int low_bin_index = 15;   //! Bins below this are considered shadow region
@@ -23,12 +31,16 @@ struct quality_thresholds {
       0.30; //! If more than 30% of the image is clipped, it's underexposed
   double overexposed_threshold =
       0.30; //! If more than 30% of the image is clipped, it's overexposed
+  //! Mean luminance (0-255) below which a frame reads as underexposed on
+  //! overall darkness alone, independent of shadow clipping. The shortfall
+  //! below this, as a fraction of it, feeds underexposed_ratio.
+  double min_acceptable_mean = 70.0;
 };
 
 struct local_image_metrics {
   std::filesystem::path path;
-  double laplacian_variance = 0.0;    //! Whole-frame sharpness (kept for record)
-  double focus_peak_variance = 0.0;   //! Sharpness of the most in-focus region
+  double laplacian_variance = 0.0;  //! Whole-frame sharpness (kept for record)
+  double focus_peak_variance = 0.0; //! Sharpness of the most in-focus region
   double underexposed_ratio = 0.0;
   double overexposed_ratio = 0.0;
   bool valid = false;
@@ -60,6 +72,21 @@ auto analyze_images(quality_thresholds thresholds,
 /** True when any quality flag applies to the metrics. */
 auto is_flagged(const local_image_metrics &metrics,
                 const quality_thresholds &thresholds) -> bool;
+
+/** True when the frame is underexposed (shadow clipping or overall darkness).
+ */
+auto is_underexposed(const local_image_metrics &metrics,
+                     const quality_thresholds &thresholds) -> bool;
+
+/** True when the frame is overexposed (highlight clipping). */
+auto is_overexposed(const local_image_metrics &metrics,
+                    const quality_thresholds &thresholds) -> bool;
+
+/** True when the sharpest region is below the blur threshold and not markedly
+ * sharper than the frame overall. Judge this only on a well-exposed frame —
+ * a too-dark or blown-out image has an unreliable sharpness measure. */
+auto is_blurry(const local_image_metrics &metrics,
+               const quality_thresholds &thresholds) -> bool;
 
 /** Laplacian variance (sharpness) of a grayscale image; higher = sharper.
  * Shared with the video pass, which scores sampled frames the same way. */

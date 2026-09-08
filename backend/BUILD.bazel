@@ -112,16 +112,22 @@ cc_binary(
     visibility = ["//visibility:public"],
 )
 
-# Assertions for the quality pass's tile-based peak-sharpness blur measure
-# (analyze_blur_peak). Run via `just test-quality`; images are synthesised in
-# memory, so there are no fixtures.
+# Assertions for the quality pass: synthetic in-memory checks of the tile-based
+# peak-sharpness blur measure (analyze_blur_peak), plus a real-photo corpus
+# under test/photos/ run through analyze_images() (blur/exposure) and
+# find_similar_images() (near-duplicate grouping). Run via `just test-quality`.
 cc_binary(
     name = "quality_test",
     srcs = [
+        "src/collection/vantage_point_tree.cpp",
         "src/pass/quality.cpp",
+        "src/pass/similar.cpp",
         "test/quality_test.cpp",
     ] + glob([
         "include/pass/quality.h",
+        "include/pass/similar.h",
+        "include/collection/vantage_point_tree.h",
+        "include/image_features.h",
         "include/exec/*.h",
     ]),
     includes = ["include"],

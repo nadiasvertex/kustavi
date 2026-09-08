@@ -18,7 +18,7 @@ void analyze(const std::filesystem::path &folder_path) {
   kustavi::database db;
   db.open(folder_path);
 
-  constexpr double similarity_radius = 0.15;
+  constexpr double similarity_radius = image::default_similarity_radius;
 
   auto image_paths = store::get_original_image_paths(db);
   auto low_quality_paths = image::find_low_quality_images(
