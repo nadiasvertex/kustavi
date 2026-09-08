@@ -47,6 +47,28 @@ auto exposure_score(const image::local_image_metrics &metrics) -> double {
   return std::clamp(0.5 - clipped, 0.0, 0.5);
 }
 
+/** The proto reasons packed into a bitmask (BLURRY=1, UNDER=2, OVER=4), so a
+ *  resumed session can restore the review without recomputing them. */
+auto reasons_bitmask(const std::vector<QualityReason> &reasons) -> int {
+  int mask = 0;
+  for (const auto reason : reasons) {
+    switch (reason) {
+    case BLURRY:
+      mask |= 1;
+      break;
+    case UNDER_EXPOSED:
+      mask |= 2;
+      break;
+    case OVER_EXPOSED:
+      mask |= 4;
+      break;
+    default:
+      break;
+    }
+  }
+  return mask;
+}
+
 } // namespace
 
 auto kustavi_service::RunQualityPass(grpc::ServerContext *context,
@@ -130,16 +152,15 @@ auto kustavi_service::RunQualityPass(grpc::ServerContext *context,
                                           .exposure_score = exposure_score(m)});
             });
 
-        // Persist the metrics, then report.
+        // Persist the metrics (plus the packed reasons + peak sharpness so a
+        // resume can restore the review verbatim), then report.
         std::size_t flagged = 0;
         session_db_.begin_transaction();
         try {
-          auto stmt = session_db_.prepare("INSERT OR REPLACE INTO "
-                                          "quality_flags (image_id, "
-                                          "laplacian, underexposed, "
-                                          "overexposed, processed_at) "
-                                          "VALUES (?, ?, ?, ?, "
-                                          "strftime('%s','now'));");
+          auto stmt = session_db_.prepare(
+              "INSERT OR REPLACE INTO quality_flags (image_id, laplacian, "
+              "underexposed, overexposed, focus_peak, reasons, processed_at) "
+              "VALUES (?, ?, ?, ?, ?, ?, strftime('%s','now'));");
           for (const auto &m : metrics) {
             if (!m.valid) {
               continue;
@@ -148,13 +169,16 @@ auto kustavi_service::RunQualityPass(grpc::ServerContext *context,
             if (id_it == path_to_id.end()) {
               continue;
             }
-            if (!quality_reasons(m, thresholds).empty()) {
+            const int mask = reasons_bitmask(quality_reasons(m, thresholds));
+            if (mask != 0) {
               flagged++;
             }
             stmt.bind_text(1, id_it->second);
             stmt.bind_double(2, m.laplacian_variance);
             stmt.bind_double(3, m.underexposed_ratio);
             stmt.bind_double(4, m.overexposed_ratio);
+            stmt.bind_double(5, m.focus_peak_variance);
+            stmt.bind_int(6, mask);
             stmt.step();
             stmt.reset();
           }
@@ -199,6 +223,9 @@ auto kustavi_service::RunQualityPass(grpc::ServerContext *context,
   producer.join();
   if (const auto err = producer_error_status(producer_error)) {
     return *err;
+  }
+  if (status.ok()) {
+    record_pass_complete(1); // WizardStep.quality
   }
   spdlog::info("quality pass finished");
   return status;

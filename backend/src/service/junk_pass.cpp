@@ -342,6 +342,9 @@ auto kustavi_service::RunJunkPass(grpc::ServerContext *context,
   if (const auto err = producer_error_status(producer_error)) {
     return *err;
   }
+  if (status.ok()) {
+    record_pass_complete(3); // WizardStep.junk
+  }
   spdlog::info("junk pass finished");
   return status;
 }

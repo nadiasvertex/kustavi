@@ -990,8 +990,20 @@ void run_resume_check(const options &opts) {
       fail("GetSessionResults: expected 2 decisions, got " +
            std::to_string(response.decisions_size()));
     }
-    std::println("ok: GetSessionResults decisions={} resume_step={}",
-                 response.decisions_size(), response.resume_step());
+    // The basic smoke sequence ran quality + similar (not junk/video), so
+    // those markers must be set and the later ones clear.
+    if (!response.quality_done() || !response.similar_done()) {
+      fail("GetSessionResults: quality/similar not marked done after the "
+           "passes ran");
+    }
+    if (response.junk_done() || response.video_done()) {
+      fail("GetSessionResults: junk/video marked done though they never ran");
+    }
+    std::println("ok: GetSessionResults decisions={} quality_flags={} "
+                 "quality_done={} similar_done={} junk_done={}",
+                 response.decisions_size(), response.quality_flags_size(),
+                 response.quality_done(), response.similar_done(),
+                 response.junk_done());
   }
 }
 

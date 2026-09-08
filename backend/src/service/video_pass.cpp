@@ -253,6 +253,9 @@ auto kustavi_service::RunVideoPass(grpc::ServerContext *context,
   if (const auto err = producer_error_status(producer_error)) {
     return *err;
   }
+  if (status.ok()) {
+    record_pass_complete(4); // WizardStep.video
+  }
   spdlog::info("video pass finished");
   return status;
 }

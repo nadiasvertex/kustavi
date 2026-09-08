@@ -5,6 +5,7 @@
 
 #include <spdlog/spdlog.h>
 
+#include <algorithm>
 #include <charconv>
 #include <cstdint>
 #include <exception>
@@ -104,6 +105,10 @@ void decode_group_keepers(const std::string &encoded, KeeperMap *out) {
   }
 }
 
+auto pass_complete_key(int step) -> std::string {
+  return "pass_" + std::to_string(step) + "_complete";
+}
+
 } // namespace
 
 void kustavi_service::record_step(int step) noexcept {
@@ -111,6 +116,14 @@ void kustavi_service::record_step(int step) noexcept {
     store::set_wizard_step(session_db_, step);
   } catch (const std::exception &e) {
     spdlog::warn("could not record wizard step {}: {}", step, e.what());
+  }
+}
+
+void kustavi_service::record_pass_complete(int step) noexcept {
+  try {
+    store::set_session_value(session_db_, pass_complete_key(step), "1");
+  } catch (const std::exception &e) {
+    spdlog::warn("could not record pass {} completion: {}", step, e.what());
   }
 }
 
@@ -175,6 +188,62 @@ auto kustavi_service::GetSessionResults(grpc::ServerContext *context,
 
   try {
     {
+      // Flagged photos only (reasons bitmask: BLURRY=1, UNDER=2, OVER=4).
+      auto stmt = session_db_.prepare(
+          "SELECT image_id, focus_peak, underexposed, overexposed, reasons "
+          "FROM quality_flags WHERE reasons != 0;");
+      while (stmt.step() == SQLITE_ROW) {
+        auto *flag = response->add_quality_flags();
+        const auto *id =
+            reinterpret_cast<const char *>(sqlite3_column_text(stmt.raw(), 0));
+        if (id != nullptr) {
+          flag->set_image_id(id);
+        }
+        flag->set_sharpness(sqlite3_column_double(stmt.raw(), 1));
+        const double under = sqlite3_column_double(stmt.raw(), 2);
+        const double over = sqlite3_column_double(stmt.raw(), 3);
+        flag->set_exposure_score(
+            std::clamp(0.5 - std::max(under, over), 0.0, 0.5));
+        const int mask = sqlite3_column_int(stmt.raw(), 4);
+        if ((mask & 1) != 0) {
+          flag->add_reasons(BLURRY);
+        }
+        if ((mask & 2) != 0) {
+          flag->add_reasons(UNDER_EXPOSED);
+        }
+        if ((mask & 4) != 0) {
+          flag->add_reasons(OVER_EXPOSED);
+        }
+      }
+    }
+    {
+      // Regroup the flat similar_groups table by group_id.
+      auto stmt = session_db_.prepare(
+          "SELECT group_id, image_id, keeper_id, score FROM similar_groups "
+          "ORDER BY group_id;");
+      SimilarGroup *group = nullptr;
+      int current_group = -1;
+      while (stmt.step() == SQLITE_ROW) {
+        const int gid = sqlite3_column_int(stmt.raw(), 0);
+        const auto *image_id =
+            reinterpret_cast<const char *>(sqlite3_column_text(stmt.raw(), 1));
+        const auto *keeper_id =
+            reinterpret_cast<const char *>(sqlite3_column_text(stmt.raw(), 2));
+        if (group == nullptr || gid != current_group) {
+          group = response->add_similar_groups();
+          group->set_id(static_cast<std::uint32_t>(gid));
+          if (keeper_id != nullptr) {
+            group->set_recommended_keep_id(keeper_id);
+          }
+          current_group = gid;
+        }
+        if (image_id != nullptr) {
+          group->add_image_ids(image_id);
+        }
+        group->add_member_scores(sqlite3_column_double(stmt.raw(), 3));
+      }
+    }
+    {
       auto stmt = session_db_.prepare("SELECT image_id, reason, confidence "
                                       "FROM junk_flags WHERE is_junk = 1;");
       while (stmt.step() == SQLITE_ROW) {
@@ -227,6 +296,15 @@ auto kustavi_service::GetSessionResults(grpc::ServerContext *context,
 
     response->set_resume_step(
         static_cast<std::uint32_t>(store::get_wizard_step(session_db_)));
+
+    const auto done = [&](int step) -> bool {
+      return store::get_session_value(session_db_, pass_complete_key(step))
+          .has_value();
+    };
+    response->set_quality_done(done(1));
+    response->set_similar_done(done(2));
+    response->set_junk_done(done(3));
+    response->set_video_done(done(4));
 
     auto *thresholds = response->mutable_quality_thresholds();
     thresholds->set_blur_threshold(

@@ -4,6 +4,7 @@
 #include <sqlite3.h>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 namespace kustavi {
 
@@ -76,5 +77,7 @@ public:
 private:
   sqlite3 *db_ = nullptr;
   void initialize_schema();
+  void add_column_if_missing(std::string_view table, std::string_view column,
+                             std::string_view decl);
 };
 } // namespace kustavi

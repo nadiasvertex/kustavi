@@ -89,10 +89,15 @@ class Wizard extends _$Wizard {
 
   /// Set while a resume is fast-forwarding through the pipeline: the target
   /// [WizardStep] index to stop at. Null during normal operation. While set,
-  /// the quality/similar/trips "done" handlers advance the resume chain
+  /// the pass "done" handlers advance the resume ladder ([_advanceResume])
   /// instead of publishing their review screen, and progress write-through
   /// is suppressed.
   int? _resumeTargetStep;
+
+  /// Which passes the resumed session had already finished, keyed by
+  /// [WizardStep] index (1 quality … 4 video). A finished pass is restored
+  /// from the DB; an unfinished one below the target is re-run/resumed.
+  final Map<int, bool> _resumeDone = {};
 
   /// True from a resume ScanFolder until [_onResumeScanDone] finishes wiring
   /// the restored state — suppresses progress/decision write-through.
@@ -765,7 +770,16 @@ class Wizard extends _$Wizard {
     if (p.legRadiusKm > 0) _tripLegRadiusKm = p.legRadiusKm;
     _saveLastRunThresholds();
 
-    // Restore the slow passes' flags (quality + similar re-run below).
+    // Restore every persisted pass result. Nothing here re-runs; the ladder
+    // below only runs a pass that never finished (or was never reached).
+    _qualityFlags.clear();
+    for (final flag in results.qualityFlags) {
+      _qualityFlags[flag.imageId] = QualityFlagInfo.fromFlag(flag);
+    }
+    _similarGroups.clear();
+    for (final group in results.similarGroups) {
+      _similarGroups.add(SimilarGroupInfo.fromGroup(group));
+    }
     _junkFlags.clear();
     for (final flag in results.junkFlags) {
       _junkFlags[flag.imageId] = JunkFlagInfo.fromFlag(flag);
@@ -798,8 +812,6 @@ class Wizard extends _$Wizard {
 
     _resuming = false;
 
-    // Re-enter the pipeline. Quality + similar are cheap and always re-run so
-    // later steps have their inputs; junk/video were restored above.
     final target = complete.resumeStep;
     if (target < WizardStep.quality.index) {
       state = AsyncValue.data(
@@ -810,49 +822,53 @@ class Wizard extends _$Wizard {
       );
       return;
     }
+
     _resumeTargetStep = target;
-    _qualityFlags.clear();
-    state = const AsyncValue.data(WizardQualityRunning());
-    _subscribe(
-      client.runQualityPass(
-        blurThreshold: _blurThreshold,
-        underexposedThreshold: _underexposedThreshold,
-        overexposedThreshold: _overexposedThreshold,
-      ),
-      _onQualityEvent,
-      _onQualityDone,
-    );
+    _resumeDone
+      ..clear()
+      ..[WizardStep.quality.index] = results.qualityDone
+      ..[WizardStep.duplicates.index] = results.similarDone
+      ..[WizardStep.junk.index] = results.junkDone
+      ..[WizardStep.video.index] = results.videoDone;
+    _advanceResume();
   }
 
-  void _advanceResumeAfterQuality() {
-    _saveLastRunThresholds();
-    if (_resumeTargetStep == WizardStep.quality.index) {
-      _resumeTargetStep = null;
-      _returnPhase = _qualityReviewPhase;
-      state = AsyncValue.data(_qualityReviewPhase);
-      return;
-    }
-    _similarGroups.clear();
-    state = const AsyncValue.data(WizardSimilarRunning());
-    final client = ref.read(kustaviClientProvider).requireValue;
-    _subscribe(
-      client.runSimilarPass(skipImageIds: _deletedBeforeSimilar()),
-      _onSimilarEvent,
-      _onSimilarDone,
-    );
-  }
-
-  void _advanceResumeAfterSimilar() {
+  /// Resume ladder: run the first pass at or before [_resumeTargetStep] that
+  /// did not finish, then re-enter here from its "done" handler. When every
+  /// pass up to the target is accounted for, land straight on that step's
+  /// screen — nothing re-runs. Trips (5) has no persisted result, so it is
+  /// re-run once when the target is trips or copy.
+  void _advanceResume() {
     final target = _resumeTargetStep!;
-    if (target == WizardStep.duplicates.index) {
-      _resumeTargetStep = null;
-      _returnPhase = _similarReviewPhase;
-      state = AsyncValue.data(_similarReviewPhase);
+    final client = ref.read(kustaviClientProvider).requireValue;
+
+    bool needs(int step) =>
+        target >= step && !(_resumeDone[step] ?? false);
+
+    if (needs(WizardStep.quality.index)) {
+      _returnPhase = null;
+      state = const AsyncValue.data(WizardQualityRunning());
+      _subscribe(
+        client.runQualityPass(
+          blurThreshold: _blurThreshold,
+          underexposedThreshold: _underexposedThreshold,
+          overexposedThreshold: _overexposedThreshold,
+        ),
+        _onQualityEvent,
+        _onQualityDone,
+      );
       return;
     }
-    if (target == WizardStep.junk.index) {
-      _resumeTargetStep = null;
-      _returnPhase = _similarReviewPhase;
+    if (needs(WizardStep.duplicates.index)) {
+      state = const AsyncValue.data(WizardSimilarRunning());
+      _subscribe(
+        client.runSimilarPass(skipImageIds: _deletedBeforeSimilar()),
+        _onSimilarEvent,
+        _onSimilarDone,
+      );
+      return;
+    }
+    if (needs(WizardStep.junk.index)) {
       // The junk pass resumes from its DB checkpoint; restored flags stay.
       if (_modelReady) {
         _startJunkPass();
@@ -861,13 +877,10 @@ class Wizard extends _$Wizard {
       }
       return;
     }
-    if (target == WizardStep.video.index) {
-      _resumeTargetStep = null;
-      _returnPhase = _junkReviewPhase;
+    if (needs(WizardStep.video.index)) {
       // Keep the restored (possibly partial) video flags; the video pass
       // resumes from its DB checkpoint and only emits newly-analyzed clips.
       state = const AsyncValue.data(WizardVideoRunning());
-      final client = ref.read(kustaviClientProvider).requireValue;
       _subscribe(
         client.runVideoPass(skipVideoIds: _deletedBeforeVideo()),
         _onVideoEvent,
@@ -875,17 +888,30 @@ class Wizard extends _$Wizard {
       );
       return;
     }
-    // target is trips or copy: junk + video already restored from the DB.
-    _returnPhase = _videoReviewPhase;
-    _tripResults.clear();
-    _resetTripEdits();
-    state = const AsyncValue.data(WizardTripsRunning());
-    final client = ref.read(kustaviClientProvider).requireValue;
-    _subscribe(
-      client.runTripsPass(_tripsRequest()),
-      _onTripsEvent,
-      _onTripsDone,
-    );
+    if (target >= WizardStep.trips.index) {
+      _returnPhase = _videoReviewPhase;
+      _tripResults.clear();
+      _resetTripEdits();
+      state = const AsyncValue.data(WizardTripsRunning());
+      _subscribe(
+        client.runTripsPass(_tripsRequest()),
+        _onTripsEvent,
+        _onTripsDone,
+      );
+      return;
+    }
+
+    // Everything the target needs is restored: land on its review screen with
+    // no pass run at all.
+    _resumeTargetStep = null;
+    final phase = switch (target) {
+      1 => _qualityReviewPhase, // WizardStep.quality
+      2 => _similarReviewPhase, // WizardStep.duplicates
+      3 => _junkReviewPhase, // WizardStep.junk
+      _ => _videoReviewPhase, // WizardStep.video
+    };
+    _returnPhase = phase;
+    state = AsyncValue.data(phase);
   }
 
   void cancelScan() {
@@ -1012,11 +1038,12 @@ class Wizard extends _$Wizard {
     if (state.value is! WizardQualityRunning) {
       return;
     }
+    _saveLastRunThresholds();
     if (_resumeTargetStep != null) {
-      _advanceResumeAfterQuality();
+      _resumeDone[WizardStep.quality.index] = true;
+      _advanceResume();
       return;
     }
-    _saveLastRunThresholds();
     state = AsyncValue.data(_qualityReviewPhase);
   }
 
@@ -1397,7 +1424,8 @@ class Wizard extends _$Wizard {
       return;
     }
     if (_resumeTargetStep != null) {
-      _advanceResumeAfterSimilar();
+      _resumeDone[WizardStep.duplicates.index] = true;
+      _advanceResume();
       return;
     }
     state = AsyncValue.data(_similarReviewPhase);
@@ -1503,6 +1531,11 @@ class Wizard extends _$Wizard {
 
   void _onJunkDone() {
     if (state.value is! WizardJunkRunning) {
+      return;
+    }
+    if (_resumeTargetStep != null) {
+      _resumeDone[WizardStep.junk.index] = true;
+      _advanceResume();
       return;
     }
     state = AsyncValue.data(_junkReviewPhase);
@@ -1631,6 +1664,11 @@ class Wizard extends _$Wizard {
 
   void _onVideoDone() {
     if (state.value is! WizardVideoRunning) {
+      return;
+    }
+    if (_resumeTargetStep != null) {
+      _resumeDone[WizardStep.video.index] = true;
+      _advanceResume();
       return;
     }
     state = AsyncValue.data(_videoReviewPhase);
@@ -1876,6 +1914,7 @@ class Wizard extends _$Wizard {
     _commitErrors = const <String>[];
     _resumeTargetStep = null;
     _resuming = false;
+    _resumeDone.clear();
     if (!keepReturnPhase) {
       _returnPhase = null;
     }

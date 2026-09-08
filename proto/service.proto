@@ -70,18 +70,25 @@ message InspectSessionResponse {
 
 message GetSessionResultsRequest {}
 
-// The quality and similar passes are cheap and re-run on resume, so their
-// results are not carried here — only the slow passes' flags plus everything
-// the user chose by hand.
+// Every persisted pass result plus the user's hand choices, so a resume can
+// re-enter directly at the saved step without re-running completed passes.
+// The `*_done` flags say whether that pass finished; a pass that did not
+// finish (or was never reached) is re-run/resumed on the front end.
 message GetSessionResultsResponse {
-  repeated JunkFlag     junk_flags     = 1;   // is_junk = 1 rows (may be partial)
-  repeated VideoFlag    video_flags    = 2;   // is_junk = 1 rows (may be partial)
-  uint32                video_total    = 3;   // video rows in the image index
-  repeated DecisionEntry decisions     = 4;   // persisted keep/delete choices
-  uint32                resume_step    = 5;   // saved WizardStep index
-  RunQualityPassRequest quality_thresholds = 6;  // saved thresholds (0 => default)
-  RunTripsPassRequest   trip_params        = 7;  // saved trip tunables (0 => default)
-  map<uint32, string>   group_keepers      = 8;  // similar group id -> keeper image id
+  repeated QualityFlag  quality_flags  = 1;   // flagged photos only
+  repeated SimilarGroup similar_groups = 2;   // regrouped from similar_groups
+  repeated JunkFlag     junk_flags     = 3;   // is_junk = 1 rows (may be partial)
+  repeated VideoFlag    video_flags    = 4;   // is_junk = 1 rows (may be partial)
+  uint32                video_total    = 5;   // video rows in the image index
+  repeated DecisionEntry decisions     = 6;   // persisted keep/delete choices
+  uint32                resume_step    = 7;   // saved WizardStep index
+  RunQualityPassRequest quality_thresholds = 8;  // saved thresholds (0 => default)
+  RunTripsPassRequest   trip_params        = 9;  // saved trip tunables (0 => default)
+  map<uint32, string>   group_keepers      = 10; // similar group id -> keeper image id
+  bool quality_done  = 11;   // the quality pass ran to completion
+  bool similar_done  = 12;
+  bool junk_done     = 13;
+  bool video_done    = 14;
 }
 
 enum Decision {

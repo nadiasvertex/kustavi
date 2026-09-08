@@ -72,6 +72,12 @@ pb.InspectSessionResponse inspectSession({
 pb.GetSessionResultsResponse sessionResults({
   int resumeStep = 0,
   int videoTotal = 0,
+  bool qualityDone = false,
+  bool similarDone = false,
+  bool junkDone = false,
+  bool videoDone = false,
+  List<pb.QualityFlag> qualityFlags = const [],
+  List<pb.SimilarGroup> similarGroups = const [],
   List<pb.JunkFlag> junkFlags = const [],
   List<pb.VideoFlag> videoFlags = const [],
   Map<String, bool> decisions = const {}, // image id -> true means delete
@@ -80,6 +86,12 @@ pb.GetSessionResultsResponse sessionResults({
   final response = pb.GetSessionResultsResponse()
     ..resumeStep = resumeStep
     ..videoTotal = videoTotal
+    ..qualityDone = qualityDone
+    ..similarDone = similarDone
+    ..junkDone = junkDone
+    ..videoDone = videoDone
+    ..qualityFlags.addAll(qualityFlags)
+    ..similarGroups.addAll(similarGroups)
     ..junkFlags.addAll(junkFlags)
     ..videoFlags.addAll(videoFlags);
   decisions.forEach((id, remove) {

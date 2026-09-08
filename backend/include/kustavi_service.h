@@ -309,6 +309,10 @@ private:
   /// failing to checkpoint must never abort a pass.
   void record_step(int step) noexcept;
 
+  /// Best-effort: mark the pass for `step` (a WizardStep index) as finished,
+  /// so a resume restores its results instead of re-running it.
+  void record_pass_complete(int step) noexcept;
+
   static auto unauthenticated() -> grpc::Status {
     return grpc::Status(grpc::StatusCode::UNAUTHENTICATED,
                         "invalid or missing auth token");

@@ -161,6 +161,8 @@ void database::initialize_schema() {
             laplacian REAL NOT NULL,
             underexposed REAL NOT NULL,
             overexposed REAL NOT NULL,
+            focus_peak REAL NOT NULL DEFAULT 0,
+            reasons INTEGER NOT NULL DEFAULT 0,
             processed_at INTEGER NOT NULL,
             FOREIGN KEY(image_id) REFERENCES images(id) ON DELETE CASCADE
         );
@@ -203,6 +205,37 @@ void database::initialize_schema() {
   if (!has_kind_column) {
     execute(
         "ALTER TABLE images ADD COLUMN kind TEXT NOT NULL DEFAULT 'photo';");
+  }
+
+  // Migration: `focus_peak` / `reasons` were added to quality_flags so a
+  // resumed session can restore the quality review without re-running the
+  // pass. Older caches only carry the raw metric columns.
+  add_column_if_missing("quality_flags", "focus_peak",
+                        "REAL NOT NULL DEFAULT 0");
+  add_column_if_missing("quality_flags", "reasons",
+                        "INTEGER NOT NULL DEFAULT 0");
+}
+
+void database::add_column_if_missing(std::string_view table,
+                                     std::string_view column,
+                                     std::string_view decl) {
+  bool present = false;
+  {
+    auto stmt = prepare("PRAGMA table_info(" + std::string(table) + ");");
+    while (stmt.step() == SQLITE_ROW) {
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast) sqlite C
+      // API
+      const auto *name =
+          reinterpret_cast<const char *>(sqlite3_column_text(stmt.raw(), 1));
+      if (name != nullptr && std::string_view(name) == column) {
+        present = true;
+        break;
+      }
+    }
+  }
+  if (!present) {
+    execute("ALTER TABLE " + std::string(table) + " ADD COLUMN " +
+            std::string(column) + " " + std::string(decl) + ";");
   }
 }
 

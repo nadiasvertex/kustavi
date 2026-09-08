@@ -1024,8 +1024,10 @@ void main() {
       expect(phase.savedStepIndex, 4);
     });
 
-    test('resume rehydrates flags + decisions and lands at the saved step',
+    test('resume with a finished pass restores it and runs only what is left',
         () async {
+      // Saved at the video step: quality, similar and junk all finished; the
+      // video pass had not. Only the video pass should run on resume.
       final client = FakeKustaviClient(
         inspectSessionResponse: inspectSession(imageCount: 3, resumeStep: 4),
         scanEvents: [
@@ -1037,6 +1039,15 @@ void main() {
         sessionResults: sessionResults(
           resumeStep: 4,
           videoTotal: 1,
+          qualityDone: true,
+          similarDone: true,
+          junkDone: true,
+          videoDone: false,
+          qualityFlags: [
+            pb.QualityFlag()
+              ..imageId = 'a.jpg'
+              ..reasons.add(pb.QualityReason.BLURRY),
+          ],
           junkFlags: [
             pb.JunkFlag()
               ..imageId = 'b.jpg'
@@ -1044,8 +1055,6 @@ void main() {
           ],
           decisions: {'a.jpg': false, 'c.jpg': true},
         ),
-        qualityEvents: const [],
-        similarEvents: const [],
         videoEvents: const [],
       );
       container = makeContainer(client);
@@ -1068,13 +1077,60 @@ void main() {
       expect(client.lastScanRequest?.resume, isTrue);
       final wizard = container.read(wizardProvider.notifier);
       expect(wizard.imageIds, ['a.jpg', 'b.jpg', 'c.jpg']);
+      expect(wizard.qualityFlags.keys, contains('a.jpg'));
       expect(wizard.junkFlags.keys, contains('b.jpg'));
       final plan = container.read(deletionPlanProvider);
       expect(plan.explicitKept, contains('a.jpg'));
       expect(plan.explicitDeleted, contains('c.jpg'));
-      // quality + similar re-ran on resume; video did not.
-      expect(client.qualityPassCount, 1);
+      // Finished passes were NOT re-run; only the video pass ran.
+      expect(client.qualityPassCount, 0);
       expect(client.lastVideoSkipIds, isNotEmpty);
+    });
+
+    test('resume with every pass finished runs nothing and shows the review',
+        () async {
+      final client = FakeKustaviClient(
+        inspectSessionResponse: inspectSession(imageCount: 2, resumeStep: 3),
+        scanEvents: [
+          scanImage('a.jpg'),
+          scanImage('b.jpg'),
+          scanComplete(images: 2, resumed: true, resumeStep: 3),
+        ],
+        sessionResults: sessionResults(
+          resumeStep: 3,
+          qualityDone: true,
+          similarDone: true,
+          junkDone: true,
+          junkFlags: [
+            pb.JunkFlag()
+              ..imageId = 'a.jpg'
+              ..reason = 'screenshot',
+          ],
+        ),
+      );
+      container = makeContainer(client);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardStart,
+      );
+
+      container.read(wizardProvider.notifier).selectFolder('/photos');
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardSessionRestore,
+      );
+      container.read(wizardProvider.notifier).resumeSession();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardJunkReview,
+      );
+
+      expect(client.qualityPassCount, 0);
+      expect(client.lastVideoSkipIds, isEmpty); // video pass never ran
+      expect(
+        container.read(wizardProvider.notifier).junkFlags.keys,
+        contains('a.jpg'),
+      );
     });
 
     test('start fresh from the restore prompt scans normally', () async {

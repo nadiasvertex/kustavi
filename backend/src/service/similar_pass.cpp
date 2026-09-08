@@ -238,6 +238,9 @@ auto kustavi_service::RunSimilarPass(grpc::ServerContext *context,
   if (const auto err = producer_error_status(producer_error)) {
     return *err;
   }
+  if (status.ok()) {
+    record_pass_complete(2); // WizardStep.duplicates
+  }
   spdlog::info("similar pass finished");
   return status;
 }
