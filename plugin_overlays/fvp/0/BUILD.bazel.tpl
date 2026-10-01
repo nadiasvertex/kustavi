@@ -52,8 +52,21 @@ flutter_plugin(
         ],
         "//conditions:default": [],
     }),
-    linux_libs = [":fvp_linux"],
-    windows_libs = [":fvp_windows"],
+    # Like `apple_libs` above, gate the desktop plugin libraries on the
+    # target OS. `flutter_plugin`'s `linux_libs` / `windows_libs` are plain
+    # label_lists — without a `select()` they stay in the configured-target
+    # graph of *every* host's build, so a macOS `//frontend:kustavi_macos`
+    # ends up analyzing `:fvp_windows` and eagerly fetching its Windows-only
+    # `@mdk_sdk_windows` archive (and vice versa). Routing each to its own
+    # platform keeps a macOS build from ever depending on a Windows artifact.
+    linux_libs = select({
+        "@platforms//os:linux": [":fvp_linux"],
+        "//conditions:default": [],
+    }),
+    windows_libs = select({
+        "@platforms//os:windows": [":fvp_windows"],
+        "//conditions:default": [],
+    }),
     visibility = ["//visibility:public"],
 )
 
@@ -207,11 +220,13 @@ flutter_linux_plugin_library(
         allow_empty = True,
     ),
     includes = ["linux/include"],
+    target_compatible_with = ["@platforms//os:linux"],
     visibility = ["//visibility:public"],
 )
 
 flutter_windows_plugin_library(
     name = "fvp_windows",
+    target_compatible_with = ["@platforms//os:windows"],
     srcs = glob(
         [
             "windows/**/*.cc",
@@ -244,7 +259,16 @@ flutter_windows_plugin_library(
     # //third_party:mdk_sdk_windows.BUILD.bazel and the
     # rules_flutter-windows-plugin-cc-deps.patch that lets a Windows plugin
     # library attach a cc_import's CcInfo to the runner's compile/link steps).
-    deps = ["@@+http_archive+mdk_sdk_windows//:mdk_windows_import"],
+    #
+    # `select()`-guarded so that even a direct `bazel build` of this target
+    # from a non-Windows host (or a `//...`-style wildcard that reaches it)
+    # never forces a fetch of the Windows-only `@mdk_sdk_windows` archive;
+    # the `windows_libs = select(...)` in `:fvp` already keeps it out of a
+    # macOS/Linux app build, this makes the target self-contained too.
+    deps = select({
+        "@platforms//os:windows": ["@@+http_archive+mdk_sdk_windows//:mdk_windows_import"],
+        "//conditions:default": [],
+    }),
     visibility = ["//visibility:public"],
 )
 

@@ -88,31 +88,36 @@ http_archive(
 # mdk-sdk — libmdk binaries the `fvp` Flutter plugin (video playback) links
 # against on macOS/iOS. See plugin_overlays/fvp/0/BUILD.bazel.tpl and
 # third_party/mdk_sdk_apple.BUILD.bazel for why this exists outside pub/
-# CocoaPods. Upstream's own podspec points at this same "nightly" URL with no
-# integrity pin (https://sourceforge.net/projects/mdk-sdk/files/nightly/); we
-# pin the sha256 of what that resolved to as of writing for reproducibility —
-# bump both together if fvp's required mdk version moves.
+# CocoaPods.
+#
+# fvp's own podspec / CMake fetch this from the SourceForge "nightly/"
+# directory, whose contents (and therefore checksum) are replaced in place on
+# every upstream build — a pinned sha256 against that URL is a time bomb that
+# breaks the instant upstream rolls a new nightly. We instead pin the
+# immutable, versioned GitHub release asset for the exact mdk-sdk version
+# fvp's podspec constrains (`s.dependency 'mdk', '~> 0.38.0'` in fvp 0.38.1),
+# so the download is byte-for-byte reproducible forever. Bump the tag + both
+# sha256s together when the vendored fvp's required mdk version moves.
 http_archive(
     name = "mdk_sdk_apple",
     build_file = "//third_party:mdk_sdk_apple.BUILD.bazel",
-    sha256 = "4ef80796508c629d8085e4af9bff7f93b8308fc06eb4207799c046ef0f844a87",
+    sha256 = "af74e3a5ff260e856b429f7144dea09e3ee57c67c93fca9073ff9e6668caa980",
     strip_prefix = "mdk-sdk",
-    url = "https://sourceforge.net/projects/mdk-sdk/files/nightly/mdk-sdk-apple.tar.xz",
+    url = "https://github.com/wang-bin/mdk-sdk/releases/download/v0.38.0/mdk-sdk-apple.tar.xz",
 )
 
-# Windows counterpart of mdk_sdk_apple above — the same nightly archive
-# fvp's own windows/cmake/deps.cmake downloads (mdk-sdk-windows-x64.7z) when
-# building via Flutter's own CMake tooling. `.7z` is one of the archive
-# types Bazel's downloader can extract natively (needed anyway for its own
-# Windows LLVM toolchain distributions), so no repository_rule shelling out
-# to a host 7z.exe is required.
+# Windows counterpart of mdk_sdk_apple above — the versioned GitHub release
+# asset matching fvp's nightly `mdk-sdk-windows-x64.7z` (x64, MSVC toolset).
+# `.7z` is one of the archive types Bazel's downloader can extract natively
+# (needed anyway for its own Windows LLVM toolchain distributions), so no
+# repository_rule shelling out to a host 7z.exe is required.
 http_archive(
     name = "mdk_sdk_windows",
     build_file = "//third_party:mdk_sdk_windows.BUILD.bazel",
-    sha256 = "04db531300e27b9414be0bf7b96cbb0ff0f83181a5d6fb50b3502fb6dfcfced1",
+    sha256 = "57d38877a72607c5d135699207320d757b8c6b60437e8fb9b984ede5265a9c06",
     strip_prefix = "mdk-sdk",
     type = "7z",
-    url = "https://sourceforge.net/projects/mdk-sdk/files/nightly/mdk-sdk-windows-x64.7z",
+    url = "https://github.com/wang-bin/mdk-sdk/releases/download/v0.38.0/mdk-sdk-windows-x64-vs2026.7z",
 )
 
 # Flutter support

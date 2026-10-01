@@ -197,13 +197,16 @@ auto kustavi_service::RunJunkPass(grpc::ServerContext *context,
   // (see session_resume.cpp for the WizardStep index map).
   record_step(3);
 
+  const std::unordered_set<std::string> scope(request->scope_image_ids().begin(),
+                                              request->scope_image_ids().end());
   std::vector<store::image_record> records;
   std::unordered_set<std::string> already_done;
   try {
     // Non-photographic-content classification doesn't apply to videos; the
     // video pass reuses this same classifier on sampled frames instead.
     for (auto &record : store::get_image_records(session_db_)) {
-      if (record.kind == image::media_kind_photo) {
+      if (record.kind == image::media_kind_photo &&
+          (scope.empty() || scope.contains(record.id))) {
         records.push_back(std::move(record));
       }
     }
@@ -343,7 +346,7 @@ auto kustavi_service::RunJunkPass(grpc::ServerContext *context,
     return *err;
   }
   if (status.ok()) {
-    record_pass_complete(3); // WizardStep.junk
+    record_run_complete(3, request->batch_key()); // WizardStep.junk
   }
   spdlog::info("junk pass finished");
   return status;

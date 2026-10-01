@@ -77,6 +77,8 @@ service Kustavi {
 
   // --- pass 2: blur / exposure -----------------------------------------
   rpc RunQualityPass(RunQualityPassRequest) returns (stream QualityEvent);
+  rpc PreviewQualityThresholds(PreviewQualityThresholdsRequest)
+      returns (PreviewQualityThresholdsResponse);
 
   // --- pass 3: junk (vision LLM) ----------------------------------------
   rpc EnsureModel(EnsureModelRequest) returns (stream ModelEvent);
@@ -180,6 +182,18 @@ message QualityFlag {
   repeated QualityReason reasons = 2;  // one or more
   double sharpness = 3;      // Laplacian variance; higher = sharper
   double exposure_score = 4; // 0..1; 0.5 = ideal, lower = worse balance
+}
+
+message PreviewQualityThresholdsRequest {
+  RunQualityPassRequest thresholds = 1;
+}
+
+message PreviewQualityThresholdsResponse {
+  uint32 flagged = 1;       // photos with at least one reason
+  uint32 blurry = 2;
+  uint32 under_exposed = 3;
+  uint32 over_exposed = 4;
+  uint32 total = 5;         // photos with stored metrics
 }
 
 message QualityComplete {
@@ -374,6 +388,19 @@ running.
   in `ScanComplete.errors` as `"<id>: <reason>"`.
 - A new `ScanFolder` discards the previous session's index and cache.
 
+### Batch scope (quality, junk, similar, video)
+`RunQualityPassRequest`, `RunJunkPassRequest`, `RunSimilarPassRequest` and
+`RunVideoPassRequest` accept `scope_image_ids` and `batch_key`. A non-empty
+`scope_image_ids` limits the run to those images: others are neither analyzed
+nor counted in progress or completion totals. An empty scope covers the whole
+session. When `batch_key` is set, finishing the run records a per-batch
+completion that `GetSessionResults` returns in `completed_batch_passes` as
+`"<step>:<batch_key>"` (step is the WizardStep index of the pass), and the
+session-wide `*_done` flag is left unchanged. A similar-pass run replaces the
+stored groups that touch its scope (all groups when unscoped) and numbers new
+groups after the highest stored group id, so ids stay unique across batches.
+Groups are formed only among in-scope images.
+
 ### RunQualityPass
 
 Preconditions: active session; no pass running.
@@ -386,6 +413,13 @@ Preconditions: active session; no pass running.
   the GUI can display them), `QualityProgress` along the way, and
   `QualityComplete` (flagged/total counts).
 - Deterministic: re-running after a cancel produces the same results.
+
+### PreviewQualityThresholds
+Read-only. Applies the given thresholds to the metrics the quality pass
+stored for the session and returns how many photos would be flagged, in
+total and per reason. No image is re-analyzed. Requires an active session
+with a completed quality pass; `INVALID_ARGUMENT` when a threshold is out of
+range. The GUI calls it as the quality sliders move.
 
 ### EnsureModel
 

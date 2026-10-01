@@ -109,6 +109,15 @@ auto pass_complete_key(int step) -> std::string {
   return "pass_" + std::to_string(step) + "_complete";
 }
 
+constexpr std::string_view k_batch_pass_prefix = "batch_pass:";
+
+/// `batch_pass:<step>:<batch_key>`; the step index never contains a colon, so
+/// the first colon after the prefix splits it from the (free-form) key.
+auto batch_pass_key(int step, const std::string &batch_key) -> std::string {
+  return std::string(k_batch_pass_prefix) + std::to_string(step) + ":" +
+         batch_key;
+}
+
 } // namespace
 
 void kustavi_service::record_step(int step) noexcept {
@@ -124,6 +133,25 @@ void kustavi_service::record_pass_complete(int step) noexcept {
     store::set_session_value(session_db_, pass_complete_key(step), "1");
   } catch (const std::exception &e) {
     spdlog::warn("could not record pass {} completion: {}", step, e.what());
+  }
+}
+
+void kustavi_service::record_batch_pass_complete(
+    int step, const std::string &batch_key) noexcept {
+  try {
+    store::set_session_value(session_db_, batch_pass_key(step, batch_key), "1");
+  } catch (const std::exception &e) {
+    spdlog::warn("could not record pass {} completion for batch '{}': {}", step,
+                 batch_key, e.what());
+  }
+}
+
+void kustavi_service::record_run_complete(
+    int step, const std::string &batch_key) noexcept {
+  if (batch_key.empty()) {
+    record_pass_complete(step);
+  } else {
+    record_batch_pass_complete(step, batch_key);
   }
 }
 
@@ -187,6 +215,11 @@ auto kustavi_service::GetSessionResults(grpc::ServerContext *context,
   }
 
   try {
+    for (const auto &key :
+         store::list_session_keys(session_db_, k_batch_pass_prefix)) {
+      response->add_completed_batch_passes(
+          key.substr(k_batch_pass_prefix.size()));
+    }
     {
       // Flagged photos only (reasons bitmask: BLURRY=1, UNDER=2, OVER=4).
       auto stmt = session_db_.prepare(

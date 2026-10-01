@@ -128,6 +128,7 @@ final class WizardQualityReview extends WizardPhase {
     required this.flaggedCount,
     required this.totalImages,
     this.rerunEnabled = false,
+    this.previewFlagged,
   });
 
   final int flaggedCount;
@@ -135,6 +136,10 @@ final class WizardQualityReview extends WizardPhase {
 
   /// Whether the user adjusted thresholds and can rerun the pass.
   final bool rerunEnabled;
+
+  /// Photos the stored metrics would flag at the current slider values, or
+  /// null while unknown (before the first preview answers).
+  final int? previewFlagged;
 
   @override
   int get stepIndex => WizardStep.quality.index;

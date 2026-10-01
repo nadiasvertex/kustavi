@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -108,6 +109,8 @@ auto kustavi_service::RunQualityPass(grpc::ServerContext *context,
   thresholds.underexposed_threshold = under;
   thresholds.overexposed_threshold = over;
 
+  const std::unordered_set<std::string> scope(request->scope_image_ids().begin(),
+                                              request->scope_image_ids().end());
   std::vector<fs::path> paths;
   std::unordered_map<std::string, std::string> path_to_id;
   try {
@@ -117,6 +120,9 @@ auto kustavi_service::RunQualityPass(grpc::ServerContext *context,
     for (const auto &record : records) {
       if (record.kind != image::media_kind_photo) {
         continue; // blur/exposure metrics don't apply to videos
+      }
+      if (!scope.empty() && !scope.contains(record.id)) {
+        continue;
       }
       paths.push_back(record.absolute_path);
       path_to_id.emplace(record.absolute_path.string(), record.id);
@@ -225,9 +231,72 @@ auto kustavi_service::RunQualityPass(grpc::ServerContext *context,
     return *err;
   }
   if (status.ok()) {
-    record_pass_complete(1); // WizardStep.quality
+    record_run_complete(1, request->batch_key()); // WizardStep.quality
   }
   spdlog::info("quality pass finished");
   return status;
+}
+
+auto kustavi_service::PreviewQualityThresholds(
+    grpc::ServerContext *context, const PreviewQualityThresholdsRequest *request,
+    PreviewQualityThresholdsResponse *response) -> grpc::Status {
+  if (!check_auth(context)) {
+    return unauthenticated();
+  }
+  if (const auto err = require_session()) {
+    return *err;
+  }
+
+  const auto &in = request->thresholds();
+  if (in.blur_threshold() <= 0) {
+    return {grpc::StatusCode::INVALID_ARGUMENT,
+            "blur_threshold must be a positive number"};
+  }
+  if (in.underexposed_threshold() < 0 || in.underexposed_threshold() >= 1 ||
+      in.overexposed_threshold() < 0 || in.overexposed_threshold() >= 1) {
+    return {grpc::StatusCode::INVALID_ARGUMENT,
+            "exposure thresholds must be in [0, 1)"};
+  }
+
+  image::quality_thresholds thresholds;
+  thresholds.blur_threshold = in.blur_threshold();
+  thresholds.underexposed_threshold = in.underexposed_threshold();
+  thresholds.overexposed_threshold = in.overexposed_threshold();
+
+  try {
+    auto stmt = session_db_.prepare(
+        "SELECT laplacian, underexposed, overexposed, focus_peak "
+        "FROM quality_flags;");
+    std::uint32_t total = 0;
+    std::uint32_t flagged = 0;
+    std::uint32_t blurry = 0;
+    std::uint32_t under = 0;
+    std::uint32_t over = 0;
+    while (stmt.step() == SQLITE_ROW) {
+      image::local_image_metrics m;
+      m.valid = true;
+      m.laplacian_variance = sqlite3_column_double(stmt.raw(), 0);
+      m.underexposed_ratio = sqlite3_column_double(stmt.raw(), 1);
+      m.overexposed_ratio = sqlite3_column_double(stmt.raw(), 2);
+      m.focus_peak_variance = sqlite3_column_double(stmt.raw(), 3);
+      total++;
+      const bool is_blur = image::is_blurry(m, thresholds);
+      const bool is_under = image::is_underexposed(m, thresholds);
+      const bool is_over = image::is_overexposed(m, thresholds);
+      blurry += is_blur ? 1U : 0U;
+      under += is_under ? 1U : 0U;
+      over += is_over ? 1U : 0U;
+      flagged += (is_blur || is_under || is_over) ? 1U : 0U;
+    }
+    response->set_total(total);
+    response->set_flagged(flagged);
+    response->set_blurry(blurry);
+    response->set_under_exposed(under);
+    response->set_over_exposed(over);
+  } catch (const std::exception &e) {
+    return {grpc::StatusCode::INTERNAL,
+            std::string("failed to preview thresholds: ") + e.what()};
+  }
+  return grpc::Status::OK;
 }
 } // namespace kustavi

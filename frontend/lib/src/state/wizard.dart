@@ -510,7 +510,37 @@ class Wizard extends _$Wizard {
     flaggedCount: _qualityFlags.length,
     totalImages: _images.length,
     rerunEnabled: _hasThresholdChanges,
+    previewFlagged: _previewFlagged,
   );
+
+  /// Flagged count the stored metrics give at the current slider values.
+  int? _previewFlagged;
+  int _previewSeq = 0;
+
+  /// Asks the back end how many photos the current sliders would flag. Only
+  /// the newest request may publish, so a slow answer for an earlier slider
+  /// position cannot overwrite a later one.
+  Future<void> _refreshQualityPreview() async {
+    final seq = ++_previewSeq;
+    final client = ref.read(kustaviClientProvider).value;
+    if (client == null) {
+      return;
+    }
+    try {
+      final response = await client.previewQualityThresholds(
+        blurThreshold: _blurThreshold,
+        underexposedThreshold: _underexposedThreshold,
+        overexposedThreshold: _overexposedThreshold,
+      );
+      if (seq != _previewSeq) {
+        return;
+      }
+      _previewFlagged = response.flagged;
+      _publishQualityReviewPhase();
+    } on Object {
+      // The preview is advisory; leave the previous count in place.
+    }
+  }
 
   bool get _hasThresholdChanges {
     if (!_hasLastRunThresholds) {
@@ -599,14 +629,18 @@ class Wizard extends _$Wizard {
     }
     final request = pb.SaveSessionStateRequest()..replaceDecisions = true;
     for (final id in plan.explicitKept) {
-      request.decisions.add(pb.DecisionEntry()
-        ..imageId = id
-        ..decision = pb.Decision.KEEP);
+      request.decisions.add(
+        pb.DecisionEntry()
+          ..imageId = id
+          ..decision = pb.Decision.KEEP,
+      );
     }
     for (final id in plan.explicitDeleted) {
-      request.decisions.add(pb.DecisionEntry()
-        ..imageId = id
-        ..decision = pb.Decision.DELETE);
+      request.decisions.add(
+        pb.DecisionEntry()
+          ..imageId = id
+          ..decision = pb.Decision.DELETE,
+      );
     }
     plan.groupKeepers.forEach((groupId, keeperId) {
       request.groupKeepers[groupId] = keeperId;
@@ -842,8 +876,7 @@ class Wizard extends _$Wizard {
     final target = _resumeTargetStep!;
     final client = ref.read(kustaviClientProvider).requireValue;
 
-    bool needs(int step) =>
-        target >= step && !(_resumeDone[step] ?? false);
+    bool needs(int step) => target >= step && !(_resumeDone[step] ?? false);
 
     if (needs(WizardStep.quality.index)) {
       _returnPhase = null;
@@ -1044,6 +1077,7 @@ class Wizard extends _$Wizard {
       _advanceResume();
       return;
     }
+    _previewFlagged = null;
     state = AsyncValue.data(_qualityReviewPhase);
   }
 
@@ -1092,6 +1126,7 @@ class Wizard extends _$Wizard {
     }
     _blurThreshold = value;
     _publishQualityReviewPhase();
+    unawaited(_refreshQualityPreview());
   }
 
   void setUnderexposedThreshold(double value) {
@@ -1100,6 +1135,7 @@ class Wizard extends _$Wizard {
     }
     _underexposedThreshold = value;
     _publishQualityReviewPhase();
+    unawaited(_refreshQualityPreview());
   }
 
   void setOverexposedThreshold(double value) {
@@ -1108,6 +1144,7 @@ class Wizard extends _$Wizard {
     }
     _overexposedThreshold = value;
     _publishQualityReviewPhase();
+    unawaited(_refreshQualityPreview());
   }
 
   void resetThresholds() {
@@ -1120,6 +1157,7 @@ class Wizard extends _$Wizard {
     _underexposedThreshold = _kDefaultUnderexposedThreshold;
     _overexposedThreshold = _kDefaultOverexposedThreshold;
     _publishQualityReviewPhase();
+    unawaited(_refreshQualityPreview());
   }
 
   /// Republishes the quality review phase with the current threshold state

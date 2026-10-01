@@ -96,11 +96,14 @@ auto kustavi_service::RunVideoPass(grpc::ServerContext *context,
   const bool vision_available =
       net::asset_ready(text) && net::asset_ready(mmproj);
 
+  const std::unordered_set<std::string> scope(request->scope_image_ids().begin(),
+                                              request->scope_image_ids().end());
   std::vector<store::image_record> records;
   std::unordered_set<std::string> already_done;
   try {
     for (auto &record : store::get_image_records(session_db_)) {
-      if (record.kind == image::media_kind_video) {
+      if (record.kind == image::media_kind_video &&
+          (scope.empty() || scope.contains(record.id))) {
         records.push_back(std::move(record));
       }
     }
@@ -254,7 +257,7 @@ auto kustavi_service::RunVideoPass(grpc::ServerContext *context,
     return *err;
   }
   if (status.ok()) {
-    record_pass_complete(4); // WizardStep.video
+    record_run_complete(4, request->batch_key()); // WizardStep.video
   }
   spdlog::info("video pass finished");
   return status;

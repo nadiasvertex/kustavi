@@ -149,6 +149,18 @@ class FakeKustaviClient implements KustaviClient {
     savedSessionStates.add(request);
   }
 
+  /// Returned by [previewQualityThresholds]; defaults to an empty count.
+  PreviewQualityThresholdsResponse? previewResponse;
+
+  @override
+  Future<PreviewQualityThresholdsResponse> previewQualityThresholds({
+    required double blurThreshold,
+    required double underexposedThreshold,
+    required double overexposedThreshold,
+  }) async {
+    return previewResponse ?? PreviewQualityThresholdsResponse();
+  }
+
   @override
   Stream<ScanEvent> scanFolder(ScanFolderRequest request) {
     lastScanRequest = request;
@@ -203,7 +215,9 @@ class FakeKustaviClient implements KustaviClient {
   }
 
   @override
-  Stream<SimilarEvent> runSimilarPass({Iterable<String> skipImageIds = const []}) {
+  Stream<SimilarEvent> runSimilarPass({
+    Iterable<String> skipImageIds = const [],
+  }) {
     lastSimilarSkipIds = skipImageIds.toList(growable: false);
     return _script(similarEvents, similarError);
   }

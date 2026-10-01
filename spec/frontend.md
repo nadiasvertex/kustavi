@@ -199,6 +199,10 @@ UI: header "<X> of <N> images flagged". Grid of flagged images only; each
 cell shows 768px preview, reason chips ("Blurry", "Overexposed"), and a
 deletion toggle (default ON = marked for deletion, unless overriden by `explicitKept`). Cell click → detail
 view with the deletion toggle enabled.
+Threshold sliders carry direction hints on each end ("fewer flagged" /
+"more flagged"; the blur and exposure sliders run in opposite directions),
+and a line under them shows how many images the current slider values would
+flag, from `PreviewQualityThresholds`, next to the count from the last run.
 Buttons: [Keep all] (clears marks on all flagged), [Mark all] (marks all
 flagged), [Back] (→ S2), [Continue] (→ S6, via S5 if the model is not
 ready).

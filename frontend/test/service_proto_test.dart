@@ -43,6 +43,12 @@ class FakeKustavi extends KustaviServiceBase {
   ) => const Stream.empty();
 
   @override
+  Future<PreviewQualityThresholdsResponse> previewQualityThresholds(
+    ServiceCall call,
+    PreviewQualityThresholdsRequest request,
+  ) => Future.value(PreviewQualityThresholdsResponse());
+
+  @override
   Stream<ModelEvent> ensureModel(
     ServiceCall call,
     EnsureModelRequest request,

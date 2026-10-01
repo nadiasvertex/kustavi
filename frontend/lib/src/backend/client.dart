@@ -8,9 +8,7 @@ import '../state/domain.dart';
 /// (spec/frontend.md §3.1).
 const String kAuthTokenHeader = 'x-kustavi-auth-token';
 
-Map<String, String> authMetadata(String token) => {
-      kAuthTokenHeader: token,
-    };
+Map<String, String> authMetadata(String token) => {kAuthTokenHeader: token};
 
 /// The GUI's single door to the back end (spec/frontend.md §4).
 ///
@@ -37,6 +35,15 @@ abstract interface class KustaviClient {
     required double underexposedThreshold,
     required double overexposedThreshold,
   });
+
+  /// Count the photos the stored metrics would flag at these thresholds,
+  /// without re-analyzing anything.
+  Future<PreviewQualityThresholdsResponse> previewQualityThresholds({
+    required double blurThreshold,
+    required double underexposedThreshold,
+    required double overexposedThreshold,
+  });
+
   Stream<ModelEvent> ensureModel();
   Stream<JunkEvent> runJunkPass({Iterable<String> skipImageIds});
   Stream<SimilarEvent> runSimilarPass({Iterable<String> skipImageIds});
@@ -60,7 +67,7 @@ BackendError mapToBackendError(Object error) {
 /// metadata of every call (spec/frontend.md §3.3, §4).
 class GrpcKustaviClient implements KustaviClient {
   GrpcKustaviClient(this._client, {required String token})
-      : _options = CallOptions(metadata: authMetadata(token));
+    : _options = CallOptions(metadata: authMetadata(token));
 
   final stub.KustaviClient _client;
   final CallOptions _options;
@@ -141,6 +148,28 @@ class GrpcKustaviClient implements KustaviClient {
   }
 
   @override
+  Future<PreviewQualityThresholdsResponse> previewQualityThresholds({
+    required double blurThreshold,
+    required double underexposedThreshold,
+    required double overexposedThreshold,
+  }) {
+    return _client
+        .previewQualityThresholds(
+          PreviewQualityThresholdsRequest(
+            thresholds: RunQualityPassRequest()
+              ..blurThreshold = blurThreshold
+              ..underexposedThreshold = underexposedThreshold
+              ..overexposedThreshold = overexposedThreshold,
+          ),
+          options: _options,
+        )
+        .then(
+          (response) => response,
+          onError: (Object error) => throw mapToBackendError(error),
+        );
+  }
+
+  @override
   Stream<ModelEvent> ensureModel() {
     return _pass(_client.ensureModel(EnsureModelRequest(), options: _options));
   }
@@ -156,7 +185,9 @@ class GrpcKustaviClient implements KustaviClient {
   }
 
   @override
-  Stream<SimilarEvent> runSimilarPass({Iterable<String> skipImageIds = const []}) {
+  Stream<SimilarEvent> runSimilarPass({
+    Iterable<String> skipImageIds = const [],
+  }) {
     return _pass(
       _client.runSimilarPass(
         RunSimilarPassRequest(skipImageIds: skipImageIds),

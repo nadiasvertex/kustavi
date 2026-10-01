@@ -265,6 +265,11 @@ public:
   grpc::Status InspectSession(grpc::ServerContext *context,
                               const InspectSessionRequest *request,
                               InspectSessionResponse *response) override;
+  grpc::Status PreviewQualityThresholds(
+      grpc::ServerContext *context,
+      const PreviewQualityThresholdsRequest *request,
+      PreviewQualityThresholdsResponse *response) override;
+
   grpc::Status GetSessionResults(grpc::ServerContext *context,
                                  const GetSessionResultsRequest *request,
                                  GetSessionResultsResponse *response) override;
@@ -312,6 +317,14 @@ private:
   /// Best-effort: mark the pass for `step` (a WizardStep index) as finished,
   /// so a resume restores its results instead of re-running it.
   void record_pass_complete(int step) noexcept;
+
+  /// Best-effort: mark the pass for `step` finished for one batch only.
+  void record_batch_pass_complete(int step,
+                                  const std::string &batch_key) noexcept;
+
+  /// Record a finished pass run: per-batch when `batch_key` is set,
+  /// session-wide otherwise.
+  void record_run_complete(int step, const std::string &batch_key) noexcept;
 
   static auto unauthenticated() -> grpc::Status {
     return grpc::Status(grpc::StatusCode::UNAUTHENTICATED,

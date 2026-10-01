@@ -56,6 +56,10 @@ auto session_has_index(database &db) -> bool;
 auto get_session_value(database &db, std::string_view key)
     -> std::optional<std::string>;
 
+/** Keys in `session_state` that start with `prefix`, in key order. */
+auto list_session_keys(database &db, std::string_view prefix)
+    -> std::vector<std::string>;
+
 /** Upsert one `session_state` key/value pair. */
 auto set_session_value(database &db, std::string_view key,
                        std::string_view value) -> void;

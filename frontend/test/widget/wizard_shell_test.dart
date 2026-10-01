@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kustavi/src/backend/client_provider.dart';
 import 'package:kustavi/src/backend/process.dart';
+import 'package:kustavi/src/generated/kustavi/service.pb.dart';
 import 'package:kustavi/src/state/phases.dart';
 import 'package:kustavi/src/state/wizard.dart';
 import 'package:kustavi/src/ui/wizard_shell.dart';
@@ -113,6 +114,11 @@ void main() {
     });
 
     testWidgets('quality sliders update and enable rerun', (tester) async {
+      // Default app window; the slider panel needs more than the 800×600 test
+      // surface once the direction hints are shown.
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       final client = FakeKustaviClient(
         scanEvents: [
           scanImage('a.jpg'),
@@ -120,7 +126,7 @@ void main() {
           scanComplete(images: 2),
         ],
         qualityEvents: [qualityFlag('a.jpg')],
-      );
+      )..previewResponse = (PreviewQualityThresholdsResponse()..flagged = 2);
       final container = makeContainer(client);
       addTearDown(container.dispose);
       await tester.pumpWidget(
@@ -152,6 +158,9 @@ void main() {
 
       final value = tester.widget<Slider>(find.byType(Slider).first).value;
       expect(value, isNot(100.0));
+      // The back end's preview count appears next to the last-run count.
+      await tester.pump();
+      expect(find.textContaining('These settings flag 2 of 2'), findsOneWidget);
       // The value label follows the new threshold.
       expect(
         find.text(

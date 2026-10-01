@@ -24,6 +24,10 @@ service Kustavi {
 
   // --- pass 2: blur / exposure -----------------------------------------
   rpc RunQualityPass(RunQualityPassRequest) returns (stream QualityEvent);
+  // Count how many photos the stored quality metrics would flag at the given
+  // thresholds, without re-analyzing any image. Read-only.
+  rpc PreviewQualityThresholds(PreviewQualityThresholdsRequest)
+      returns (PreviewQualityThresholdsResponse);
 
   // --- pass 3: junk (vision LLM) ----------------------------------------
   rpc EnsureModel(EnsureModelRequest) returns (stream ModelEvent);
@@ -89,6 +93,9 @@ message GetSessionResultsResponse {
   bool similar_done  = 12;
   bool junk_done     = 13;
   bool video_done    = 14;
+  // Batch-scoped passes that ran to completion, as "step:batch_key" where
+  // step is the WizardStep index of the pass.
+  repeated string completed_batch_passes = 15;
 }
 
 enum Decision {
@@ -181,6 +188,14 @@ message RunQualityPassRequest {
   double blur_threshold = 1;           // Laplacian variance threshold (default 100)
   double underexposed_threshold = 2;   // Max underexposed pixel ratio (default 0.3)
   double overexposed_threshold = 3;    // Max overexposed pixel ratio (default 0.3)
+
+  // Restrict the run to these image ids (a batch). Empty means the whole
+  // session. Ids outside the scope are neither analyzed nor counted.
+  repeated string scope_image_ids = 4;
+  // Names the batch for completion tracking. When set, finishing the run
+  // records a per-batch completion (see GetSessionResultsResponse) instead of
+  // the session-wide `*_done` flag.
+  string batch_key = 5;
 }
 
 message QualityEvent {
@@ -215,6 +230,18 @@ message QualityComplete {
   uint32 total = 2;
 }
 
+message PreviewQualityThresholdsRequest {
+  RunQualityPassRequest thresholds = 1;
+}
+
+message PreviewQualityThresholdsResponse {
+  uint32 flagged = 1;       // photos with at least one reason
+  uint32 blurry = 2;
+  uint32 under_exposed = 3;
+  uint32 over_exposed = 4;
+  uint32 total = 5;         // photos with stored metrics
+}
+
 // --- pass 3: model + junk ---------------------------------------------------
 
 message EnsureModelRequest {}
@@ -242,6 +269,14 @@ message RunJunkPassRequest {
   // (quality or duplicates). The junk pass counts them toward progress
   // but never classifies them.
   repeated string skip_image_ids = 1;
+
+  // Restrict the run to these image ids (a batch). Empty means the whole
+  // session. Ids outside the scope are neither analyzed nor counted.
+  repeated string scope_image_ids = 2;
+  // Names the batch for completion tracking. When set, finishing the run
+  // records a per-batch completion (see GetSessionResultsResponse) instead of
+  // the session-wide `*_done` flag.
+  string batch_key = 3;
 }
 
 message JunkEvent {
@@ -274,6 +309,14 @@ message RunSimilarPassRequest {
   // Image ids the user already marked for deletion in an earlier step
   // (quality). Excluded from grouping, scoring, and keeper selection.
   repeated string skip_image_ids = 1;
+
+  // Restrict the run to these image ids (a batch). Empty means the whole
+  // session. Ids outside the scope are neither analyzed nor counted.
+  repeated string scope_image_ids = 2;
+  // Names the batch for completion tracking. When set, finishing the run
+  // records a per-batch completion (see GetSessionResultsResponse) instead of
+  // the session-wide `*_done` flag.
+  string batch_key = 3;
 }
 
 message SimilarEvent {
@@ -307,6 +350,14 @@ message RunVideoPassRequest {
   // Video ids the user already marked for deletion in an earlier step.
   // The video pass counts them toward progress but never analyzes them.
   repeated string skip_video_ids = 1;
+
+  // Restrict the run to these image ids (a batch). Empty means the whole
+  // session. Ids outside the scope are neither analyzed nor counted.
+  repeated string scope_image_ids = 2;
+  // Names the batch for completion tracking. When set, finishing the run
+  // records a per-batch completion (see GetSessionResultsResponse) instead of
+  // the session-wide `*_done` flag.
+  string batch_key = 3;
 }
 
 message VideoEvent {

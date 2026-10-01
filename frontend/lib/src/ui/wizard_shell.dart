@@ -157,11 +157,17 @@ class _WizardShellState extends ConsumerState<WizardShell> {
             done: done,
             total: total,
           ),
-        WizardQualityReview(:final flaggedCount, :final totalImages, :final rerunEnabled) =>
+        WizardQualityReview(
+          :final flaggedCount,
+          :final totalImages,
+          :final rerunEnabled,
+          :final previewFlagged,
+        ) =>
           QualityReviewScreen(
             flaggedCount: flaggedCount,
             totalImages: totalImages,
             rerunEnabled: rerunEnabled,
+            previewFlagged: previewFlagged,
           ),
         WizardJunkPrep() => const JunkPrepScreen(),
         WizardJunkRunning(

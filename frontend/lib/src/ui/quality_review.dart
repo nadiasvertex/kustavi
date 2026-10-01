@@ -14,11 +14,15 @@ class QualityReviewScreen extends ConsumerStatefulWidget {
     required this.flaggedCount,
     required this.totalImages,
     required this.rerunEnabled,
+    this.previewFlagged,
   });
 
   final int flaggedCount;
   final int totalImages;
   final bool rerunEnabled;
+
+  /// Photos the current slider values would flag, or null while unknown.
+  final int? previewFlagged;
 
   @override
   ConsumerState<QualityReviewScreen> createState() =>
@@ -69,17 +73,14 @@ class _QualityReviewScreenState extends ConsumerState<QualityReviewScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         InkWell(
-          onTap: () => setState(
-            () => _thresholdsExpanded = !_thresholdsExpanded,
-          ),
+          onTap: () =>
+              setState(() => _thresholdsExpanded = !_thresholdsExpanded),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
             child: Row(
               children: [
                 Icon(
-                  _thresholdsExpanded
-                      ? Icons.expand_more
-                      : Icons.chevron_right,
+                  _thresholdsExpanded ? Icons.expand_more : Icons.chevron_right,
                 ),
                 const SizedBox(width: 8),
                 Text(
@@ -128,6 +129,8 @@ class _QualityReviewScreenState extends ConsumerState<QualityReviewScreen> {
                         label: 'Blur threshold',
                         value: wizard.blurThreshold,
                         valueLabel: _fmtBlur(wizard.blurThreshold),
+                        lowHint: 'Fewer flagged',
+                        highHint: 'More flagged',
                         min: 10,
                         max: 500,
                         divisions: 49,
@@ -142,6 +145,8 @@ class _QualityReviewScreenState extends ConsumerState<QualityReviewScreen> {
                         value: wizard.underexposedThreshold,
                         valueLabel: wizard.underexposedThreshold
                             .toStringAsFixed(2),
+                        lowHint: 'More flagged',
+                        highHint: 'Fewer flagged',
                         min: 0,
                         max: 0.8,
                         divisions: 16,
@@ -154,8 +159,11 @@ class _QualityReviewScreenState extends ConsumerState<QualityReviewScreen> {
                         theme,
                         label: 'Overexposed',
                         value: wizard.overexposedThreshold,
-                        valueLabel: wizard.overexposedThreshold
-                            .toStringAsFixed(2),
+                        valueLabel: wizard.overexposedThreshold.toStringAsFixed(
+                          2,
+                        ),
+                        lowHint: 'More flagged',
+                        highHint: 'Fewer flagged',
                         min: 0,
                         max: 0.8,
                         divisions: 16,
@@ -164,7 +172,7 @@ class _QualityReviewScreenState extends ConsumerState<QualityReviewScreen> {
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 4),
                 Row(
                   children: [
                     TextButton.icon(
@@ -180,12 +188,35 @@ class _QualityReviewScreenState extends ConsumerState<QualityReviewScreen> {
                         label: const Text('Rerun pass'),
                       ),
                     ],
+                    const SizedBox(width: 16),
+                    Expanded(child: _previewLine(theme)),
                   ],
                 ),
               ],
             ),
           ),
       ],
+    );
+  }
+
+  /// Live count for the current slider values, shown before a rerun so the
+  /// user can see which way a change moves the result.
+  Widget _previewLine(ThemeData theme) {
+    final preview = widget.previewFlagged;
+    final style = theme.textTheme.bodyMedium?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+    if (preview == null) {
+      return Text(
+        '${widget.flaggedCount} flagged at the last run',
+        style: style,
+      );
+    }
+    return Text(
+      'These settings flag $preview of ${formatInt(widget.totalImages)} '
+      'images (${widget.flaggedCount} at the last run)',
+      style: style,
+      overflow: TextOverflow.ellipsis,
     );
   }
 
@@ -199,6 +230,8 @@ class _QualityReviewScreenState extends ConsumerState<QualityReviewScreen> {
     required String label,
     required double value,
     required String valueLabel,
+    required String lowHint,
+    required String highHint,
     required double min,
     required double max,
     required int divisions,
@@ -227,6 +260,25 @@ class _QualityReviewScreenState extends ConsumerState<QualityReviewScreen> {
           divisions: divisions,
           label: valueLabel,
           onChanged: onChanged,
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Flexible(
+              child: Text(
+                '← $lowHint',
+                style: theme.textTheme.bodySmall,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            Flexible(
+              child: Text(
+                '$highHint →',
+                style: theme.textTheme.bodySmall,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
       ],
     );

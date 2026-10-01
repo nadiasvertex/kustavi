@@ -4,6 +4,7 @@
 
 #include <array>
 #include <charconv>
+#include <algorithm>
 #include <chrono>
 #include <csignal>
 #include <cstdint>
@@ -52,6 +53,7 @@ struct options {
   bool concurrency_check = false;
   bool junk_check = false; // opt-in: downloads the ~3.7 GB vision model
   bool resume_check = false;
+  bool batch_check = false;
 };
 
 auto parse_args(int argc, char **argv) -> options {
@@ -89,6 +91,8 @@ auto parse_args(int argc, char **argv) -> options {
       opts.junk_check = true;
     } else if (arg == "--resume-check") {
       opts.resume_check = true;
+    } else if (arg == "--batch-check") {
+      opts.batch_check = true;
     } else {
       fail("unknown argument: " + arg);
     }
@@ -1007,6 +1011,131 @@ void run_resume_check(const options &opts) {
   }
 }
 
+// Opt-in (`--batch-check`): a quality and a similar run scoped to half the
+// scanned images. The scoped quality run must analyze only that half, both
+// runs must report a per-batch completion, and the threshold preview must
+// count the stored metrics. Runs after the normal passes have populated the DB.
+void run_batch_check(const options &opts) {
+  if (g_image_ids.size() < 2) {
+    fail("--batch-check needs at least 2 scanned images");
+  }
+  const std::size_t half = g_image_ids.size() / 2;
+  const std::string batch = "smoke-batch";
+  auto stub = k::Kustavi::NewStub(make_channel(opts));
+
+  {
+    k::RunQualityPassRequest request;
+    request.set_blur_threshold(100.0);
+    request.set_underexposed_threshold(0.3);
+    request.set_overexposed_threshold(0.3);
+    request.set_batch_key(batch);
+    for (std::size_t i = 0; i < half; ++i) {
+      request.add_scope_image_ids(g_image_ids[i]);
+    }
+    grpc::ClientContext context;
+    add_auth_metadata(context, opts);
+    auto reader = stub->RunQualityPass(&context, request);
+    k::QualityEvent event;
+    uint32_t total = 0;
+    while (reader->Read(&event)) {
+      if (event.has_complete()) {
+        total = event.complete().total();
+      }
+    }
+    const auto status = reader->Finish();
+    if (!status.ok()) {
+      fail("scoped RunQualityPass: " + status.error_message());
+    }
+    if (total == 0 || total > half) {
+      fail("scoped RunQualityPass: analyzed " + std::to_string(total) +
+           " images for a scope of " + std::to_string(half));
+    }
+    std::println("ok: scoped RunQualityPass analyzed {} of scope {}", total,
+                 half);
+  }
+
+  {
+    k::RunSimilarPassRequest request;
+    request.set_batch_key(batch);
+    for (std::size_t i = 0; i < half; ++i) {
+      request.add_scope_image_ids(g_image_ids[i]);
+    }
+    grpc::ClientContext context;
+    add_auth_metadata(context, opts);
+    auto reader = stub->RunSimilarPass(&context, request);
+    k::SimilarEvent event;
+    while (reader->Read(&event)) {
+      if (event.has_group()) {
+        for (const auto &id : event.group().image_ids()) {
+          if (std::find(g_image_ids.begin(),
+                        g_image_ids.begin() + static_cast<std::ptrdiff_t>(half),
+                        id) == g_image_ids.begin() + static_cast<std::ptrdiff_t>(half)) {
+            fail("scoped RunSimilarPass: grouped an image outside the scope");
+          }
+        }
+      }
+    }
+    const auto status = reader->Finish();
+    if (!status.ok()) {
+      fail("scoped RunSimilarPass: " + status.error_message());
+    }
+    std::println("ok: scoped RunSimilarPass kept groups inside the scope");
+  }
+
+  {
+    k::GetSessionResultsRequest request;
+    grpc::ClientContext context;
+    add_auth_metadata(context, opts);
+    k::GetSessionResultsResponse response;
+    const auto status = stub->GetSessionResults(&context, request, &response);
+    if (!status.ok()) {
+      fail("GetSessionResults: " + status.error_message());
+    }
+    const auto has = [&](const std::string &entry) -> bool {
+      return std::find(response.completed_batch_passes().begin(),
+                       response.completed_batch_passes().end(),
+                       entry) != response.completed_batch_passes().end();
+    };
+    if (!has("1:" + batch) || !has("2:" + batch)) {
+      fail("GetSessionResults: missing batch completions for quality/similar");
+    }
+    std::println("ok: GetSessionResults completed_batch_passes={}",
+                 response.completed_batch_passes_size());
+  }
+
+  {
+    k::PreviewQualityThresholdsRequest request;
+    auto *t = request.mutable_thresholds();
+    t->set_blur_threshold(100.0);
+    t->set_underexposed_threshold(0.3);
+    t->set_overexposed_threshold(0.3);
+    grpc::ClientContext context;
+    add_auth_metadata(context, opts);
+    k::PreviewQualityThresholdsResponse response;
+    const auto status =
+        stub->PreviewQualityThresholds(&context, request, &response);
+    if (!status.ok()) {
+      fail("PreviewQualityThresholds: " + status.error_message());
+    }
+    if (response.total() == 0 || response.flagged() > response.total()) {
+      fail("PreviewQualityThresholds: implausible counts");
+    }
+    // Loosening every threshold to its limit can only flag fewer or equal.
+    t->set_blur_threshold(1.0);
+    t->set_underexposed_threshold(0.99);
+    t->set_overexposed_threshold(0.99);
+    grpc::ClientContext context2;
+    add_auth_metadata(context2, opts);
+    k::PreviewQualityThresholdsResponse loose;
+    if (!stub->PreviewQualityThresholds(&context2, request, &loose).ok() ||
+        loose.flagged() > response.flagged()) {
+      fail("PreviewQualityThresholds: looser thresholds flagged more");
+    }
+    std::println("ok: PreviewQualityThresholds flagged={} (loose {}) total={}",
+                 response.flagged(), loose.flagged(), response.total());
+  }
+}
+
 auto main(int argc, char **argv) -> int {
   try {
     auto opts = parse_args(argc, argv);
@@ -1058,6 +1187,9 @@ auto main(int argc, char **argv) -> int {
       }
       if (opts.resume_check) {
         run_resume_check(opts);
+      }
+      if (opts.batch_check) {
+        run_batch_check(opts);
       }
       if (opts.concurrency_check) {
         run_concurrency_check(opts);

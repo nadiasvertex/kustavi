@@ -163,6 +163,24 @@ auto get_session_value(database &db, std::string_view key)
   return std::string(value);
 }
 
+auto list_session_keys(database &db, std::string_view prefix)
+    -> std::vector<std::string> {
+  std::vector<std::string> keys;
+  auto stmt = db.prepare(
+      "SELECT key FROM session_state WHERE substr(key, 1, ?) = ? "
+      "ORDER BY key;");
+  stmt.bind_int(1, static_cast<int>(prefix.size()));
+  stmt.bind_text(2, std::string(prefix));
+  while (stmt.step() == SQLITE_ROW) {
+    const auto *key =
+        reinterpret_cast<const char *>(sqlite3_column_text(stmt.raw(), 0));
+    if (key != nullptr) {
+      keys.emplace_back(key);
+    }
+  }
+  return keys;
+}
+
 auto set_session_value(database &db, std::string_view key,
                        std::string_view value) -> void {
   auto stmt = db.prepare(

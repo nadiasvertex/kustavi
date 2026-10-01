@@ -40,18 +40,31 @@ auto kustavi_service::RunSimilarPass(grpc::ServerContext *context,
   pass_guard guard(pass_active_, true);
   record_step(2); // WizardStep.duplicates
 
+  const std::unordered_set<std::string> scope(request->scope_image_ids().begin(),
+                                              request->scope_image_ids().end());
   std::vector<fs::path> paths;
   std::unordered_map<std::string, std::string> path_to_id;
   std::unordered_map<std::string, double> sharpness_by_id;
+  uint32_t group_base = 0;
   try {
     const auto records = store::get_image_records(session_db_);
     paths.reserve(records.size());
     path_to_id.reserve(records.size());
     for (const auto &record : records) {
+      if (!scope.empty() && !scope.contains(record.id)) {
+        continue;
+      }
       paths.push_back(record.absolute_path);
       path_to_id.emplace(record.absolute_path.string(), record.id);
     }
     sharpness_by_id = store::get_quality_scores(session_db_);
+    // Group ids stay unique across batch runs: new groups number on from the
+    // highest id already stored.
+    auto stmt = session_db_.prepare(
+        "SELECT COALESCE(MAX(group_id) + 1, 0) FROM similar_groups;");
+    if (stmt.step() == SQLITE_ROW) {
+      group_base = static_cast<uint32_t>(sqlite3_column_int(stmt.raw(), 0));
+    }
   } catch (const std::exception &e) {
     return {grpc::StatusCode::INTERNAL,
             std::string("failed to read session: ") + e.what()};
@@ -135,7 +148,7 @@ auto kustavi_service::RunSimilarPass(grpc::ServerContext *context,
 
         std::vector<std::tuple<uint32_t, std::string, std::string, double>>
             rows;
-        uint32_t group_id = 0;
+        uint32_t group_id = group_base;
         for (const auto &group : groups) {
           if (group.size() < 2) {
             continue;
@@ -181,9 +194,22 @@ auto kustavi_service::RunSimilarPass(grpc::ServerContext *context,
           queue.push(std::move(evt));
         }
 
-        // Persist the group membership.
+        // Persist the group membership. A rerun replaces the groups that
+        // touch the images it covered (all groups for a whole-session run).
         session_db_.begin_transaction();
         try {
+          if (scope.empty()) {
+            session_db_.execute("DELETE FROM similar_groups;");
+          } else {
+            auto clear = session_db_.prepare(
+                "DELETE FROM similar_groups WHERE group_id IN (SELECT "
+                "group_id FROM similar_groups WHERE image_id = ?);");
+            for (const auto &id : scope) {
+              clear.bind_text(1, id);
+              clear.step();
+              clear.reset();
+            }
+          }
           auto stmt = session_db_.prepare("INSERT INTO similar_groups "
                                           "(group_id, image_id, keeper_id, "
                                           "score, processed_at) VALUES "
@@ -202,11 +228,11 @@ auto kustavi_service::RunSimilarPass(grpc::ServerContext *context,
           session_db_.rollback_transaction();
           throw;
         }
-        queue.push(similar_complete_evt{.groups = group_id,
+        queue.push(similar_complete_evt{.groups = group_id - group_base,
                                         .total_images = paths.size()});
       });
 
-  uint32_t next_group_id = 0;
+  uint32_t next_group_id = group_base;
   grpc::Status status = stream_pass(
       context, writer, queue, stop_source,
       [&](const similar_event &ev) -> bool {
@@ -239,7 +265,7 @@ auto kustavi_service::RunSimilarPass(grpc::ServerContext *context,
     return *err;
   }
   if (status.ok()) {
-    record_pass_complete(2); // WizardStep.duplicates
+    record_run_complete(2, request->batch_key()); // WizardStep.duplicates
   }
   spdlog::info("similar pass finished");
   return status;
