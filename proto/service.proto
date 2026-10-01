@@ -232,6 +232,8 @@ message QualityComplete {
 
 message PreviewQualityThresholdsRequest {
   RunQualityPassRequest thresholds = 1;
+  // Count only these images (a batch). Empty means every image.
+  repeated string scope_image_ids = 2;
 }
 
 message PreviewQualityThresholdsResponse {

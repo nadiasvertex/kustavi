@@ -327,6 +327,55 @@ class TripFolderInfo {
   final List<TripInfo> trips;
 }
 
+/// A group of photos reviewed together: one output trip folder, or the photos
+/// that belong to no trip. Membership is fixed when the batches are built.
+class BatchInfo {
+  const BatchInfo({
+    required this.key,
+    required this.title,
+    required this.imageIds,
+  });
+
+  /// Stable identifier; also the back end's `batch_key` for completion tracking.
+  final String key;
+
+  /// Display name (the folder name, or "Unassigned").
+  final String title;
+
+  final List<String> imageIds;
+}
+
+/// Where one pass stands for a batch, as shown in the batch menu.
+class BatchPassStatus {
+  const BatchPassStatus({required this.done, this.flagged = 0});
+
+  /// The pass ran to completion for this batch.
+  final bool done;
+
+  /// Photos the pass flagged in this batch (0 until it has run).
+  final int flagged;
+}
+
+/// One batch row in the batch menu.
+class BatchSummary {
+  const BatchSummary({
+    required this.key,
+    required this.title,
+    required this.photoCount,
+    required this.videoCount,
+    required this.passes,
+  });
+
+  final String key;
+  final String title;
+  final int photoCount;
+  final int videoCount;
+
+  /// Status per pass, keyed by the pass's [WizardStep] index (quality,
+  /// duplicates, junk, video).
+  final Map<int, BatchPassStatus> passes;
+}
+
 /// Errors as values. The GUI never throws operational failures.
 sealed class BackendError implements Exception {
   const BackendError(this.message);

@@ -36,7 +36,13 @@ Future<void> _toQualityReview(WidgetTester tester, ProviderContainer c) async {
   await tester.tap(find.text('Select folder…'));
   await tester.pump();
   await tester.pump();
+  // Confirm → Organize (trips) → batch menu → run the quality pass.
   await tester.tap(find.text('Continue'));
+  await tester.pump();
+  await tester.pump();
+  await tester.tap(find.text('Continue'));
+  await tester.pump();
+  await tester.tap(find.text('Run').first);
   await tester.pump();
   await tester.pump();
 }

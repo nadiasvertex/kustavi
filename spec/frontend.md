@@ -2,16 +2,19 @@
 
 ## 1. Overview
 
-The Kustavi GUI is a Flutter desktop application that drives a linear
-wizard over a folder of images:
+The Kustavi GUI is a Flutter desktop application that drives a wizard over a
+folder of images. The first stages are linear; the review stage is a la carte:
 
 1. Select folder (with visual confirmation grid and automatic session recovery)
-2. Quality pass — blurry / poorly exposed images
-3. Duplicates pass — similar-image groups, keep-one selection
-4. Junk pass — screenshots and non-photographs (local vision LLM), skipping
-   images already marked for deletion above
-5. Trips pass — spatiotemporal grouping with user thresholds
-6. Commit — copy the kept images to a user-chosen destination
+2. Organize — trips pass: spatiotemporal grouping with user thresholds and
+   per-photo curation. Its folders become the **batches** reviewed next.
+3. Review — a batch menu. For each batch the user runs whichever passes they
+   want, in any order: quality (blurry / poorly exposed), duplicates
+   (similar-image groups, keep-one selection), junk (screenshots and
+   non-photographs, local vision LLM) and video. Each pass opens its own
+   review and returns to the menu. Passes skip photos already marked for
+   deletion where that saves work.
+4. Copy — copy the kept images to a user-chosen destination
 
 All user input is handled here. All image processing lives in the C++
 back end, which the GUI launches, supervises, and talks to over gRPC on a
@@ -157,10 +160,10 @@ single source of truth for image metadata in the GUI.
 
 ### 6.1 Step indicator
 
-A top bar shows the six steps — Select, Quality, Duplicates, Junk, Trips,
-Copy — with the current step highlighted and completed steps checked.
-The indicator is display-only; navigation is via the bottom action bar
-([Back] / [Cancel] / [Continue]-style buttons per step).
+A top bar shows four stages — Select, Organize, Review, Copy — with the
+current stage highlighted and completed stages checked. The indicator is
+display-only; navigation is via the bottom action bar. Passes do not appear
+in it, because they run in any order inside the Review stage.
 
 ### 6.2 Steps
 
@@ -173,7 +176,7 @@ Action: directory picker (`file_picker`); on selection, call
 
 **S0-B — Session Restore Prompt (Conditional).**
 UI: Triggered if `ScanFolder` finishes with `resumed_session == true`. Displays a card: "Saved Session Detected. Found <N> localized assets with partial processing history." 
-Buttons: `[Resume Saved Session]` (calls `FetchSavedDecisions`, hydrates choices, fast-forwards directly to `saved_wizard_phase`), and `[Start Fresh]` (re-runs `ScanFolder` with `force_fresh = true` to wipe the DB and cache).
+Buttons: `[Resume Saved Session]` (hydrates results and choices, re-runs the trips pass, and lands on S4 or S11; see Resume under §6.4), and `[Start Fresh]` (re-runs `ScanFolder` with `force_fresh = true` to wipe the DB and cache).
 
 **S1 — Scanning.**
 UI: indeterminate-ish progress: images found so far, current path being
@@ -188,71 +191,11 @@ file names); [Back] (→ S0, discards scan results if a fresh session) and [Cont
 Clicking an image opens the detail view (§7.2) in read-only mode
 (metadata only, no deletion toggle).
 
-**S3 — Quality running.**
-Entry: `RunQualityPass`.
-UI: progress "checking 1,204 / 5,000", current file name, [Cancel].
-Exit: complete → S4. Cancel → S2. RPC error → §10.2.
-
-**S4 — Quality review.**
-Shows only flagged candidates.
-UI: header "<X> of <N> images flagged". Grid of flagged images only; each
-cell shows 768px preview, reason chips ("Blurry", "Overexposed"), and a
-deletion toggle (default ON = marked for deletion, unless overriden by `explicitKept`). Cell click → detail
-view with the deletion toggle enabled.
-Threshold sliders carry direction hints on each end ("fewer flagged" /
-"more flagged"; the blur and exposure sliders run in opposite directions),
-and a line under them shows how many images the current slider values would
-flag, from `PreviewQualityThresholds`, next to the count from the last run.
-Buttons: [Keep all] (clears marks on all flagged), [Mark all] (marks all
-flagged), [Back] (→ S2), [Continue] (→ S6, via S5 if the model is not
-ready).
-When X = 0 the screen shows "No blurry or poorly exposed images found"
-and only [Continue].
-
-**S5 — Junk preparation (transient).**
-If the vision model (§6.3) is not ready when the user reaches the junk
-pass, show a "Downloading vision model" screen with byte progress, speed,
-and [Cancel].
-- Cancel → back to S4. The download is cancelled; `EnsureModel` runs
-  again the next time the user continues from S4.
-- Download fails → error screen with [Retry download] and [Exit app].
-  There is no skip option: the junk pass always uses the LLM.
-- Model becomes ready → S6 automatically.
-
-**S6 — Junk running.**
-Entry: `RunJunkPass` (only once Moondream-3.1 is verified ready).
-UI: progress "1,204 / 5,000", elapsed time and ETA (the Moondream LLM pass is slow at ~1.5–3s per image;
-make that expectation explicit in the copy), [Cancel].
-Exit: complete → S7. Cancel → S4. Zero flagged → S7 shows its
-"nothing flagged" variant.
-
-**S7 — Junk review.**
-Same pattern as S4; reason chips show the Moondream classification (e.g.
-"screenshot", "scan", "meme"). [Continue] → S8.
-
-**S8 — Similar running.**
-Entry: `RunSimilarPass`.
-UI: progress, [Cancel] (→ S7).
-Exit: complete → S9.
-
-**S9 — Similar review.**
-Dedicated group view.
-UI: header "<G> groups · <K> photos marked for deletion".
-Vertical list of group cards:
-- Card header: "Group <i> — <M> similar photos".
-- A row of member cells (768px preview, file name, score); the recommended
-  keeper is pre-selected with a "Suggested" badge. Selecting a different
-  member reassigns the keeper.
-- Card actions: [Keep all] (clears marks on all members) and [Delete all]
-  (marks all members).
-- Cell click → detail view with the deletion toggle enabled.
-Marks update live inside `DeletionPlan` user collections as the user interacts.
-[Back] (→ S7), [Continue] (→ S10).
-When G = 0: "No similar photos found" + [Continue].
-
-**S10 — Trips.**
-Entry: `RunTripsPass` with the current slider values (defaults: gap 48 h,
-drift 300 km, away-from-home 15 km, new-leg 25 km).
+**S3 — Organize (trips).**
+Entry: [Continue] from S2 runs `RunTripsPass` with the current slider values
+(defaults: gap 48 h, drift 300 km, away-from-home 15 km, new-leg 25 km). It
+runs first because it is cheap, needs only metadata, and defines the batches.
+UI: progress while running ([Back] cancels to S2), then the trips review:
 - **Clustering settings** (collapsible): four sliders — "Max time gap"
   (1–168 h), "Max trip drift" (10–1000 km), "Away-from-home distance"
   (1–100 km), "New-leg distance" (1–200 km) — a "Re-cluster" button, and
@@ -271,22 +214,66 @@ drift 300 km, away-from-home 15 km, new-leg 25 km).
   selection to another trip, a **new trip**, or **removes** it from every
   trip. A hand-made trip inherits its place name from the source photos'
   original cluster when they were geocoded. Outside select mode, tapping a
-  photo opens the detail view (metadata panel shows the trip / leg / place
-  mappings; the deletion toggle is enabled). Photos marked for deletion by
-  any step drop out of the panel. An **"Unassigned"** section at the bottom
-  lists photos in no
-  trip (never clustered, or pulled out) with an "Add to trip ▸" menu.
-- Cell click → detail view with the deletion toggle enabled.
+  photo opens the detail view (the deletion toggle is enabled). An
+  **"Unassigned"** section at the bottom lists photos in no trip with an
+  "Add to trip ▸" menu.
 - Reassignments are client-side overlays on the clustering result; they
   feed `CommitRequest.folder_for_id` at commit when the organize switch
   is on.
-[Back] (→ S9), [Continue] (→ S11).
+[Back] (→ S2), [Continue] (→ S4). Continue fixes the batches: one per output
+folder, plus an "Unassigned" batch for photos in no trip. Membership is
+frozen at that point.
+
+**S4 — Batch menu.**
+UI: header "<B> batches · <M> of <N> photos marked for deletion". A list of
+batches (name, photo and video counts, number of passes done) sits beside the
+selected batch's pass cards, in the suggested order Quality, Duplicates, Junk,
+Video (Video only when the batch has videos). Each card names the pass, its
+cost ("fast", "slow, about 2 s per photo"), and its status: "Not run", "Done ·
+<n> flagged" (groups for duplicates). Buttons: [Run] / [Review] + [Run again],
+and [Run on all batches], which runs the pass on every batch that has not
+finished it, one after another, then returns here.
+The suggested order puts the cheap passes first so the slow junk pass skips
+photos they already marked, but nothing enforces it.
+[Edit trips] (→ S3 trips review; batch progress marks are dropped because the
+batches are rebuilt), [Continue] (→ S11).
+
+**S5 — Pass running (per batch).**
+Entry: [Run] on a pass card. The pass runs with `scope_image_ids` set to the
+batch and `batch_key` set to the batch key, so it analyzes only that batch and
+records a per-batch completion. Junk and duplicates are also sent
+`skip_image_ids` (photos already marked for deletion); video sends the same.
+UI: progress, [Cancel] (→ S4). If the vision model is not ready when junk is
+chosen, a "Downloading vision model" screen shows byte progress, speed and
+[Cancel] (→ S4); download failure shows an error screen with [Retry download]
+and [Exit app] (no skip option: the junk pass always uses the LLM). When the
+model is ready the junk pass starts automatically. The junk pass copy makes the
+~1.5–3 s per image cost explicit.
+
+**S6 — Pass review (per batch).**
+Each pass has its own review, limited to the active batch:
+- **Quality.** Header "<X> of <N> images flagged" for the batch. A keep
+  section and a collapsible delete panel, reason chips ("Blurry",
+  "Overexposed"); tapping a cell moves it between them. Threshold sliders
+  (collapsed by default) carry direction hints ("fewer flagged" / "more
+  flagged"; the blur and exposure sliders run in opposite directions) and a
+  line under them shows how many images the current slider values would flag
+  in this batch (`PreviewQualityThresholds` with the batch scope), next to the
+  count from the last run. [Rerun pass] re-runs the batch with the new values.
+- **Junk, Video.** Same keep / delete layout, most confident first; reason
+  chips show the classification.
+- **Duplicates.** Group cards: "Group <i> — <M> similar photos", a row of
+  member cells with the suggested keeper pre-selected, [Keep all] and
+  [Delete all] per group.
+Buttons: [Keep all] / [Mark all] (flagged photos in this batch), [Done] (→ S4).
+Cell click opens the detail view with the deletion toggle enabled. Marks
+update live inside `DeletionPlan`.
 
 **S11 — Commit summary.**
 UI: "Keep <N> photos (<total size>) — <M> will be left behind".
 Destination: text field + [Choose folder…] (directory picker; the
 suggested default, pre-filled, is a sibling of the source named
-`<source-name>-kept`). [Back] (→ S10). [Copy] (disabled until a
+`<source-name>-kept`). [Back] (→ S4). [Copy] (disabled until a
 destination is set and space availability is confirmed) → S12.
 
 **S12 — Committing.**
@@ -321,38 +308,44 @@ quits the app).
 | S1 | scan complete, resumed_session == false, images > 0 | S2 |
 | S1 | scan complete, 0 images | no-images screen → S0 |
 | S1 | cancel | S0 |
-| S0-B | Resume Saved Session | Target phase from SQLite |
+| S0-B | Resume Saved Session | S4 (or S11 if saved there), after the trips pass re-runs |
 | S0-B | Start Fresh | S1 (with wipe directive) |
 | S2 | Back | S0 |
-| S2 | Continue | S3 |
-| S3 | complete | S4 |
-| S3 | cancel | S2 |
+| S2 | Continue | S3 (trips pass runs) |
+| S3 | trips complete | S3 trips review |
+| S3 | cancel while running | S2 |
 | S3 | RPC error | error screen (§10.2) → S2 or exit |
-| S4 | Continue | S5 (if model not ready) else S6 |
-| S4 | Back | S2 |
-| S5 | model ready | S6 |
+| S3 | Back (trips review) | S2 |
+| S3 | Continue (trips review) | S4 (batches built) |
+| S4 | Run / Run again on a pass card | S5 (junk: model prep first if the model is not ready) |
+| S4 | Run on all batches | S5 for each unfinished batch in turn, then S4 |
+| S4 | Review on a finished pass | S6 |
+| S4 | Edit trips | S3 trips review |
+| S4 | Continue | S11 |
+| S5 | complete (single batch) | S6 |
 | S5 | cancel | S4 |
-| S5 | download failed | error screen → retry (S5) or exit |
-| S6 | complete | S7 |
-| S6 | cancel | S4 |
-| S7 | Continue | S8 |
-| S7 | Back | S4 |
-| S8 | complete | S9 |
-| S8 | cancel | S7 |
-| S9 | Continue | S10 |
-| S9 | Back | S7 |
-| S10 | Continue | S11 |
-| S10 | Back | S9 |
+| S5 | model ready (junk) | pass starts |
+| S5 | download failed | error screen → retry or exit |
+| S5 | RPC error | error screen → S4 |
+| S6 | Done | S4 |
 | S11 | Copy | S12 |
-| S11 | Back | S10 |
+| S11 | Back | S4 |
 | S12 | complete | S13 |
 | S12 | cancel | S11 |
 | S13 | Start over | S0 (fresh session) |
 | S13 | Done | app quit |
 
 Back navigation never re-runs a completed pass; it revisits the previous
-step's screen with its stored results. Cancelled passes are re-run from
-scratch when the user continues forward again.
+screen with its stored results. A cancelled pass leaves the batch's earlier
+results as they were, and the user can run it again from S4.
+
+**Resume.** Resuming a saved session restores the index, every pass result
+and the user's decisions, then re-runs the cheap trips pass (there is no
+persisted trips result) and lands on S4 — or S11 when the session was saved on
+the commit summary. A pass the saved session finished over the whole library
+counts as done for every batch; per-batch completions come back in
+`completed_batch_passes`. Manual trip edits are not persisted and are lost on
+resume.
 
 ## 7. Shared UI
 
@@ -370,7 +363,7 @@ Modal over the current grid:
 - Progressive loading pattern: Instantly loads and displays the cached 768px `working_image_path` JPEG image. Concurrently loads the full-resolution master asset (`ImageInfo.path`) on an isolated background thread. Once completed, swaps the elements smoothly within the zoomable viewport (`InteractiveViewer`, 1×–8×, double-click resets). 
 - To avoid memory leaks, `PaintingBinding.instance.imageCache.evict()` is invoked explicitly on the master image provider asset instance during the modal detail view's `dispose()` lifecycle context hook.
 - Metadata panel: name, path, dimensions, file size, date taken, GPS coordinates, sharpness/exposure scores, Moondream junk reason, and group/trip metadata mappings.
-- "Marked for deletion" switch: enabled in S4, S7, S9, S10; disabled (read-only) in S2.
+- "Marked for deletion" switch: enabled in S3 (trips review) and S6; disabled (read-only) in S2.
 - Close: [Close] button, Esc key, or click outside.
 
 ## 8. Deletion Model
@@ -381,9 +374,9 @@ When evaluating whether an asset displays a deletion marker badge, the interface
 1. **Is the ID found in `explicitDeleted`?** → Display Red Deletion Tag badge.
 2. **Is the ID found in `explicitKept`?** → Hide Deletion Tag badge.
 3. **Step Default Automation Fallback:**
-   - S4 (Quality): Marked for deletion if flagged by back-end metrics.
-   - S7 (Junk): Marked for deletion if flagged by Moondream LLM inference.
-   - S9 (Similar Groups): Marked for deletion if the asset is not the designated group keeper.
+   - Quality pass (S6): Marked for deletion if flagged by back-end metrics.
+   - Junk pass (S6): Marked for deletion if flagged by Moondream LLM inference.
+   - Duplicates pass (S6): Marked for deletion if the asset is not the designated group keeper.
 
 Final resolution parameter computation at S11/S12 happens downstream via the C++ SQLite aggregation layer. The GUI never passes delete instructions directly.
 

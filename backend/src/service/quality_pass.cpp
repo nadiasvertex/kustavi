@@ -264,8 +264,10 @@ auto kustavi_service::PreviewQualityThresholds(
   thresholds.overexposed_threshold = in.overexposed_threshold();
 
   try {
+    const std::unordered_set<std::string> scope(
+        request->scope_image_ids().begin(), request->scope_image_ids().end());
     auto stmt = session_db_.prepare(
-        "SELECT laplacian, underexposed, overexposed, focus_peak "
+        "SELECT laplacian, underexposed, overexposed, focus_peak, image_id "
         "FROM quality_flags;");
     std::uint32_t total = 0;
     std::uint32_t flagged = 0;
@@ -273,6 +275,13 @@ auto kustavi_service::PreviewQualityThresholds(
     std::uint32_t under = 0;
     std::uint32_t over = 0;
     while (stmt.step() == SQLITE_ROW) {
+      if (!scope.empty()) {
+        const auto *id = reinterpret_cast<const char *>(
+            sqlite3_column_text(stmt.raw(), 4));
+        if (id == nullptr || !scope.contains(id)) {
+          continue;
+        }
+      }
       image::local_image_metrics m;
       m.valid = true;
       m.laplacian_variance = sqlite3_column_double(stmt.raw(), 0);

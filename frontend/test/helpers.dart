@@ -82,6 +82,7 @@ pb.GetSessionResultsResponse sessionResults({
   List<pb.VideoFlag> videoFlags = const [],
   Map<String, bool> decisions = const {}, // image id -> true means delete
   Map<int, String> groupKeepers = const {},
+  List<String> completedBatchPasses = const [],
 }) {
   final response = pb.GetSessionResultsResponse()
     ..resumeStep = resumeStep
@@ -93,11 +94,14 @@ pb.GetSessionResultsResponse sessionResults({
     ..qualityFlags.addAll(qualityFlags)
     ..similarGroups.addAll(similarGroups)
     ..junkFlags.addAll(junkFlags)
-    ..videoFlags.addAll(videoFlags);
+    ..videoFlags.addAll(videoFlags)
+    ..completedBatchPasses.addAll(completedBatchPasses);
   decisions.forEach((id, remove) {
-    response.decisions.add(pb.DecisionEntry()
-      ..imageId = id
-      ..decision = remove ? pb.Decision.DELETE : pb.Decision.KEEP);
+    response.decisions.add(
+      pb.DecisionEntry()
+        ..imageId = id
+        ..decision = remove ? pb.Decision.DELETE : pb.Decision.KEEP,
+    );
   });
   groupKeepers.forEach((k, v) => response.groupKeepers[k] = v);
   return response;

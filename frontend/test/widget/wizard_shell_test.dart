@@ -49,20 +49,17 @@ void main() {
         ),
       );
       await tester.pump();
-      for (final label in [
-        'Select',
-        'Quality',
-        'Junk',
-        'Duplicates',
-        'Trips',
-        'Video',
-        'Copy',
-      ]) {
+      for (final label in ['Select', 'Organize', 'Review', 'Copy']) {
         expect(find.text(label), findsOneWidget, reason: label);
       }
     });
 
     testWidgets('S0 → S1 → S2 flow with the action bar', (tester) async {
+      // Default app window: the batch menu needs more than the 800×600 test
+      // surface for its pass cards to sit on screen.
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       final client = FakeKustaviClient(
         // The scan stream stays open so S1 is observable; the test pushes
         // the completion event once the scanning screen is asserted.
@@ -99,8 +96,18 @@ void main() {
       expect(find.text('Back'), findsOneWidget);
       expect(find.text('Continue'), findsOneWidget);
 
-      // Continue runs the quality pass (S3) into S4.
+      // Continue runs the trips pass (Organize), then opens the batch menu.
       await tester.tap(find.text('Continue'));
+      await tester.pump();
+      await tester.pump();
+      expect(container.read(wizardProvider).value, isA<WizardTripsReview>());
+      await tester.tap(find.text('Continue'));
+      await tester.pump();
+      expect(container.read(wizardProvider).value, isA<WizardBatchMenu>());
+      expect(find.text('Unassigned'), findsWidgets);
+
+      // The menu runs whichever pass the user picks, here quality.
+      await tester.tap(find.text('Run').first);
       await tester.pump();
       expect(
         container.read(wizardProvider).value,
@@ -111,6 +118,10 @@ void main() {
         find.text('1 of 2 images flagged'),
         findsOneWidget,
       );
+      // The review closes back to the menu.
+      await tester.tap(find.text('Done'));
+      await tester.pump();
+      expect(container.read(wizardProvider).value, isA<WizardBatchMenu>());
     });
 
     testWidgets('quality sliders update and enable rerun', (tester) async {
@@ -142,6 +153,11 @@ void main() {
       await tester.pump();
       await tester.pump();
       await tester.tap(find.text('Continue'));
+      await tester.pump();
+      await tester.pump();
+      await tester.tap(find.text('Continue'));
+      await tester.pump();
+      await tester.tap(find.text('Run').first);
       await tester.pump();
       await tester.pump();
 
@@ -234,6 +250,11 @@ void main() {
 
     testWidgets('a step error shows the error screen with [Back]',
         (tester) async {
+      // Default app window: the batch menu needs more than the 800×600 test
+      // surface for its pass cards to sit on screen.
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
       final client = FakeKustaviClient(
         scanEvents: [
           scanImage('a.jpg'),
@@ -257,16 +278,18 @@ void main() {
       await tester.pump();
       await tester.tap(find.text('Continue'));
       await tester.pump();
+      await tester.pump();
+      await tester.tap(find.text('Continue'));
+      await tester.pump();
+      await tester.tap(find.text('Run').first);
+      await tester.pump();
 
       expect(find.text('Processing error'), findsOneWidget);
       expect(find.text('quality exploded'), findsOneWidget);
 
       await tester.tap(find.text('Back'));
       await tester.pump();
-      expect(
-        container.read(wizardProvider).value,
-        isA<WizardConfirmFolder>(),
-      );
+      expect(container.read(wizardProvider).value, isA<WizardBatchMenu>());
     });
   });
 }

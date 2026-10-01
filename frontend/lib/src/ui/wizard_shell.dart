@@ -11,6 +11,7 @@ import '../state/domain.dart';
 import '../state/model_status.dart';
 import '../state/phases.dart';
 import '../state/wizard.dart';
+import 'batch_menu.dart';
 import 'commit_summary.dart';
 import 'committing.dart';
 import 'confirm_folder.dart';
@@ -111,7 +112,7 @@ class _WizardShellState extends ConsumerState<WizardShell> {
     final phase = phaseAsync.value;
     return Scaffold(
       appBar: AppBar(
-        title: StepIndicator(currentIndex: phase?.stepIndex ?? 0),
+        title: StepIndicator(currentIndex: phase?.stageIndex ?? 0),
         centerTitle: false,
       ),
       body: switch (phaseAsync) {
@@ -232,6 +233,18 @@ class _WizardShellState extends ConsumerState<WizardShell> {
             flaggedCount: flaggedCount,
             totalVideos: totalVideos,
           ),
+        WizardBatchMenu(
+              :final batches,
+              :final selectedKey,
+              :final markedCount,
+              :final totalImages,
+            ) =>
+          BatchMenuScreen(
+            batches: batches,
+            selectedKey: selectedKey,
+            markedCount: markedCount,
+            totalImages: totalImages,
+          ),
         WizardCommitSummary(
               :final keepCount,
               :final keepBytes,
@@ -319,14 +332,10 @@ class _WizardShellState extends ConsumerState<WizardShell> {
               onPressed: wizard.markAllQualityFlagged,
               child: const Text('Mark all'),
             ),
-            OutlinedButton(
-              onPressed: wizard.backFromQuality,
-              child: const Text('Back'),
-            ),
           ],
           FilledButton(
-            onPressed: wizard.continueFromQuality,
-            child: const Text('Continue'),
+            onPressed: wizard.closeBatchReview,
+            child: const Text('Done'),
           ),
         ],
       WizardJunkPrep() => [
@@ -351,14 +360,10 @@ class _WizardShellState extends ConsumerState<WizardShell> {
               onPressed: wizard.markAllJunkFlagged,
               child: const Text('Mark all'),
             ),
-            OutlinedButton(
-              onPressed: wizard.backFromJunk,
-              child: const Text('Back'),
-            ),
           ],
           FilledButton(
-            onPressed: wizard.continueFromJunk,
-            child: const Text('Continue'),
+            onPressed: wizard.closeBatchReview,
+            child: const Text('Done'),
           ),
         ],
       WizardSimilarRunning() => [
@@ -368,13 +373,9 @@ class _WizardShellState extends ConsumerState<WizardShell> {
           ),
         ],
       WizardSimilarReview() => [
-          OutlinedButton(
-            onPressed: wizard.backFromSimilar,
-            child: const Text('Back'),
-          ),
           FilledButton(
-            onPressed: wizard.continueFromSimilar,
-            child: const Text('Continue'),
+            onPressed: wizard.closeBatchReview,
+            child: const Text('Done'),
           ),
         ],
       WizardTripsRunning() => [
@@ -409,13 +410,19 @@ class _WizardShellState extends ConsumerState<WizardShell> {
               onPressed: wizard.markAllVideoFlagged,
               child: const Text('Mark all'),
             ),
-            OutlinedButton(
-              onPressed: wizard.backFromVideo,
-              child: const Text('Back'),
-            ),
           ],
           FilledButton(
-            onPressed: wizard.continueFromVideo,
+            onPressed: wizard.closeBatchReview,
+            child: const Text('Done'),
+          ),
+        ],
+      WizardBatchMenu() => [
+          OutlinedButton(
+            onPressed: wizard.reopenOrganize,
+            child: const Text('Edit trips'),
+          ),
+          FilledButton(
+            onPressed: wizard.continueFromBatches,
             child: const Text('Continue'),
           ),
         ],
@@ -493,14 +500,15 @@ class _WizardShellState extends ConsumerState<WizardShell> {
 class StepIndicator extends StatelessWidget {
   const StepIndicator({super.key, required this.currentIndex});
 
-  /// 0-based current step; [WizardStep.values.length] = every step completed.
+  /// 0-based current stage; [WizardStage.values.length] = every stage
+  /// completed.
   final int currentIndex;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final items = <Widget>[];
-    for (final step in WizardStep.values) {
+    for (final step in WizardStage.values) {
       if (step.index > 0) {
         items.add(const SizedBox(width: 4));
         items.add(

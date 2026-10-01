@@ -95,6 +95,18 @@ class FakeKustaviClient implements KustaviClient {
   List<String> lastJunkSkipIds = const [];
   List<String> lastSimilarSkipIds = const [];
   List<String> lastVideoSkipIds = const [];
+
+  /// Scope and batch key of the most recent run of each scoped pass, so tests
+  /// can assert what a batch run asked the back end for.
+  List<String> lastQualityScope = const [];
+  List<String> lastJunkScope = const [];
+  List<String> lastSimilarScope = const [];
+  List<String> lastVideoScope = const [];
+  List<String> lastPreviewScope = const [];
+  String lastQualityBatchKey = '';
+  String lastJunkBatchKey = '';
+  String lastSimilarBatchKey = '';
+  String lastVideoBatchKey = '';
   final List<SaveSessionStateRequest> savedSessionStates = [];
   int shutdownCount = 0;
   int qualityPassCount = 0;
@@ -157,7 +169,9 @@ class FakeKustaviClient implements KustaviClient {
     required double blurThreshold,
     required double underexposedThreshold,
     required double overexposedThreshold,
+    Iterable<String> scopeImageIds = const [],
   }) async {
+    lastPreviewScope = scopeImageIds.toList(growable: false);
     return previewResponse ?? PreviewQualityThresholdsResponse();
   }
 
@@ -182,8 +196,12 @@ class FakeKustaviClient implements KustaviClient {
     required double blurThreshold,
     required double underexposedThreshold,
     required double overexposedThreshold,
+    Iterable<String> scopeImageIds = const [],
+    String batchKey = '',
   }) {
     qualityPassCount++;
+    lastQualityScope = scopeImageIds.toList(growable: false);
+    lastQualityBatchKey = batchKey;
     lastQualityRequest = RunQualityPassRequest()
       ..blurThreshold = blurThreshold
       ..underexposedThreshold = underexposedThreshold
@@ -209,16 +227,26 @@ class FakeKustaviClient implements KustaviClient {
   }
 
   @override
-  Stream<JunkEvent> runJunkPass({Iterable<String> skipImageIds = const []}) {
+  Stream<JunkEvent> runJunkPass({
+    Iterable<String> skipImageIds = const [],
+    Iterable<String> scopeImageIds = const [],
+    String batchKey = '',
+  }) {
     lastJunkSkipIds = skipImageIds.toList(growable: false);
+    lastJunkScope = scopeImageIds.toList(growable: false);
+    lastJunkBatchKey = batchKey;
     return _script(junkEvents, junkError);
   }
 
   @override
   Stream<SimilarEvent> runSimilarPass({
     Iterable<String> skipImageIds = const [],
+    Iterable<String> scopeImageIds = const [],
+    String batchKey = '',
   }) {
     lastSimilarSkipIds = skipImageIds.toList(growable: false);
+    lastSimilarScope = scopeImageIds.toList(growable: false);
+    lastSimilarBatchKey = batchKey;
     return _script(similarEvents, similarError);
   }
 
@@ -229,8 +257,14 @@ class FakeKustaviClient implements KustaviClient {
   }
 
   @override
-  Stream<VideoEvent> runVideoPass({Iterable<String> skipVideoIds = const []}) {
+  Stream<VideoEvent> runVideoPass({
+    Iterable<String> skipVideoIds = const [],
+    Iterable<String> scopeImageIds = const [],
+    String batchKey = '',
+  }) {
     lastVideoSkipIds = skipVideoIds.toList(growable: false);
+    lastVideoScope = scopeImageIds.toList(growable: false);
+    lastVideoBatchKey = batchKey;
     return _script(videoEvents, videoError);
   }
 

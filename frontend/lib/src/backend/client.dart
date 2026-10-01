@@ -30,10 +30,14 @@ abstract interface class KustaviClient {
   Future<void> saveSessionState(SaveSessionStateRequest request);
 
   Stream<ScanEvent> scanFolder(ScanFolderRequest request);
+  /// [scopeImageIds] limits the run to a batch (empty = whole session);
+  /// [batchKey] records a per-batch completion on the back end.
   Stream<QualityEvent> runQualityPass({
     required double blurThreshold,
     required double underexposedThreshold,
     required double overexposedThreshold,
+    Iterable<String> scopeImageIds,
+    String batchKey,
   });
 
   /// Count the photos the stored metrics would flag at these thresholds,
@@ -42,13 +46,26 @@ abstract interface class KustaviClient {
     required double blurThreshold,
     required double underexposedThreshold,
     required double overexposedThreshold,
+    Iterable<String> scopeImageIds,
   });
 
   Stream<ModelEvent> ensureModel();
-  Stream<JunkEvent> runJunkPass({Iterable<String> skipImageIds});
-  Stream<SimilarEvent> runSimilarPass({Iterable<String> skipImageIds});
+  Stream<JunkEvent> runJunkPass({
+    Iterable<String> skipImageIds,
+    Iterable<String> scopeImageIds,
+    String batchKey,
+  });
+  Stream<SimilarEvent> runSimilarPass({
+    Iterable<String> skipImageIds,
+    Iterable<String> scopeImageIds,
+    String batchKey,
+  });
   Stream<TripsEvent> runTripsPass(RunTripsPassRequest request);
-  Stream<VideoEvent> runVideoPass({Iterable<String> skipVideoIds});
+  Stream<VideoEvent> runVideoPass({
+    Iterable<String> skipVideoIds,
+    Iterable<String> scopeImageIds,
+    String batchKey,
+  });
   Stream<CommitEvent> commit(CommitRequest request);
 }
 
@@ -135,13 +152,17 @@ class GrpcKustaviClient implements KustaviClient {
     required double blurThreshold,
     required double underexposedThreshold,
     required double overexposedThreshold,
+    Iterable<String> scopeImageIds = const [],
+    String batchKey = '',
   }) {
     return _pass(
       _client.runQualityPass(
         RunQualityPassRequest()
           ..blurThreshold = blurThreshold
           ..underexposedThreshold = underexposedThreshold
-          ..overexposedThreshold = overexposedThreshold,
+          ..overexposedThreshold = overexposedThreshold
+          ..scopeImageIds.addAll(scopeImageIds)
+          ..batchKey = batchKey,
         options: _options,
       ),
     );
@@ -152,6 +173,7 @@ class GrpcKustaviClient implements KustaviClient {
     required double blurThreshold,
     required double underexposedThreshold,
     required double overexposedThreshold,
+    Iterable<String> scopeImageIds = const [],
   }) {
     return _client
         .previewQualityThresholds(
@@ -160,6 +182,7 @@ class GrpcKustaviClient implements KustaviClient {
               ..blurThreshold = blurThreshold
               ..underexposedThreshold = underexposedThreshold
               ..overexposedThreshold = overexposedThreshold,
+            scopeImageIds: scopeImageIds,
           ),
           options: _options,
         )
@@ -175,10 +198,18 @@ class GrpcKustaviClient implements KustaviClient {
   }
 
   @override
-  Stream<JunkEvent> runJunkPass({Iterable<String> skipImageIds = const []}) {
+  Stream<JunkEvent> runJunkPass({
+    Iterable<String> skipImageIds = const [],
+    Iterable<String> scopeImageIds = const [],
+    String batchKey = '',
+  }) {
     return _pass(
       _client.runJunkPass(
-        RunJunkPassRequest(skipImageIds: skipImageIds),
+        RunJunkPassRequest(
+          skipImageIds: skipImageIds,
+          scopeImageIds: scopeImageIds,
+          batchKey: batchKey,
+        ),
         options: _options,
       ),
     );
@@ -187,10 +218,16 @@ class GrpcKustaviClient implements KustaviClient {
   @override
   Stream<SimilarEvent> runSimilarPass({
     Iterable<String> skipImageIds = const [],
+    Iterable<String> scopeImageIds = const [],
+    String batchKey = '',
   }) {
     return _pass(
       _client.runSimilarPass(
-        RunSimilarPassRequest(skipImageIds: skipImageIds),
+        RunSimilarPassRequest(
+          skipImageIds: skipImageIds,
+          scopeImageIds: scopeImageIds,
+          batchKey: batchKey,
+        ),
         options: _options,
       ),
     );
@@ -202,10 +239,18 @@ class GrpcKustaviClient implements KustaviClient {
   }
 
   @override
-  Stream<VideoEvent> runVideoPass({Iterable<String> skipVideoIds = const []}) {
+  Stream<VideoEvent> runVideoPass({
+    Iterable<String> skipVideoIds = const [],
+    Iterable<String> scopeImageIds = const [],
+    String batchKey = '',
+  }) {
     return _pass(
       _client.runVideoPass(
-        RunVideoPassRequest(skipVideoIds: skipVideoIds),
+        RunVideoPassRequest(
+          skipVideoIds: skipVideoIds,
+          scopeImageIds: scopeImageIds,
+          batchKey: batchKey,
+        ),
         options: _options,
       ),
     );

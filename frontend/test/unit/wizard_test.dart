@@ -44,6 +44,22 @@ Future<void> reachConfirmFolder(
   expect(client.lastScanRequest?.folder, folder);
 }
 
+/// Confirm → Organize (trips pass) → batch menu. With no scripted trips every
+/// photo lands in the single "Unassigned" batch.
+Future<void> reachBatchMenu(
+  ProviderContainer container,
+  FakeKustaviClient client,
+) async {
+  final wizard = container.read(wizardProvider.notifier);
+  wizard.continueFromConfirm();
+  await pumpUntil(
+    container,
+    () => container.read(wizardProvider).value is WizardTripsReview,
+  );
+  wizard.continueFromTrips();
+  expect(container.read(wizardProvider).value, isA<WizardBatchMenu>());
+}
+
 void main() {
   late ProviderContainer container;
 
@@ -119,7 +135,10 @@ void main() {
       container = makeContainer(client);
       await reachConfirmFolder(container, client);
 
-      container.read(wizardProvider.notifier).continueFromConfirm();
+      await reachBatchMenu(container, client);
+      container
+          .read(wizardProvider.notifier)
+          .startBatchPass(WizardStep.quality);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardQualityReview,
@@ -140,7 +159,10 @@ void main() {
       );
       container = makeContainer(client);
       await reachConfirmFolder(container, client);
-      container.read(wizardProvider.notifier).continueFromConfirm();
+      await reachBatchMenu(container, client);
+      container
+          .read(wizardProvider.notifier)
+          .startBatchPass(WizardStep.quality);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardQualityReview,
@@ -165,7 +187,10 @@ void main() {
       container = makeContainer(client);
       await reachConfirmFolder(container, client);
 
-      container.read(wizardProvider.notifier).continueFromConfirm();
+      await reachBatchMenu(container, client);
+      container
+          .read(wizardProvider.notifier)
+          .startBatchPass(WizardStep.quality);
       await pumpUntil(
         container,
         () =>
@@ -177,9 +202,11 @@ void main() {
       expect(error, isA<BackendRpc>());
       expect((error as BackendRpc).message, 'quality exploded');
 
-      // [Back] on the error screen returns to the pre-pass phase (S2).
+      // [Back] on the error screen returns to the batch menu with the
+      // session intact.
       container.read(wizardProvider.notifier).goBackFromError();
-      expect(container.read(wizardProvider).value, isA<WizardConfirmFolder>());
+      expect(container.read(wizardProvider).value, isA<WizardBatchMenu>());
+      expect(container.read(wizardProvider.notifier).imageIds, ['a.jpg']);
     });
 
     test(
@@ -195,7 +222,10 @@ void main() {
         );
         container = makeContainer(client);
         await reachConfirmFolder(container, client);
-        container.read(wizardProvider.notifier).continueFromConfirm();
+        await reachBatchMenu(container, client);
+        container
+            .read(wizardProvider.notifier)
+            .startBatchPass(WizardStep.quality);
         await pumpUntil(
           container,
           () => container.read(wizardProvider).value is WizardQualityReview,
@@ -240,7 +270,8 @@ void main() {
         container = makeContainer(client);
         await reachConfirmFolder(container, client);
         final wizard = container.read(wizardProvider.notifier);
-        wizard.continueFromConfirm();
+        await reachBatchMenu(container, client);
+        wizard.startBatchPass(WizardStep.quality);
         await pumpUntil(
           container,
           () => container.read(wizardProvider).value is WizardQualityReview,
@@ -275,7 +306,10 @@ void main() {
       );
       container = makeContainer(client);
       await reachConfirmFolder(container, client);
-      container.read(wizardProvider.notifier).continueFromConfirm();
+      await reachBatchMenu(container, client);
+      container
+          .read(wizardProvider.notifier)
+          .startBatchPass(WizardStep.quality);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardQualityReview,
@@ -300,12 +334,17 @@ void main() {
       );
       container = makeContainer(client);
       await reachConfirmFolder(container, client);
-      container.read(wizardProvider.notifier).continueFromConfirm();
+      await reachBatchMenu(container, client);
+      container
+          .read(wizardProvider.notifier)
+          .startBatchPass(WizardStep.quality);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardQualityReview,
       );
-      container.read(wizardProvider.notifier).continueFromQuality();
+      container.read(wizardProvider.notifier)
+        ..closeBatchReview()
+        ..startBatchPass(WizardStep.duplicates);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardSimilarReview,
@@ -329,12 +368,17 @@ void main() {
       );
       container = makeContainer(client);
       await reachConfirmFolder(container, client);
-      container.read(wizardProvider.notifier).continueFromConfirm();
+      await reachBatchMenu(container, client);
+      container
+          .read(wizardProvider.notifier)
+          .startBatchPass(WizardStep.quality);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardQualityReview,
       );
-      container.read(wizardProvider.notifier).continueFromQuality();
+      container.read(wizardProvider.notifier)
+        ..closeBatchReview()
+        ..startBatchPass(WizardStep.duplicates);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardSimilarReview,
@@ -345,7 +389,9 @@ void main() {
         () => container.read(modelStatusProvider).value is ModelPrepReady,
       );
 
-      container.read(wizardProvider.notifier).continueFromSimilar();
+      container.read(wizardProvider.notifier)
+        ..closeBatchReview()
+        ..startBatchPass(WizardStep.junk);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardJunkReview,
@@ -369,13 +415,18 @@ void main() {
       );
       container = makeContainer(client);
       await reachConfirmFolder(container, client);
-      container.read(wizardProvider.notifier).continueFromConfirm();
+      await reachBatchMenu(container, client);
+      container
+          .read(wizardProvider.notifier)
+          .startBatchPass(WizardStep.quality);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardQualityReview,
       );
       // The quality-flagged image stays marked for deletion by default.
-      container.read(wizardProvider.notifier).continueFromQuality();
+      container.read(wizardProvider.notifier)
+        ..closeBatchReview()
+        ..startBatchPass(WizardStep.duplicates);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardSimilarReview,
@@ -384,7 +435,9 @@ void main() {
         container,
         () => container.read(modelStatusProvider).value is ModelPrepReady,
       );
-      container.read(wizardProvider.notifier).continueFromSimilar();
+      container.read(wizardProvider.notifier)
+        ..closeBatchReview()
+        ..startBatchPass(WizardStep.junk);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardJunkReview,
@@ -408,12 +461,17 @@ void main() {
       );
       container = makeContainer(client);
       await reachConfirmFolder(container, client);
-      container.read(wizardProvider.notifier).continueFromConfirm();
+      await reachBatchMenu(container, client);
+      container
+          .read(wizardProvider.notifier)
+          .startBatchPass(WizardStep.quality);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardQualityReview,
       );
-      container.read(wizardProvider.notifier).continueFromQuality();
+      container.read(wizardProvider.notifier)
+        ..closeBatchReview()
+        ..startBatchPass(WizardStep.duplicates);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardSimilarReview,
@@ -424,7 +482,9 @@ void main() {
         () => container.read(modelStatusProvider).value is ModelPrepReady,
       );
 
-      container.read(wizardProvider.notifier).continueFromSimilar();
+      container.read(wizardProvider.notifier)
+        ..closeBatchReview()
+        ..startBatchPass(WizardStep.junk);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardJunkReview,
@@ -434,22 +494,18 @@ void main() {
         contains('b.jpg'),
       );
 
-      container.read(wizardProvider.notifier).continueFromJunk();
+      container.read(wizardProvider.notifier)
+        ..closeBatchReview()
+        ..startBatchPass(WizardStep.video);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardVideoReview,
       );
 
-      container.read(wizardProvider.notifier).continueFromVideo();
-      await pumpUntil(
-        container,
-        () => container.read(wizardProvider).value is WizardTripsReview,
-      );
-      container.read(wizardProvider.notifier).continueFromTrips();
-      await pumpUntil(
-        container,
-        () => container.read(wizardProvider).value is WizardCommitSummary,
-      );
+      container.read(wizardProvider.notifier)
+        ..closeBatchReview()
+        ..continueFromBatches();
+      expect(container.read(wizardProvider).value, isA<WizardCommitSummary>());
     });
 
     test('commit summary → Copy → committing → done', () async {
@@ -470,12 +526,15 @@ void main() {
       container = makeContainer(client);
       await reachConfirmFolder(container, client);
       final wizard = container.read(wizardProvider.notifier);
-      wizard.continueFromConfirm();
+      await reachBatchMenu(container, client);
+      wizard.startBatchPass(WizardStep.quality);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardQualityReview,
       );
-      wizard.continueFromQuality();
+      wizard
+        ..closeBatchReview()
+        ..startBatchPass(WizardStep.duplicates);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardSimilarReview,
@@ -484,26 +543,24 @@ void main() {
         container,
         () => container.read(modelStatusProvider).value is ModelPrepReady,
       );
-      wizard.continueFromSimilar();
+      wizard
+        ..closeBatchReview()
+        ..startBatchPass(WizardStep.junk);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardJunkReview,
       );
-      wizard.continueFromJunk();
+      wizard
+        ..closeBatchReview()
+        ..startBatchPass(WizardStep.video);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardVideoReview,
       );
-      wizard.continueFromVideo();
-      await pumpUntil(
-        container,
-        () => container.read(wizardProvider).value is WizardTripsReview,
-      );
-      wizard.continueFromTrips();
-      await pumpUntil(
-        container,
-        () => container.read(wizardProvider).value is WizardCommitSummary,
-      );
+      wizard
+        ..closeBatchReview()
+        ..continueFromBatches();
+      expect(container.read(wizardProvider).value, isA<WizardCommitSummary>());
 
       // The suggested destination is a `<source-name>-kept` sibling.
       final summary =
@@ -543,12 +600,15 @@ void main() {
       container = makeContainer(client);
       await reachConfirmFolder(container, client);
       final wizard = container.read(wizardProvider.notifier);
-      wizard.continueFromConfirm();
+      await reachBatchMenu(container, client);
+      wizard.startBatchPass(WizardStep.quality);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardQualityReview,
       );
-      wizard.continueFromQuality();
+      wizard
+        ..closeBatchReview()
+        ..startBatchPass(WizardStep.duplicates);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardSimilarReview,
@@ -557,26 +617,24 @@ void main() {
         container,
         () => container.read(modelStatusProvider).value is ModelPrepReady,
       );
-      wizard.continueFromSimilar();
+      wizard
+        ..closeBatchReview()
+        ..startBatchPass(WizardStep.junk);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardJunkReview,
       );
-      wizard.continueFromJunk();
+      wizard
+        ..closeBatchReview()
+        ..startBatchPass(WizardStep.video);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardVideoReview,
       );
-      wizard.continueFromVideo();
-      await pumpUntil(
-        container,
-        () => container.read(wizardProvider).value is WizardTripsReview,
-      );
-      wizard.continueFromTrips();
-      await pumpUntil(
-        container,
-        () => container.read(wizardProvider).value is WizardCommitSummary,
-      );
+      wizard
+        ..closeBatchReview()
+        ..continueFromBatches();
+      expect(container.read(wizardProvider).value, isA<WizardCommitSummary>());
 
       wizard.startCommit();
       wizard.cancelCommit();
@@ -597,12 +655,15 @@ void main() {
       container = makeContainer(client);
       await reachConfirmFolder(container, client);
       final wizard = container.read(wizardProvider.notifier);
-      wizard.continueFromConfirm();
+      await reachBatchMenu(container, client);
+      wizard.startBatchPass(WizardStep.quality);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardQualityReview,
       );
-      wizard.continueFromQuality();
+      wizard
+        ..closeBatchReview()
+        ..startBatchPass(WizardStep.duplicates);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardSimilarReview,
@@ -611,12 +672,16 @@ void main() {
         container,
         () => container.read(modelStatusProvider).value is ModelPrepReady,
       );
-      wizard.continueFromSimilar();
+      wizard
+        ..closeBatchReview()
+        ..startBatchPass(WizardStep.junk);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardJunkReview,
       );
-      wizard.continueFromJunk();
+      wizard
+        ..closeBatchReview()
+        ..startBatchPass(WizardStep.video);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardVideoReview,
@@ -640,13 +705,16 @@ void main() {
       container = makeContainer(client);
       await reachConfirmFolder(container, client);
       final wizard = container.read(wizardProvider.notifier);
-      wizard.continueFromConfirm();
+      await reachBatchMenu(container, client);
+      wizard.startBatchPass(WizardStep.quality);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardQualityReview,
       );
       // The quality-flagged video stays marked for deletion by default.
-      wizard.continueFromQuality();
+      wizard
+        ..closeBatchReview()
+        ..startBatchPass(WizardStep.duplicates);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardSimilarReview,
@@ -655,12 +723,16 @@ void main() {
         container,
         () => container.read(modelStatusProvider).value is ModelPrepReady,
       );
-      wizard.continueFromSimilar();
+      wizard
+        ..closeBatchReview()
+        ..startBatchPass(WizardStep.junk);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardJunkReview,
       );
-      wizard.continueFromJunk();
+      wizard
+        ..closeBatchReview()
+        ..startBatchPass(WizardStep.video);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardVideoReview,
@@ -686,12 +758,15 @@ void main() {
       container = makeContainer(client);
       await reachConfirmFolder(container, client);
       final wizard = container.read(wizardProvider.notifier);
-      wizard.continueFromConfirm();
+      await reachBatchMenu(container, client);
+      wizard.startBatchPass(WizardStep.quality);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardQualityReview,
       );
-      wizard.continueFromQuality();
+      wizard
+        ..closeBatchReview()
+        ..startBatchPass(WizardStep.duplicates);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardSimilarReview,
@@ -700,12 +775,16 @@ void main() {
         container,
         () => container.read(modelStatusProvider).value is ModelPrepReady,
       );
-      wizard.continueFromSimilar();
+      wizard
+        ..closeBatchReview()
+        ..startBatchPass(WizardStep.junk);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardJunkReview,
       );
-      wizard.continueFromJunk();
+      wizard
+        ..closeBatchReview()
+        ..startBatchPass(WizardStep.video);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardVideoReview,
@@ -752,30 +831,6 @@ void main() {
       container = makeContainer(client);
       await reachConfirmFolder(container, client);
       container.read(wizardProvider.notifier).continueFromConfirm();
-      await pumpUntil(
-        container,
-        () => container.read(wizardProvider).value is WizardQualityReview,
-      );
-      container.read(wizardProvider.notifier).continueFromQuality();
-      await pumpUntil(
-        container,
-        () => container.read(wizardProvider).value is WizardSimilarReview,
-      );
-      await pumpUntil(
-        container,
-        () => container.read(modelStatusProvider).value is ModelPrepReady,
-      );
-      container.read(wizardProvider.notifier).continueFromSimilar();
-      await pumpUntil(
-        container,
-        () => container.read(wizardProvider).value is WizardJunkReview,
-      );
-      container.read(wizardProvider.notifier).continueFromJunk();
-      await pumpUntil(
-        container,
-        () => container.read(wizardProvider).value is WizardVideoReview,
-      );
-      container.read(wizardProvider.notifier).continueFromVideo();
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardTripsReview,
@@ -855,30 +910,6 @@ void main() {
       container.read(wizardProvider.notifier).continueFromConfirm();
       await pumpUntil(
         container,
-        () => container.read(wizardProvider).value is WizardQualityReview,
-      );
-      container.read(wizardProvider.notifier).continueFromQuality();
-      await pumpUntil(
-        container,
-        () => container.read(wizardProvider).value is WizardSimilarReview,
-      );
-      await pumpUntil(
-        container,
-        () => container.read(modelStatusProvider).value is ModelPrepReady,
-      );
-      container.read(wizardProvider.notifier).continueFromSimilar();
-      await pumpUntil(
-        container,
-        () => container.read(wizardProvider).value is WizardJunkReview,
-      );
-      container.read(wizardProvider.notifier).continueFromJunk();
-      await pumpUntil(
-        container,
-        () => container.read(wizardProvider).value is WizardVideoReview,
-      );
-      container.read(wizardProvider.notifier).continueFromVideo();
-      await pumpUntil(
-        container,
         () => container.read(wizardProvider).value is WizardTripsReview,
       );
 
@@ -924,30 +955,6 @@ void main() {
         container = makeContainer(client);
         await reachConfirmFolder(container, client);
         container.read(wizardProvider.notifier).continueFromConfirm();
-        await pumpUntil(
-          container,
-          () => container.read(wizardProvider).value is WizardQualityReview,
-        );
-        container.read(wizardProvider.notifier).continueFromQuality();
-        await pumpUntil(
-          container,
-          () => container.read(wizardProvider).value is WizardSimilarReview,
-        );
-        await pumpUntil(
-          container,
-          () => container.read(modelStatusProvider).value is ModelPrepReady,
-        );
-        container.read(wizardProvider.notifier).continueFromSimilar();
-        await pumpUntil(
-          container,
-          () => container.read(wizardProvider).value is WizardJunkReview,
-        );
-        container.read(wizardProvider.notifier).continueFromJunk();
-        await pumpUntil(
-          container,
-          () => container.read(wizardProvider).value is WizardVideoReview,
-        );
-        container.read(wizardProvider.notifier).continueFromVideo();
         await pumpUntil(
           container,
           () => container.read(wizardProvider).value is WizardTripsReview,
@@ -1001,6 +1008,242 @@ void main() {
     });
   });
 
+  group('batches (a la carte passes)', () {
+    /// a.jpg + b.jpg form the Rome trip, c.jpg the Oslo trip, d.jpg is in no
+    /// trip: three batches.
+    FakeKustaviClient threeBatchClient({
+      List<pb.QualityEvent> qualityEvents = const [],
+      List<pb.SimilarEvent> similarEvents = const [],
+    }) {
+      return FakeKustaviClient(
+        scanEvents: [
+          scanImage('a.jpg'),
+          scanImage('b.jpg'),
+          scanImage('c.jpg'),
+          scanImage('d.jpg'),
+          scanComplete(images: 4),
+        ],
+        tripsEvents: [
+          tripEvent(0, ['a.jpg', 'b.jpg'], folder: 'Rome, Italy · April 2026'),
+          tripEvent(1, ['c.jpg'], folder: 'Oslo, Norway · May 2026'),
+        ],
+        qualityEvents: qualityEvents,
+        similarEvents: similarEvents,
+      );
+    }
+
+    test('trips run first and their folders become the batches', () async {
+      final client = threeBatchClient();
+      container = makeContainer(client);
+      await reachConfirmFolder(container, client);
+      // No analysis pass ran to get here.
+      await reachBatchMenu(container, client);
+
+      expect(client.qualityPassCount, 0);
+      final menu = container.read(wizardProvider).value as WizardBatchMenu;
+      expect(menu.batches.map((b) => b.title), [
+        'Oslo, Norway · May 2026',
+        'Rome, Italy · April 2026',
+        'Unassigned',
+      ]);
+      expect(menu.batches.map((b) => b.photoCount), [1, 2, 1]);
+      expect(menu.selectedKey, menu.batches.first.key);
+      expect(menu.markedCount, 0);
+    });
+
+    test('a pass runs on the selected batch only', () async {
+      final client = threeBatchClient(qualityEvents: [qualityFlag('a.jpg')]);
+      container = makeContainer(client);
+      await reachConfirmFolder(container, client);
+      await reachBatchMenu(container, client);
+      final wizard = container.read(wizardProvider.notifier);
+
+      wizard.selectBatch('Rome, Italy · April 2026');
+      wizard.startBatchPass(WizardStep.quality);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardQualityReview,
+      );
+
+      expect(client.lastQualityScope, ['a.jpg', 'b.jpg']);
+      expect(client.lastQualityBatchKey, 'Rome, Italy · April 2026');
+      final review =
+          container.read(wizardProvider).value as WizardQualityReview;
+      expect(review.totalImages, 2); // the batch, not the whole library
+      expect(review.flaggedCount, 1);
+      expect(wizard.reviewScope, {'a.jpg', 'b.jpg'});
+
+      // Done returns to the menu; only that batch shows the pass as done.
+      wizard.closeBatchReview();
+      final menu = container.read(wizardProvider).value as WizardBatchMenu;
+      final status = {
+        for (final b in menu.batches)
+          b.title: b.passes[WizardStep.quality.index]!,
+      };
+      expect(status['Rome, Italy · April 2026']!.done, isTrue);
+      expect(status['Rome, Italy · April 2026']!.flagged, 1);
+      expect(status['Oslo, Norway · May 2026']!.done, isFalse);
+      expect(status['Unassigned']!.done, isFalse);
+      expect(wizard.reviewScope, isNull);
+    });
+
+    test('a batch review lists only that batch\'s flags', () async {
+      final client = threeBatchClient(
+        qualityEvents: [qualityFlag('a.jpg'), qualityFlag('c.jpg')],
+      );
+      container = makeContainer(client);
+      await reachConfirmFolder(container, client);
+      await reachBatchMenu(container, client);
+      final wizard = container.read(wizardProvider.notifier);
+
+      // The fake replays both flags for either run (the real back end would
+      // only emit in-scope ones). Bulk actions and counts still honor scope.
+      wizard.selectBatch('Rome, Italy · April 2026');
+      wizard.startBatchPass(WizardStep.quality);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardQualityReview,
+      );
+      expect(
+        (container.read(wizardProvider).value as WizardQualityReview)
+            .flaggedCount,
+        1,
+      );
+      wizard.keepAllQualityFlagged();
+      final plan = container.read(deletionPlanProvider);
+      expect(plan.explicitKept, {'a.jpg'});
+    });
+
+    test('passes can run in any order', () async {
+      final client = threeBatchClient(
+        similarEvents: [
+          similarGroup(0, ['a.jpg', 'b.jpg'], 'a.jpg'),
+        ],
+      );
+      container = makeContainer(client);
+      await reachConfirmFolder(container, client);
+      await reachBatchMenu(container, client);
+      final wizard = container.read(wizardProvider.notifier);
+
+      // Duplicates first, with no quality pass at all.
+      wizard.selectBatch('Rome, Italy · April 2026');
+      wizard.startBatchPass(WizardStep.duplicates);
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardSimilarReview,
+      );
+      expect(client.lastSimilarScope, ['a.jpg', 'b.jpg']);
+      expect(client.qualityPassCount, 0);
+      expect(
+        (container.read(wizardProvider).value as WizardSimilarReview)
+            .groupCount,
+        1,
+      );
+    });
+
+    test(
+      'run on all batches runs each batch once and returns to the menu',
+      () async {
+        final client = threeBatchClient();
+        container = makeContainer(client);
+        await reachConfirmFolder(container, client);
+        await reachBatchMenu(container, client);
+        final wizard = container.read(wizardProvider.notifier);
+
+        wizard.startPassOnAllBatches(WizardStep.quality);
+        await pumpUntil(
+          container,
+          () =>
+              container.read(wizardProvider).value is WizardBatchMenu &&
+              client.qualityPassCount == 3,
+        );
+
+        expect(client.qualityPassCount, 3);
+        final menu = container.read(wizardProvider).value as WizardBatchMenu;
+        expect(
+          menu.batches.every((b) => b.passes[WizardStep.quality.index]!.done),
+          isTrue,
+        );
+        // Nothing left to run now.
+        wizard.startPassOnAllBatches(WizardStep.quality);
+        expect(client.qualityPassCount, 3);
+      },
+    );
+
+    test('cancelling a batch run returns to the menu', () async {
+      final client = threeBatchClient();
+      container = makeContainer(client);
+      await reachConfirmFolder(container, client);
+      await reachBatchMenu(container, client);
+      final wizard = container.read(wizardProvider.notifier);
+
+      wizard.startBatchPass(WizardStep.quality);
+      expect(container.read(wizardProvider).value, isA<WizardQualityRunning>());
+      wizard.cancelQuality();
+      expect(container.read(wizardProvider).value, isA<WizardBatchMenu>());
+      expect(wizard.reviewScope, isNull);
+    });
+
+    test('Edit trips returns to organize and rebuilds the batches', () async {
+      final client = threeBatchClient();
+      container = makeContainer(client);
+      await reachConfirmFolder(container, client);
+      await reachBatchMenu(container, client);
+      final wizard = container.read(wizardProvider.notifier);
+
+      wizard.reopenOrganize();
+      expect(container.read(wizardProvider).value, isA<WizardTripsReview>());
+      wizard.renameTripFolder(1, 'Norway');
+      wizard.continueFromTrips();
+
+      final menu = container.read(wizardProvider).value as WizardBatchMenu;
+      expect(menu.batches.map((b) => b.title), contains('Norway'));
+    });
+
+    test(
+      'Continue from the menu opens the commit summary and Back returns',
+      () async {
+        final client = threeBatchClient();
+        container = makeContainer(client);
+        await reachConfirmFolder(container, client);
+        await reachBatchMenu(container, client);
+        final wizard = container.read(wizardProvider.notifier);
+
+        wizard.continueFromBatches();
+        expect(
+          container.read(wizardProvider).value,
+          isA<WizardCommitSummary>(),
+        );
+        wizard.backFromCommitSummary();
+        expect(container.read(wizardProvider).value, isA<WizardBatchMenu>());
+      },
+    );
+
+    test('step indicator stages follow the flow', () async {
+      final client = threeBatchClient();
+      container = makeContainer(client);
+      await reachConfirmFolder(container, client);
+      expect(
+        container.read(wizardProvider).value!.stageIndex,
+        WizardStage.select.index,
+      );
+      container.read(wizardProvider.notifier).continueFromConfirm();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardTripsReview,
+      );
+      expect(
+        container.read(wizardProvider).value!.stageIndex,
+        WizardStage.organize.index,
+      );
+      container.read(wizardProvider.notifier).continueFromTrips();
+      expect(
+        container.read(wizardProvider).value!.stageIndex,
+        WizardStage.review.index,
+      );
+    });
+  });
+
   group('resume a saved session (S0-B)', () {
     test('a saved session routes select → WizardSessionRestore', () async {
       final client = FakeKustaviClient(
@@ -1024,45 +1267,148 @@ void main() {
       expect(phase.savedStepIndex, 4);
     });
 
-    test('resume with a finished pass restores it and runs only what is left',
-        () async {
-      // Saved at the video step: quality, similar and junk all finished; the
-      // video pass had not. Only the video pass should run on resume.
+    test(
+      'resume with a finished pass restores it and runs only what is left',
+      () async {
+        // Saved at the video step: quality, similar and junk all finished; the
+        // video pass had not. Only the video pass should run on resume.
+        final client = FakeKustaviClient(
+          inspectSessionResponse: inspectSession(imageCount: 3, resumeStep: 4),
+          scanEvents: [
+            scanImage('a.jpg'),
+            scanImage('b.jpg'),
+            scanImage('c.jpg'),
+            scanComplete(images: 3, resumed: true, resumeStep: 4),
+          ],
+          sessionResults: sessionResults(
+            resumeStep: 4,
+            videoTotal: 1,
+            qualityDone: true,
+            similarDone: true,
+            junkDone: true,
+            videoDone: false,
+            qualityFlags: [
+              pb.QualityFlag()
+                ..imageId = 'a.jpg'
+                ..reasons.add(pb.QualityReason.BLURRY),
+            ],
+            junkFlags: [
+              pb.JunkFlag()
+                ..imageId = 'b.jpg'
+                ..reason = 'screenshot',
+            ],
+            decisions: {'a.jpg': false, 'c.jpg': true},
+          ),
+          videoEvents: const [],
+        );
+        container = makeContainer(client);
+        await pumpUntil(
+          container,
+          () => container.read(wizardProvider).value is WizardStart,
+        );
+
+        container.read(wizardProvider.notifier).selectFolder('/photos');
+        await pumpUntil(
+          container,
+          () => container.read(wizardProvider).value is WizardSessionRestore,
+        );
+        container.read(wizardProvider.notifier).resumeSession();
+        await pumpUntil(
+          container,
+          () => container.read(wizardProvider).value is WizardBatchMenu,
+        );
+
+        expect(client.lastScanRequest?.resume, isTrue);
+        final wizard = container.read(wizardProvider.notifier);
+        expect(wizard.imageIds, ['a.jpg', 'b.jpg', 'c.jpg']);
+        expect(wizard.qualityFlags.keys, contains('a.jpg'));
+        expect(wizard.junkFlags.keys, contains('b.jpg'));
+        final plan = container.read(deletionPlanProvider);
+        expect(plan.explicitKept, contains('a.jpg'));
+        expect(plan.explicitDeleted, contains('c.jpg'));
+        // Resume re-runs only the cheap trips pass, then lands on the batch
+        // menu; no analysis pass is re-run.
+        expect(client.qualityPassCount, 0);
+        expect(client.lastVideoSkipIds, isEmpty);
+        // Passes the saved session finished count as done for every batch.
+        final menu = container.read(wizardProvider).value as WizardBatchMenu;
+        final passes = menu.batches.single.passes;
+        expect(passes[WizardStep.quality.index]!.done, isTrue);
+        expect(passes[WizardStep.junk.index]!.done, isTrue);
+        expect(passes[WizardStep.video.index]!.done, isFalse);
+      },
+    );
+
+    test(
+      'resume with every pass finished runs nothing and shows the review',
+      () async {
+        final client = FakeKustaviClient(
+          inspectSessionResponse: inspectSession(imageCount: 2, resumeStep: 3),
+          scanEvents: [
+            scanImage('a.jpg'),
+            scanImage('b.jpg'),
+            scanComplete(images: 2, resumed: true, resumeStep: 3),
+          ],
+          sessionResults: sessionResults(
+            resumeStep: 3,
+            qualityDone: true,
+            similarDone: true,
+            junkDone: true,
+            junkFlags: [
+              pb.JunkFlag()
+                ..imageId = 'a.jpg'
+                ..reason = 'screenshot',
+            ],
+          ),
+        );
+        container = makeContainer(client);
+        await pumpUntil(
+          container,
+          () => container.read(wizardProvider).value is WizardStart,
+        );
+
+        container.read(wizardProvider.notifier).selectFolder('/photos');
+        await pumpUntil(
+          container,
+          () => container.read(wizardProvider).value is WizardSessionRestore,
+        );
+        container.read(wizardProvider.notifier).resumeSession();
+        await pumpUntil(
+          container,
+          () => container.read(wizardProvider).value is WizardBatchMenu,
+        );
+
+        expect(client.qualityPassCount, 0);
+        expect(client.lastVideoSkipIds, isEmpty); // video pass never ran
+        expect(
+          container.read(wizardProvider.notifier).junkFlags.keys,
+          contains('a.jpg'),
+        );
+      },
+    );
+
+    test('resume restores per-batch pass completions', () async {
       final client = FakeKustaviClient(
-        inspectSessionResponse: inspectSession(imageCount: 3, resumeStep: 4),
+        inspectSessionResponse: inspectSession(imageCount: 2, resumeStep: 1),
         scanEvents: [
           scanImage('a.jpg'),
           scanImage('b.jpg'),
-          scanImage('c.jpg'),
-          scanComplete(images: 3, resumed: true, resumeStep: 4),
+          scanComplete(images: 2, resumed: true, resumeStep: 1),
+        ],
+        tripsEvents: [
+          tripEvent(0, ['a.jpg'], folder: 'Rome'),
+          tripEvent(1, ['b.jpg'], folder: 'Oslo'),
         ],
         sessionResults: sessionResults(
-          resumeStep: 4,
-          videoTotal: 1,
-          qualityDone: true,
-          similarDone: true,
-          junkDone: true,
-          videoDone: false,
-          qualityFlags: [
-            pb.QualityFlag()
-              ..imageId = 'a.jpg'
-              ..reasons.add(pb.QualityReason.BLURRY),
-          ],
-          junkFlags: [
-            pb.JunkFlag()
-              ..imageId = 'b.jpg'
-              ..reason = 'screenshot',
-          ],
-          decisions: {'a.jpg': false, 'c.jpg': true},
+          resumeStep: 1,
+          completedBatchPasses: ['1:Rome'],
         ),
-        videoEvents: const [],
       );
       container = makeContainer(client);
       await pumpUntil(
         container,
         () => container.read(wizardProvider).value is WizardStart,
       );
-
       container.read(wizardProvider.notifier).selectFolder('/photos');
       await pumpUntil(
         container,
@@ -1071,66 +1417,15 @@ void main() {
       container.read(wizardProvider.notifier).resumeSession();
       await pumpUntil(
         container,
-        () => container.read(wizardProvider).value is WizardVideoReview,
+        () => container.read(wizardProvider).value is WizardBatchMenu,
       );
 
-      expect(client.lastScanRequest?.resume, isTrue);
-      final wizard = container.read(wizardProvider.notifier);
-      expect(wizard.imageIds, ['a.jpg', 'b.jpg', 'c.jpg']);
-      expect(wizard.qualityFlags.keys, contains('a.jpg'));
-      expect(wizard.junkFlags.keys, contains('b.jpg'));
-      final plan = container.read(deletionPlanProvider);
-      expect(plan.explicitKept, contains('a.jpg'));
-      expect(plan.explicitDeleted, contains('c.jpg'));
-      // Finished passes were NOT re-run; only the video pass ran.
-      expect(client.qualityPassCount, 0);
-      expect(client.lastVideoSkipIds, isNotEmpty);
-    });
-
-    test('resume with every pass finished runs nothing and shows the review',
-        () async {
-      final client = FakeKustaviClient(
-        inspectSessionResponse: inspectSession(imageCount: 2, resumeStep: 3),
-        scanEvents: [
-          scanImage('a.jpg'),
-          scanImage('b.jpg'),
-          scanComplete(images: 2, resumed: true, resumeStep: 3),
-        ],
-        sessionResults: sessionResults(
-          resumeStep: 3,
-          qualityDone: true,
-          similarDone: true,
-          junkDone: true,
-          junkFlags: [
-            pb.JunkFlag()
-              ..imageId = 'a.jpg'
-              ..reason = 'screenshot',
-          ],
-        ),
-      );
-      container = makeContainer(client);
-      await pumpUntil(
-        container,
-        () => container.read(wizardProvider).value is WizardStart,
-      );
-
-      container.read(wizardProvider.notifier).selectFolder('/photos');
-      await pumpUntil(
-        container,
-        () => container.read(wizardProvider).value is WizardSessionRestore,
-      );
-      container.read(wizardProvider.notifier).resumeSession();
-      await pumpUntil(
-        container,
-        () => container.read(wizardProvider).value is WizardJunkReview,
-      );
-
-      expect(client.qualityPassCount, 0);
-      expect(client.lastVideoSkipIds, isEmpty); // video pass never ran
-      expect(
-        container.read(wizardProvider.notifier).junkFlags.keys,
-        contains('a.jpg'),
-      );
+      final menu = container.read(wizardProvider).value as WizardBatchMenu;
+      final done = {
+        for (final b in menu.batches)
+          b.title: b.passes[WizardStep.quality.index]!.done,
+      };
+      expect(done, {'Oslo': false, 'Rome': true});
     });
 
     test('start fresh from the restore prompt scans normally', () async {

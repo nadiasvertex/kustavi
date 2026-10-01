@@ -16,13 +16,39 @@ enum WizardStep {
   final String label;
 }
 
+/// The coarse stages shown in the step indicator. Passes no longer run in a
+/// fixed order, so the indicator shows where the user is in the overall flow
+/// rather than which pass is running.
+enum WizardStage {
+  select('Select'),
+  organize('Organize'),
+  review('Review'),
+  copy('Copy');
+
+  const WizardStage(this.label);
+
+  /// Display name in the step indicator.
+  final String label;
+}
+
 /// Sealed wizard state machine. Each variant carries the data its screen
 /// renders; transitions are owned by the wizard controller.
 sealed class WizardPhase {
   const WizardPhase();
 
-  /// The step indicator position (0-based); 6 = every step completed.
+  /// The persisted step (a [WizardStep] index). It is what the back end saves
+  /// for resume; the step indicator uses [stageIndex] instead.
   int get stepIndex;
+
+  /// The step indicator position (0-based over [WizardStage]);
+  /// [WizardStage.values.length] = every stage completed.
+  int get stageIndex => switch (stepIndex) {
+    <= 0 => WizardStage.select.index,
+    >= 1 && <= 4 => WizardStage.review.index,
+    5 => WizardStage.organize.index,
+    6 => WizardStage.copy.index,
+    _ => WizardStage.values.length,
+  };
 }
 
 /// S0 — start.
@@ -229,6 +255,29 @@ final class WizardVideoReview extends WizardPhase {
 
   @override
   int get stepIndex => WizardStep.video.index;
+}
+
+/// Batch menu: the hub where the user picks a batch and runs whichever passes
+/// they want on it, in any order. Reviews open from here and return here.
+final class WizardBatchMenu extends WizardPhase {
+  const WizardBatchMenu({
+    required this.batches,
+    required this.selectedKey,
+    required this.markedCount,
+    required this.totalImages,
+  });
+
+  final List<BatchSummary> batches;
+
+  /// The batch whose passes are shown; null before one is chosen.
+  final String? selectedKey;
+
+  /// Photos currently marked for deletion by any pass or by the user.
+  final int markedCount;
+  final int totalImages;
+
+  @override
+  int get stepIndex => WizardStep.quality.index;
 }
 
 /// S9-D — trips pass running.

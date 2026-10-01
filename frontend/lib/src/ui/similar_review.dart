@@ -26,7 +26,7 @@ class SimilarReviewScreen extends ConsumerWidget {
     ref.watch(wizardProvider);
     final wizard = ref.read(wizardProvider.notifier);
     final plan = ref.watch(deletionPlanProvider);
-    final groups = wizard.similarGroups;
+    final groups = wizard.reviewSimilarGroups;
     final keepers = similarKeeperMap(plan, groups);
     final totalImages = groups.expand((g) => g.memberIds).length;
 

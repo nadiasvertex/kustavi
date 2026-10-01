@@ -30,6 +30,34 @@ class Wizard extends _$Wizard {
   final Map<String, VideoFlagInfo> _videoFlags = {};
   int _videoTotal = 0;
 
+  // --- batches ---------------------------------------------------------------
+  //
+  // After the trips pass the photos are split into batches (one per output
+  // folder, plus the unassigned photos). The user then runs whichever passes
+  // they like on one batch at a time from the batch menu.
+
+  /// Key of the batch holding photos that belong to no trip.
+  static const String kUnassignedBatchKey = '__unassigned__';
+
+  /// True from the end of the Organize stage: the batch menu and its pass
+  /// runs/reviews are active.
+  bool _batchMode = false;
+  final List<BatchInfo> _batches = [];
+
+  /// The batch whose passes the menu shows.
+  String? _selectedBatchKey;
+
+  /// The batch a running or open pass applies to; null outside a batch run.
+  String? _activeBatchKey;
+
+  /// Passes finished per batch, as `"<WizardStep index>:<batch key>"` (the
+  /// same form the back end reports in `completed_batch_passes`).
+  final Set<String> _batchPassDone = {};
+
+  /// Passes a restored session finished over the whole library, by
+  /// [WizardStep] index; they count as done for every batch.
+  final Set<int> _sessionPassDone = {};
+
   // Junk-pass timing profile: the vision model's per-image cost is unknown
   // until measured on this machine. Profiling starts at the first progress
   // event that follows a real inference gap (resume bursts for already-
@@ -87,17 +115,10 @@ class Wizard extends _$Wizard {
   pb.ScanComplete? _pendingScanComplete;
   WizardPhase? _returnPhase;
 
-  /// Set while a resume is fast-forwarding through the pipeline: the target
-  /// [WizardStep] index to stop at. Null during normal operation. While set,
-  /// the pass "done" handlers advance the resume ladder ([_advanceResume])
-  /// instead of publishing their review screen, and progress write-through
-  /// is suppressed.
+  /// Set while a resume re-runs the trips pass: the saved [WizardStep] index
+  /// to land on afterwards. Null during normal operation. While set, progress
+  /// write-through is suppressed.
   int? _resumeTargetStep;
-
-  /// Which passes the resumed session had already finished, keyed by
-  /// [WizardStep] index (1 quality … 4 video). A finished pass is restored
-  /// from the DB; an unfinished one below the target is re-run/resumed.
-  final Map<int, bool> _resumeDone = {};
 
   /// True from a resume ScanFolder until [_onResumeScanDone] finishes wiring
   /// the restored state — suppresses progress/decision write-through.
@@ -123,6 +144,46 @@ class Wizard extends _$Wizard {
   List<String> _commitErrors = const <String>[];
 
   Map<String, ImageInfo> get images => UnmodifiableMapView(_images);
+
+  /// True once the Organize stage is done and passes run per batch.
+  bool get batchMode => _batchMode;
+
+  BatchInfo? _batchByKey(String? key) {
+    if (key == null) {
+      return null;
+    }
+    for (final batch in _batches) {
+      if (batch.key == key) {
+        return batch;
+      }
+    }
+    return null;
+  }
+
+  /// Ids of the batch a pass is running or being reviewed for, or null when no
+  /// batch is active (reviews then show everything).
+  Set<String>? get reviewScope {
+    return _batchByKey(_activeBatchKey)?.imageIds.toSet();
+  }
+
+  /// Scope sent to the back end for the active batch (empty = whole session).
+  List<String> get _scopeIds =>
+      _batchByKey(_activeBatchKey)?.imageIds ?? const <String>[];
+
+  /// Back-end `batch_key` for the active batch ('' = none).
+  String get _activeBatchKeyArg => _activeBatchKey ?? '';
+
+  /// Similar groups with a member in the active batch (all groups when no
+  /// batch is active).
+  List<SimilarGroupInfo> get reviewSimilarGroups {
+    final scope = reviewScope;
+    if (scope == null) {
+      return similarGroups;
+    }
+    return _similarGroups
+        .where((group) => group.memberIds.any(scope.contains))
+        .toList(growable: false);
+  }
 
   /// Image ids in scan (walk) order.
   List<String> get imageIds => List<String>.unmodifiable(_orderedIds);
@@ -506,9 +567,16 @@ class Wizard extends _$Wizard {
     }
   }
 
+  int _scopeCount() => reviewScope?.length ?? _images.length;
+
+  int _inScopeCount(Iterable<String> ids) {
+    final scope = reviewScope;
+    return scope == null ? ids.length : ids.where(scope.contains).length;
+  }
+
   WizardQualityReview get _qualityReviewPhase => WizardQualityReview(
-    flaggedCount: _qualityFlags.length,
-    totalImages: _images.length,
+    flaggedCount: _inScopeCount(_qualityFlags.keys),
+    totalImages: _scopeCount(),
     rerunEnabled: _hasThresholdChanges,
     previewFlagged: _previewFlagged,
   );
@@ -531,6 +599,7 @@ class Wizard extends _$Wizard {
         blurThreshold: _blurThreshold,
         underexposedThreshold: _underexposedThreshold,
         overexposedThreshold: _overexposedThreshold,
+        scopeImageIds: _scopeIds,
       );
       if (seq != _previewSeq) {
         return;
@@ -552,8 +621,8 @@ class Wizard extends _$Wizard {
   }
 
   WizardJunkReview get _junkReviewPhase => WizardJunkReview(
-    flaggedCount: _junkFlags.length,
-    totalImages: _images.length,
+    flaggedCount: _inScopeCount(_junkFlags.keys),
+    totalImages: _scopeCount(),
   );
 
   @override
@@ -598,6 +667,7 @@ class Wizard extends _$Wizard {
       phase is WizardJunkReview ||
       phase is WizardVideoReview ||
       phase is WizardTripsReview ||
+      phase is WizardBatchMenu ||
       phase is WizardCommitSummary;
 
   void _persistProgress(WizardPhase phase) {
@@ -857,94 +927,26 @@ class Wizard extends _$Wizard {
       return;
     }
 
+    // Pass results are restored above. Batches come from the trips pass,
+    // which is cheap and has no persisted result, so it runs again; the
+    // user then lands on the batch menu (or the commit summary).
     _resumeTargetStep = target;
-    _resumeDone
+    _sessionPassDone
       ..clear()
-      ..[WizardStep.quality.index] = results.qualityDone
-      ..[WizardStep.duplicates.index] = results.similarDone
-      ..[WizardStep.junk.index] = results.junkDone
-      ..[WizardStep.video.index] = results.videoDone;
-    _advanceResume();
-  }
-
-  /// Resume ladder: run the first pass at or before [_resumeTargetStep] that
-  /// did not finish, then re-enter here from its "done" handler. When every
-  /// pass up to the target is accounted for, land straight on that step's
-  /// screen — nothing re-runs. Trips (5) has no persisted result, so it is
-  /// re-run once when the target is trips or copy.
-  void _advanceResume() {
-    final target = _resumeTargetStep!;
-    final client = ref.read(kustaviClientProvider).requireValue;
-
-    bool needs(int step) => target >= step && !(_resumeDone[step] ?? false);
-
-    if (needs(WizardStep.quality.index)) {
-      _returnPhase = null;
-      state = const AsyncValue.data(WizardQualityRunning());
-      _subscribe(
-        client.runQualityPass(
-          blurThreshold: _blurThreshold,
-          underexposedThreshold: _underexposedThreshold,
-          overexposedThreshold: _overexposedThreshold,
-        ),
-        _onQualityEvent,
-        _onQualityDone,
-      );
-      return;
-    }
-    if (needs(WizardStep.duplicates.index)) {
-      state = const AsyncValue.data(WizardSimilarRunning());
-      _subscribe(
-        client.runSimilarPass(skipImageIds: _deletedBeforeSimilar()),
-        _onSimilarEvent,
-        _onSimilarDone,
-      );
-      return;
-    }
-    if (needs(WizardStep.junk.index)) {
-      // The junk pass resumes from its DB checkpoint; restored flags stay.
-      if (_modelReady) {
-        _startJunkPass();
-      } else {
-        state = const AsyncValue.data(WizardJunkPrep());
-      }
-      return;
-    }
-    if (needs(WizardStep.video.index)) {
-      // Keep the restored (possibly partial) video flags; the video pass
-      // resumes from its DB checkpoint and only emits newly-analyzed clips.
-      state = const AsyncValue.data(WizardVideoRunning());
-      _subscribe(
-        client.runVideoPass(skipVideoIds: _deletedBeforeVideo()),
-        _onVideoEvent,
-        _onVideoDone,
-      );
-      return;
-    }
-    if (target >= WizardStep.trips.index) {
-      _returnPhase = _videoReviewPhase;
-      _tripResults.clear();
-      _resetTripEdits();
-      state = const AsyncValue.data(WizardTripsRunning());
-      _subscribe(
-        client.runTripsPass(_tripsRequest()),
-        _onTripsEvent,
-        _onTripsDone,
-      );
-      return;
-    }
-
-    // Everything the target needs is restored: land on its review screen with
-    // no pass run at all.
-    _resumeTargetStep = null;
-    final phase = switch (target) {
-      1 => _qualityReviewPhase, // WizardStep.quality
-      2 => _similarReviewPhase, // WizardStep.duplicates
-      3 => _junkReviewPhase, // WizardStep.junk
-      _ => _videoReviewPhase, // WizardStep.video
-    };
-    _returnPhase = phase;
-    state = AsyncValue.data(phase);
+      ..addAll([
+        if (results.qualityDone) WizardStep.quality.index,
+        if (results.similarDone) WizardStep.duplicates.index,
+        if (results.junkDone) WizardStep.junk.index,
+        if (results.videoDone) WizardStep.video.index,
+      ]);
+    _batchPassDone
+      ..clear()
+      ..addAll(results.completedBatchPasses);
+    _returnPhase = WizardConfirmFolder(
+      folder: _sourceFolder,
+      imageCount: _orderedIds.length,
+    );
+    _startTripsPass();
   }
 
   void cancelScan() {
@@ -1023,23 +1025,25 @@ class Wizard extends _$Wizard {
     state = const AsyncValue.data(WizardStart());
   }
 
+  /// Confirm -> Organize: the trips pass runs first, because its folders
+  /// become the batches the user reviews.
   void continueFromConfirm() {
     if (state.value is! WizardConfirmFolder) {
       return;
     }
     _returnPhase = state.value;
-    _qualityFlags.clear();
-    _saveLastRunThresholds();
-    state = const AsyncValue.data(WizardQualityRunning());
+    _startTripsPass();
+  }
+
+  void _startTripsPass() {
+    _tripResults.clear();
+    _resetTripEdits();
+    state = const AsyncValue.data(WizardTripsRunning());
     final client = ref.read(kustaviClientProvider).requireValue;
     _subscribe(
-      client.runQualityPass(
-        blurThreshold: _blurThreshold,
-        underexposedThreshold: _underexposedThreshold,
-        overexposedThreshold: _overexposedThreshold,
-      ),
-      _onQualityEvent,
-      _onQualityDone,
+      client.runTripsPass(_tripsRequest()),
+      _onTripsEvent,
+      _onTripsDone,
     );
   }
 
@@ -1072,13 +1076,8 @@ class Wizard extends _$Wizard {
       return;
     }
     _saveLastRunThresholds();
-    if (_resumeTargetStep != null) {
-      _resumeDone[WizardStep.quality.index] = true;
-      _advanceResume();
-      return;
-    }
     _previewFlagged = null;
-    state = AsyncValue.data(_qualityReviewPhase);
+    _finishBatchRun(WizardStep.quality, () => _qualityReviewPhase);
   }
 
   void _saveLastRunThresholds() {
@@ -1093,19 +1092,23 @@ class Wizard extends _$Wizard {
       return;
     }
     _cancelPass();
-    state = AsyncValue.data(_returnPhase ?? const WizardStart());
+    _returnToBatchMenu();
   }
 
-  // --- S4 rerun -----------------------------------------------------------
+  // --- quality rerun --------------------------------------------------------
 
   void rerunQualityPass() {
     if (state.value is! WizardQualityReview || !_hasThresholdChanges) {
       return;
     }
-    // The folder did not change, so the image index is still valid — keep
-    // it (the S4 total and the S2 grid both read it); only the quality
-    // results are cleared, as the pass repopulates them.
-    _clearPassResults(keepReturnPhase: true, keepIndex: true);
+    _startQualityPass();
+  }
+
+  /// Runs the quality pass over the active batch with the current sliders.
+  /// Its flags are recomputed, so the batch's old ones are dropped first.
+  void _startQualityPass() {
+    final scope = reviewScope;
+    _qualityFlags.removeWhere((id, _) => scope == null || scope.contains(id));
     _saveLastRunThresholds();
     state = const AsyncValue.data(WizardQualityRunning());
     final client = ref.read(kustaviClientProvider).requireValue;
@@ -1114,6 +1117,8 @@ class Wizard extends _$Wizard {
         blurThreshold: _blurThreshold,
         underexposedThreshold: _underexposedThreshold,
         overexposedThreshold: _overexposedThreshold,
+        scopeImageIds: _scopeIds,
+        batchKey: _activeBatchKeyArg,
       ),
       _onQualityEvent,
       _onQualityDone,
@@ -1172,51 +1177,300 @@ class Wizard extends _$Wizard {
     }
   }
 
-  // --- S4 ----------------------------------------------------------------
+  // --- batch menu -------------------------------------------------------------
 
-  void backFromQuality() {
-    if (state.value is! WizardQualityReview) {
+  /// Builds the batches from the effective trip folders (plus the photos in no
+  /// trip) and opens the batch menu.
+  void _enterBatchMode() {
+    _batches.clear();
+    for (final folder in tripFolders) {
+      final ids = <String>{};
+      for (final trip in folder.trips) {
+        ids.addAll(trip.memberIds);
+      }
+      if (ids.isEmpty) {
+        continue;
+      }
+      _batches.add(
+        BatchInfo(
+          key: folder.name.isEmpty ? '__no-folder__' : folder.name,
+          title: folder.name.isEmpty ? 'Other' : folder.name,
+          imageIds: _orderedIds.where(ids.contains).toList(growable: false),
+        ),
+      );
+    }
+    final unassigned = unassignedTripImageIds;
+    if (unassigned.isNotEmpty) {
+      _batches.add(
+        BatchInfo(
+          key: kUnassignedBatchKey,
+          title: 'Unassigned',
+          imageIds: unassigned,
+        ),
+      );
+    }
+    _batchMode = true;
+    _activeBatchKey = null;
+    _runAllQueue.clear();
+    _runAllStep = null;
+    _selectedBatchKey = _batches.isEmpty ? null : _batches.first.key;
+  }
+
+  WizardBatchMenu get _batchMenuPhase {
+    return WizardBatchMenu(
+      batches: [for (final batch in _batches) _summarize(batch)],
+      selectedKey: _selectedBatchKey,
+      markedCount: _deletedImageIds().length,
+      totalImages: _images.length,
+    );
+  }
+
+  bool _passDone(WizardStep step, String batchKey) =>
+      _sessionPassDone.contains(step.index) ||
+      _batchPassDone.contains('${step.index}:$batchKey');
+
+  BatchSummary _summarize(BatchInfo batch) {
+    final ids = batch.imageIds.toSet();
+    var videos = 0;
+    for (final id in ids) {
+      if (_images[id]?.isVideo ?? false) {
+        videos++;
+      }
+    }
+    int flagged(Iterable<String> flaggedIds) =>
+        flaggedIds.where(ids.contains).length;
+    BatchPassStatus status(WizardStep step, int flaggedCount) =>
+        BatchPassStatus(
+          done: _passDone(step, batch.key),
+          flagged: flaggedCount,
+        );
+    return BatchSummary(
+      key: batch.key,
+      title: batch.title,
+      photoCount: ids.length - videos,
+      videoCount: videos,
+      passes: {
+        WizardStep.quality.index: status(
+          WizardStep.quality,
+          flagged(_qualityFlags.keys),
+        ),
+        WizardStep.duplicates.index: status(
+          WizardStep.duplicates,
+          _similarGroups
+              .where((group) => group.memberIds.any(ids.contains))
+              .length,
+        ),
+        WizardStep.junk.index: status(
+          WizardStep.junk,
+          flagged(_junkFlags.keys),
+        ),
+        WizardStep.video.index: status(
+          WizardStep.video,
+          flagged(_videoFlags.keys),
+        ),
+      },
+    );
+  }
+
+  void selectBatch(String key) {
+    if (state.value is! WizardBatchMenu || _batchByKey(key) == null) {
       return;
     }
-    state = AsyncValue.data(_returnPhase ?? const WizardStart());
+    _selectedBatchKey = key;
+    state = AsyncValue.data(_batchMenuPhase);
+  }
+
+  /// Back to the menu from a pass or review, dropping the active batch.
+  void _returnToBatchMenu() {
+    _activeBatchKey = null;
+    _runAllQueue.clear();
+    _runAllStep = null;
+    if (_batchMode) {
+      state = AsyncValue.data(_batchMenuPhase);
+    } else {
+      state = AsyncValue.data(_returnPhase ?? const WizardStart());
+    }
+  }
+
+  /// Runs [step] on the selected batch; its review opens when it finishes.
+  void startBatchPass(WizardStep step) {
+    if (state.value is! WizardBatchMenu || _selectedBatchKey == null) {
+      return;
+    }
+    _runAllQueue.clear();
+    _runAllStep = null;
+    _activeBatchKey = _selectedBatchKey;
+    _beginPass(step);
+  }
+
+  /// Runs [step] on every batch that has not finished it, one after another,
+  /// then returns to the menu.
+  void startPassOnAllBatches(WizardStep step) {
+    if (state.value is! WizardBatchMenu) {
+      return;
+    }
+    final pending = [
+      for (final batch in _batches)
+        if (!_passDone(step, batch.key)) batch.key,
+    ];
+    if (pending.isEmpty) {
+      return;
+    }
+    _runAllStep = step;
+    _runAllQueue
+      ..clear()
+      ..addAll(pending.skip(1));
+    _activeBatchKey = pending.first;
+    _beginPass(step);
+  }
+
+  final List<String> _runAllQueue = [];
+  WizardStep? _runAllStep;
+
+  /// Opens the review for a pass the selected batch already finished.
+  void reviewBatchPass(WizardStep step) {
+    if (state.value is! WizardBatchMenu || _selectedBatchKey == null) {
+      return;
+    }
+    _activeBatchKey = _selectedBatchKey;
+    state = AsyncValue.data(switch (step) {
+      WizardStep.quality => _qualityReviewPhase,
+      WizardStep.duplicates => _similarReviewPhase,
+      WizardStep.junk => _junkReviewPhase,
+      _ => _videoReviewPhase,
+    });
+  }
+
+  void _beginPass(WizardStep step) {
+    final client = ref.read(kustaviClientProvider).requireValue;
+    switch (step) {
+      case WizardStep.quality:
+        _startQualityPass();
+      case WizardStep.duplicates:
+        // Groups are recomputed, so the batch's old ones are dropped.
+        final scope = reviewScope;
+        _similarGroups.removeWhere(
+          (group) => scope == null || group.memberIds.any(scope.contains),
+        );
+        state = const AsyncValue.data(WizardSimilarRunning());
+        _subscribe(
+          client.runSimilarPass(
+            skipImageIds: _deletedBeforeSimilar(),
+            scopeImageIds: _scopeIds,
+            batchKey: _activeBatchKeyArg,
+          ),
+          _onSimilarEvent,
+          _onSimilarDone,
+        );
+      case WizardStep.junk:
+        // Images the pass already classified are not re-emitted, so existing
+        // flags are kept.
+        if (_modelReady) {
+          _startJunkPass();
+        } else {
+          state = const AsyncValue.data(WizardJunkPrep());
+        }
+      case WizardStep.video:
+        state = const AsyncValue.data(WizardVideoRunning());
+        _subscribe(
+          client.runVideoPass(
+            skipVideoIds: _deletedBeforeVideo(),
+            scopeImageIds: _scopeIds,
+            batchKey: _activeBatchKeyArg,
+          ),
+          _onVideoEvent,
+          _onVideoDone,
+        );
+      case WizardStep.select || WizardStep.trips || WizardStep.copy:
+        break;
+    }
+  }
+
+  /// A pass finished for the active batch: record it, then either start the
+  /// next queued batch, return to the menu (end of a run-all), or open the
+  /// pass's review.
+  void _finishBatchRun(WizardStep step, WizardPhase Function() review) {
+    final key = _activeBatchKey;
+    if (key != null) {
+      _batchPassDone.add('${step.index}:$key');
+    }
+    if (_runAllStep == step) {
+      if (_runAllQueue.isNotEmpty) {
+        _activeBatchKey = _runAllQueue.removeAt(0);
+        _beginPass(step);
+      } else {
+        _returnToBatchMenu();
+      }
+      return;
+    }
+    state = AsyncValue.data(review());
+  }
+
+  /// [Done] on any batch review: back to the menu.
+  void closeBatchReview() {
+    final phase = state.value;
+    if (phase is WizardQualityReview ||
+        phase is WizardSimilarReview ||
+        phase is WizardJunkReview ||
+        phase is WizardVideoReview) {
+      _returnToBatchMenu();
+    }
+  }
+
+  /// Menu -> commit summary.
+  void continueFromBatches() {
+    if (state.value is! WizardBatchMenu) {
+      return;
+    }
+    _activeBatchKey = null;
+    state = AsyncValue.data(_commitSummaryPhase);
+  }
+
+  /// Menu -> back to the trip folders to regroup. Batch progress marks are
+  /// dropped because the batches are rebuilt from the edited folders.
+  void reopenOrganize() {
+    if (state.value is! WizardBatchMenu) {
+      return;
+    }
+    _batchMode = false;
+    _batchPassDone.clear();
+    _sessionPassDone.clear();
+    _activeBatchKey = null;
+    state = AsyncValue.data(_tripsReviewPhase);
   }
 
   void keepAllQualityFlagged() {
     if (state.value is! WizardQualityReview) {
       return;
     }
-    ref.read(deletionPlanProvider.notifier).keepAll(_qualityFlags.keys);
+    ref
+        .read(deletionPlanProvider.notifier)
+        .keepAll(_flaggedInScope(_qualityFlags.keys));
   }
 
   void markAllQualityFlagged() {
     if (state.value is! WizardQualityReview) {
       return;
     }
-    ref.read(deletionPlanProvider.notifier).markAll(_qualityFlags.keys);
+    ref
+        .read(deletionPlanProvider.notifier)
+        .markAll(_flaggedInScope(_qualityFlags.keys));
+  }
+
+  /// [ids] limited to the active batch (all of them when none is active).
+  List<String> _flaggedInScope(Iterable<String> ids) {
+    final scope = reviewScope;
+    return scope == null
+        ? ids.toList(growable: false)
+        : ids.where(scope.contains).toList(growable: false);
   }
 
   bool get _modelReady {
     return ref.read(modelStatusProvider).value is ModelPrepReady;
   }
 
-  void continueFromQuality() {
-    if (state.value is! WizardQualityReview) {
-      return;
-    }
-    _returnPhase = state.value;
-    _similarGroups.clear();
-    state = const AsyncValue.data(WizardSimilarRunning());
-    final client = ref.read(kustaviClientProvider).requireValue;
-    _subscribe(
-      client.runSimilarPass(skipImageIds: _deletedBeforeSimilar()),
-      _onSimilarEvent,
-      _onSimilarDone,
-    );
-  }
-
   /// Ids marked for deletion by the quality step, so the duplicate pass never
-  /// scores them or picks them as a group keeper. Only the quality step has
-  /// run at this point.
+  /// scores them or picks them as a group keeper.
   List<String> _deletedBeforeSimilar() {
     final plan = ref.read(deletionPlanProvider);
     final qualityFlagged = _qualityFlags.keys.toSet();
@@ -1229,36 +1483,6 @@ class Wizard extends _$Wizard {
       similarKeepers: const <String, String>{},
     );
     return _images.keys.where(marked).toList(growable: false);
-  }
-
-  /// Duplicates review -> junk pass (or its model-download prep screen).
-  void continueFromSimilar() {
-    if (state.value is! WizardSimilarReview) {
-      return;
-    }
-    _returnPhase = state.value;
-    _junkFlags.clear();
-    if (_modelReady) {
-      _startJunkPass();
-    } else {
-      state = const AsyncValue.data(WizardJunkPrep());
-    }
-  }
-
-  /// Junk review -> video pass.
-  void continueFromJunk() {
-    if (state.value is! WizardJunkReview) {
-      return;
-    }
-    _returnPhase = state.value;
-    _videoFlags.clear();
-    state = const AsyncValue.data(WizardVideoRunning());
-    final client = ref.read(kustaviClientProvider).requireValue;
-    _subscribe(
-      client.runVideoPass(skipVideoIds: _deletedBeforeVideo()),
-      _onVideoEvent,
-      _onVideoDone,
-    );
   }
 
   /// Ids already marked for deletion by an earlier step, so the video pass
@@ -1283,13 +1507,13 @@ class Wizard extends _$Wizard {
     return _images.keys.where(marked).toList(growable: false);
   }
 
-  /// Trips review -> commit summary (the last review step).
+  /// Organize -> batch menu: the folders as they stand now become the batches.
   void continueFromTrips() {
     if (state.value is! WizardTripsReview) {
       return;
     }
-    _returnPhase = _tripsReviewPhase;
-    state = AsyncValue.data(_commitSummaryPhase);
+    _enterBatchMode();
+    state = AsyncValue.data(_batchMenuPhase);
   }
 
   void cancelTrips() {
@@ -1297,7 +1521,7 @@ class Wizard extends _$Wizard {
       return;
     }
     _cancelPass();
-    state = AsyncValue.data(_returnPhase ?? _videoReviewPhase);
+    state = AsyncValue.data(_returnPhase ?? const WizardStart());
   }
 
   pb.RunTripsPassRequest _tripsRequest() {
@@ -1313,7 +1537,7 @@ class Wizard extends _$Wizard {
       return;
     }
     ref.read(modelStatusProvider.notifier).cancelDownload();
-    state = AsyncValue.data(_returnPhase ?? _similarReviewPhase);
+    _returnToBatchMenu();
   }
 
   void _startJunkPass() {
@@ -1324,7 +1548,11 @@ class Wizard extends _$Wizard {
     state = const AsyncValue.data(WizardJunkRunning());
     final client = ref.read(kustaviClientProvider).requireValue;
     _subscribe(
-      client.runJunkPass(skipImageIds: _deletedBeforeJunk()),
+      client.runJunkPass(
+        skipImageIds: _deletedBeforeJunk(),
+        scopeImageIds: _scopeIds,
+        batchKey: _activeBatchKeyArg,
+      ),
       _onJunkEvent,
       _onJunkDone,
     );
@@ -1357,7 +1585,7 @@ class Wizard extends _$Wizard {
   }
 
   WizardSimilarReview get _similarReviewPhase => WizardSimilarReview(
-    groupCount: _similarGroups.length,
+    groupCount: reviewSimilarGroups.length,
     markedCount: _similarMarkedCount(),
   );
 
@@ -1461,12 +1689,7 @@ class Wizard extends _$Wizard {
     if (state.value is! WizardSimilarRunning) {
       return;
     }
-    if (_resumeTargetStep != null) {
-      _resumeDone[WizardStep.duplicates.index] = true;
-      _advanceResume();
-      return;
-    }
-    state = AsyncValue.data(_similarReviewPhase);
+    _finishBatchRun(WizardStep.duplicates, () => _similarReviewPhase);
   }
 
   // --- Trips pass ---------------------------------------------------------
@@ -1496,14 +1719,16 @@ class Wizard extends _$Wizard {
     if (state.value is! WizardTripsRunning) {
       return;
     }
-    if (_resumeTargetStep != null) {
-      final target = _resumeTargetStep;
+    final target = _resumeTargetStep;
+    if (target != null) {
+      // A resumed session re-runs the (cheap) trips pass, then lands where it
+      // left off: the commit summary, or the batch menu for anything earlier.
       _resumeTargetStep = null;
-      if (target == WizardStep.copy.index) {
-        _returnPhase = _tripsReviewPhase;
-        state = AsyncValue.data(_commitSummaryPhase);
-        return;
-      }
+      _enterBatchMode();
+      state = AsyncValue.data(
+        target == WizardStep.copy.index ? _commitSummaryPhase : _batchMenuPhase,
+      );
+      return;
     }
     state = AsyncValue.data(_tripsReviewPhase);
   }
@@ -1571,12 +1796,7 @@ class Wizard extends _$Wizard {
     if (state.value is! WizardJunkRunning) {
       return;
     }
-    if (_resumeTargetStep != null) {
-      _resumeDone[WizardStep.junk.index] = true;
-      _advanceResume();
-      return;
-    }
-    state = AsyncValue.data(_junkReviewPhase);
+    _finishBatchRun(WizardStep.junk, () => _junkReviewPhase);
   }
 
   void cancelJunk() {
@@ -1584,30 +1804,27 @@ class Wizard extends _$Wizard {
       return;
     }
     _cancelPass();
-    state = AsyncValue.data(_returnPhase ?? _similarReviewPhase);
+    _returnToBatchMenu();
   }
 
   // --- S7 ----------------------------------------------------------------
-
-  void backFromJunk() {
-    if (state.value is! WizardJunkReview) {
-      return;
-    }
-    state = AsyncValue.data(_returnPhase ?? _similarReviewPhase);
-  }
 
   void keepAllJunkFlagged() {
     if (state.value is! WizardJunkReview) {
       return;
     }
-    ref.read(deletionPlanProvider.notifier).keepAll(_junkFlags.keys);
+    ref
+        .read(deletionPlanProvider.notifier)
+        .keepAll(_flaggedInScope(_junkFlags.keys));
   }
 
   void markAllJunkFlagged() {
     if (state.value is! WizardJunkReview) {
       return;
     }
-    ref.read(deletionPlanProvider.notifier).markAll(_junkFlags.keys);
+    ref
+        .read(deletionPlanProvider.notifier)
+        .markAll(_flaggedInScope(_junkFlags.keys));
   }
 
   // --- S8 ----------------------------------------------------------------
@@ -1636,7 +1853,7 @@ class Wizard extends _$Wizard {
   int _similarMarkedCount() {
     final plan = ref.read(deletionPlanProvider);
     final keepers = similarKeeperMap(plan, _similarGroups);
-    return _similarGroups
+    return reviewSimilarGroups
         .expand((group) => group.memberIds)
         .where(
           (id) => isMarkedForDeletion(
@@ -1656,23 +1873,15 @@ class Wizard extends _$Wizard {
       return;
     }
     _cancelPass();
-    state = AsyncValue.data(_returnPhase ?? _qualityReviewPhase);
+    _returnToBatchMenu();
   }
 
-  // --- S9 ----------------------------------------------------------------
-
-  void backFromSimilar() {
-    if (state.value is! WizardSimilarReview) {
-      return;
-    }
-    state = AsyncValue.data(_returnPhase ?? _qualityReviewPhase);
-  }
-
+  /// Organize [Back]: to the folder confirmation.
   void backFromTrips() {
     if (state.value is! WizardTripsReview) {
       return;
     }
-    state = AsyncValue.data(_returnPhase ?? _videoReviewPhase);
+    state = AsyncValue.data(_returnPhase ?? const WizardStart());
   }
 
   // --- S10-B/C: video pass -----------------------------------------------
@@ -1704,12 +1913,7 @@ class Wizard extends _$Wizard {
     if (state.value is! WizardVideoRunning) {
       return;
     }
-    if (_resumeTargetStep != null) {
-      _resumeDone[WizardStep.video.index] = true;
-      _advanceResume();
-      return;
-    }
-    state = AsyncValue.data(_videoReviewPhase);
+    _finishBatchRun(WizardStep.video, () => _videoReviewPhase);
   }
 
   void cancelVideo() {
@@ -1717,50 +1921,36 @@ class Wizard extends _$Wizard {
       return;
     }
     _cancelPass();
-    state = AsyncValue.data(_returnPhase ?? _junkReviewPhase);
+    _returnToBatchMenu();
   }
 
-  WizardVideoReview get _videoReviewPhase => WizardVideoReview(
-    flaggedCount: _videoFlags.length,
-    totalVideos: _videoTotal,
-  );
-
-  /// Video review -> trips pass.
-  void continueFromVideo() {
-    if (state.value is! WizardVideoReview) {
-      return;
-    }
-    _returnPhase = _videoReviewPhase;
-    _tripResults.clear();
-    _resetTripEdits();
-    state = const AsyncValue.data(WizardTripsRunning());
-    final client = ref.read(kustaviClientProvider).requireValue;
-    _subscribe(
-      client.runTripsPass(_tripsRequest()),
-      _onTripsEvent,
-      _onTripsDone,
+  WizardVideoReview get _videoReviewPhase {
+    final scope = reviewScope;
+    final totalVideos = scope == null
+        ? _videoTotal
+        : scope.where((id) => _images[id]?.isVideo ?? false).length;
+    return WizardVideoReview(
+      flaggedCount: _inScopeCount(_videoFlags.keys),
+      totalVideos: totalVideos,
     );
-  }
-
-  void backFromVideo() {
-    if (state.value is! WizardVideoReview) {
-      return;
-    }
-    state = AsyncValue.data(_returnPhase ?? _junkReviewPhase);
   }
 
   void keepAllVideoFlagged() {
     if (state.value is! WizardVideoReview) {
       return;
     }
-    ref.read(deletionPlanProvider.notifier).keepAll(_videoFlags.keys);
+    ref
+        .read(deletionPlanProvider.notifier)
+        .keepAll(_flaggedInScope(_videoFlags.keys));
   }
 
   void markAllVideoFlagged() {
     if (state.value is! WizardVideoReview) {
       return;
     }
-    ref.read(deletionPlanProvider.notifier).markAll(_videoFlags.keys);
+    ref
+        .read(deletionPlanProvider.notifier)
+        .markAll(_flaggedInScope(_videoFlags.keys));
   }
 
   // --- S11–S13: commit -------------------------------------------------------
@@ -1781,7 +1971,11 @@ class Wizard extends _$Wizard {
     if (state.value is! WizardCommitSummary) {
       return;
     }
-    state = AsyncValue.data(_returnPhase ?? _tripsReviewPhase);
+    if (_batchMode) {
+      state = AsyncValue.data(_batchMenuPhase);
+    } else {
+      state = AsyncValue.data(_returnPhase ?? _tripsReviewPhase);
+    }
   }
 
   /// S11 [Copy] -> run the commit pass (S12).
@@ -1876,6 +2070,12 @@ class Wizard extends _$Wizard {
   /// [Back] on the step error screen: return to the phase the failed pass
   /// was started from.
   void goBackFromError() {
+    if (_batchMode && _batches.isNotEmpty) {
+      // A batch pass failed: keep every result so far and return to the menu.
+      _cancelPass();
+      _returnToBatchMenu();
+      return;
+    }
     _clearPassResults(keepReturnPhase: true);
     state = AsyncValue.data(_returnPhase ?? const WizardStart());
   }
@@ -1940,7 +2140,17 @@ class Wizard extends _$Wizard {
     }
     _qualityFlags.clear();
     _junkFlags.clear();
+    _videoFlags.clear();
+    _videoTotal = 0;
     _similarGroups.clear();
+    _batchMode = false;
+    _batches.clear();
+    _selectedBatchKey = null;
+    _activeBatchKey = null;
+    _batchPassDone.clear();
+    _sessionPassDone.clear();
+    _runAllQueue.clear();
+    _runAllStep = null;
     _tripResults.clear();
     _resetTripEdits();
     _commitDestination = '';
@@ -1952,7 +2162,6 @@ class Wizard extends _$Wizard {
     _commitErrors = const <String>[];
     _resumeTargetStep = null;
     _resuming = false;
-    _resumeDone.clear();
     if (!keepReturnPhase) {
       _returnPhase = null;
     }

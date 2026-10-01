@@ -47,8 +47,14 @@ class _FlaggedReviewState extends ConsumerState<FlaggedReview> {
       DeletionStep.similar => const <String>{},
       DeletionStep.video => videoFlagged,
     };
+    // In a batch review only that batch's photos are shown.
+    final scope = wizard.reviewScope;
     final flaggedImages = wizard.orderedImages
-        .where((image) => flaggedIds.contains(image.id))
+        .where(
+          (image) =>
+              flaggedIds.contains(image.id) &&
+              (scope == null || scope.contains(image.id)),
+        )
         .toList();
     if (step == DeletionStep.junk) {
       // Most-confident junk first so the clearest cuts are reviewed up top.

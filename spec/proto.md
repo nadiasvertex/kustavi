@@ -186,6 +186,7 @@ message QualityFlag {
 
 message PreviewQualityThresholdsRequest {
   RunQualityPassRequest thresholds = 1;
+  repeated string scope_image_ids = 2;  // count only these images (empty = all)
 }
 
 message PreviewQualityThresholdsResponse {
