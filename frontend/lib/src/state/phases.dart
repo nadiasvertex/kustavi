@@ -315,6 +315,19 @@ final class WizardTripsReview extends WizardPhase {
   int get stepIndex => WizardStep.trips.index;
 }
 
+/// Final review: everything marked for deletion, grouped by batch, before the
+/// commit summary. The screen reads the groups from the notifier so they stay
+/// live as the user rescues photos.
+final class WizardDeletionReview extends WizardPhase {
+  const WizardDeletionReview({required this.markedCount});
+
+  /// Photos currently marked for deletion by any pass or by the user.
+  final int markedCount;
+
+  @override
+  int get stepIndex => WizardStep.quality.index;
+}
+
 /// S11 — commit summary.
 final class WizardCommitSummary extends WizardPhase {
   const WizardCommitSummary({

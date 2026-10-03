@@ -15,6 +15,7 @@ import 'batch_menu.dart';
 import 'commit_summary.dart';
 import 'committing.dart';
 import 'confirm_folder.dart';
+import 'deletion_review.dart';
 import 'done.dart';
 import 'errors.dart';
 import 'format.dart';
@@ -245,6 +246,7 @@ class _WizardShellState extends ConsumerState<WizardShell> {
             markedCount: markedCount,
             totalImages: totalImages,
           ),
+        WizardDeletionReview() => const DeletionReviewScreen(),
         WizardCommitSummary(
               :final keepCount,
               :final keepBytes,
@@ -423,6 +425,16 @@ class _WizardShellState extends ConsumerState<WizardShell> {
           ),
           FilledButton(
             onPressed: wizard.continueFromBatches,
+            child: const Text('Continue'),
+          ),
+        ],
+      WizardDeletionReview() => [
+          OutlinedButton(
+            onPressed: wizard.backFromDeletionReview,
+            child: const Text('Back'),
+          ),
+          FilledButton(
+            onPressed: wizard.continueFromDeletionReview,
             child: const Text('Continue'),
           ),
         ],

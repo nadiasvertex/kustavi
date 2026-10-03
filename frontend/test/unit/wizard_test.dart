@@ -504,7 +504,8 @@ void main() {
 
       container.read(wizardProvider.notifier)
         ..closeBatchReview()
-        ..continueFromBatches();
+        ..continueFromBatches()
+        ..continueFromDeletionReview();
       expect(container.read(wizardProvider).value, isA<WizardCommitSummary>());
     });
 
@@ -559,7 +560,8 @@ void main() {
       );
       wizard
         ..closeBatchReview()
-        ..continueFromBatches();
+        ..continueFromBatches()
+        ..continueFromDeletionReview();
       expect(container.read(wizardProvider).value, isA<WizardCommitSummary>());
 
       // The suggested destination is a `<source-name>-kept` sibling.
@@ -633,7 +635,8 @@ void main() {
       );
       wizard
         ..closeBatchReview()
-        ..continueFromBatches();
+        ..continueFromBatches()
+        ..continueFromDeletionReview();
       expect(container.read(wizardProvider).value, isA<WizardCommitSummary>());
 
       wizard.startCommit();
@@ -1212,12 +1215,47 @@ void main() {
         wizard.continueFromBatches();
         expect(
           container.read(wizardProvider).value,
+          isA<WizardDeletionReview>(),
+        );
+        wizard.continueFromDeletionReview();
+        expect(
+          container.read(wizardProvider).value,
           isA<WizardCommitSummary>(),
         );
         wizard.backFromCommitSummary();
+        expect(
+          container.read(wizardProvider).value,
+          isA<WizardDeletionReview>(),
+        );
+        wizard.backFromDeletionReview();
         expect(container.read(wizardProvider).value, isA<WizardBatchMenu>());
       },
     );
+
+    test('the final review groups marked photos by batch with reasons',
+        () async {
+      final client = threeBatchClient();
+      container = makeContainer(client);
+      await reachConfirmFolder(container, client);
+      await reachBatchMenu(container, client);
+      final wizard = container.read(wizardProvider.notifier);
+      final plan = container.read(deletionPlanProvider.notifier);
+      final menu = container.read(wizardProvider).value as WizardBatchMenu;
+      final memberId = wizard.orderedImages.first.id;
+      expect(menu.batches, isNotEmpty);
+      plan.mark(memberId);
+      wizard.continueFromBatches();
+
+      final ids = [
+        for (final g in wizard.markedByBatch) ...g.images.map((i) => i.id),
+      ];
+      expect(ids, [memberId]);
+      expect(wizard.deletionReasons(memberId), ['Marked by you']);
+
+      // Keeping a photo removes it from the review.
+      plan.keep(memberId);
+      expect(wizard.markedByBatch, isEmpty);
+    });
 
     test('step indicator stages follow the flow', () async {
       final client = threeBatchClient();

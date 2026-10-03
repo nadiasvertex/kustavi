@@ -668,6 +668,7 @@ class Wizard extends _$Wizard {
       phase is WizardVideoReview ||
       phase is WizardTripsReview ||
       phase is WizardBatchMenu ||
+      phase is WizardDeletionReview ||
       phase is WizardCommitSummary;
 
   void _persistProgress(WizardPhase phase) {
@@ -1417,13 +1418,82 @@ class Wizard extends _$Wizard {
     }
   }
 
-  /// Menu -> commit summary.
+  /// Menu -> final review of everything marked for deletion.
   void continueFromBatches() {
     if (state.value is! WizardBatchMenu) {
       return;
     }
     _activeBatchKey = null;
+    state = AsyncValue.data(_deletionReviewPhase);
+  }
+
+  /// Final review -> back to the batch menu.
+  void backFromDeletionReview() {
+    if (state.value is! WizardDeletionReview) {
+      return;
+    }
+    state = AsyncValue.data(_batchMenuPhase);
+  }
+
+  /// Final review -> commit summary.
+  void continueFromDeletionReview() {
+    if (state.value is! WizardDeletionReview) {
+      return;
+    }
     state = AsyncValue.data(_commitSummaryPhase);
+  }
+
+  WizardDeletionReview get _deletionReviewPhase =>
+      WizardDeletionReview(markedCount: _deletedImageIds().length);
+
+  /// Photos marked for deletion, grouped by batch in batch order. Batches with
+  /// nothing marked are left out.
+  List<({String title, List<ImageInfo> images})> get markedByBatch {
+    final deleted = _deletedImageIds();
+    final groups = <({String title, List<ImageInfo> images})>[];
+    for (final batch in _batches) {
+      final images = [
+        for (final id in batch.imageIds)
+          if (deleted.contains(id) && _images[id] != null) _images[id]!,
+      ];
+      if (images.isNotEmpty) {
+        groups.add((title: batch.title, images: images));
+      }
+    }
+    return groups;
+  }
+
+  /// Why [id] is marked for deletion, one label per pass that flagged it.
+  /// A photo the user marked by hand is labelled "Marked by you".
+  List<String> deletionReasons(String id) {
+    final reasons = <String>[];
+    final quality = _qualityFlags[id];
+    if (quality != null) {
+      reasons.addAll(quality.reasons.map((r) => r.label));
+    }
+    final junk = _junkFlags[id];
+    if (junk != null) {
+      reasons.add(junk.reason);
+    }
+    final video = _videoFlags[id];
+    if (video != null) {
+      final spaced = video.reason.replaceAll('_', ' ');
+      reasons.add(
+        spaced.isEmpty ? spaced : spaced[0].toUpperCase() + spaced.substring(1),
+      );
+    }
+    final keepers = similarKeeperMap(
+      ref.read(deletionPlanProvider),
+      _similarGroups,
+    );
+    final keeper = keepers[id];
+    if (keeper != null && keeper.isNotEmpty && keeper != id) {
+      reasons.add('Duplicate');
+    }
+    if (ref.read(deletionPlanProvider).isExplicitlyDeleted(id)) {
+      reasons.add('Marked by you');
+    }
+    return reasons;
   }
 
   /// Menu -> back to the trip folders to regroup. Batch progress marks are
@@ -1972,7 +2042,7 @@ class Wizard extends _$Wizard {
       return;
     }
     if (_batchMode) {
-      state = AsyncValue.data(_batchMenuPhase);
+      state = AsyncValue.data(_deletionReviewPhase);
     } else {
       state = AsyncValue.data(_returnPhase ?? _tripsReviewPhase);
     }

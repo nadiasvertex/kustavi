@@ -122,6 +122,15 @@ void main() {
       await tester.tap(find.text('Done'));
       await tester.pump();
       expect(container.read(wizardProvider).value, isA<WizardBatchMenu>());
+
+      // Continue opens the final review of everything marked for deletion.
+      await tester.tap(find.text('Continue'));
+      await tester.pump();
+      expect(container.read(wizardProvider).value, isA<WizardDeletionReview>());
+      expect(find.text('1 photos marked for deletion'), findsOneWidget);
+      await tester.tap(find.text('Continue'));
+      await tester.pump();
+      expect(container.read(wizardProvider).value, isA<WizardCommitSummary>());
     });
 
     testWidgets('quality sliders update and enable rerun', (tester) async {

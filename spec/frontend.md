@@ -236,7 +236,7 @@ finished it, one after another, then returns here.
 The suggested order puts the cheap passes first so the slow junk pass skips
 photos they already marked, but nothing enforces it.
 [Edit trips] (→ S3 trips review; batch progress marks are dropped because the
-batches are rebuilt), [Continue] (→ S11).
+batches are rebuilt), [Continue] (→ S10).
 
 **S5 — Pass running (per batch).**
 Entry: [Run] on a pass card. The pass runs with `scope_image_ids` set to the
@@ -269,11 +269,19 @@ Buttons: [Keep all] / [Mark all] (flagged photos in this batch), [Done] (→ S4)
 Cell click opens the detail view with the deletion toggle enabled. Marks
 update live inside `DeletionPlan`.
 
+**S10 — Final review.**
+Entry: [Continue] on the batch menu. Header: "<N> photos marked for deletion".
+Every photo marked by any pass or by the user is listed, grouped by batch in
+batch order, with one reason chip per cause (quality reasons, junk category,
+video reason, "Duplicate", "Marked by you"). Batches with nothing marked are
+left out. Tapping a photo keeps it and removes it from the list. [Back]
+(→ S4), [Continue] (→ S11).
+
 **S11 — Commit summary.**
 UI: "Keep <N> photos (<total size>) — <M> will be left behind".
 Destination: text field + [Choose folder…] (directory picker; the
 suggested default, pre-filled, is a sibling of the source named
-`<source-name>-kept`). [Back] (→ S4). [Copy] (disabled until a
+`<source-name>-kept`). [Back] (→ S10). [Copy] (disabled until a
 destination is set and space availability is confirmed) → S12.
 
 **S12 — Committing.**
@@ -321,7 +329,9 @@ quits the app).
 | S4 | Run on all batches | S5 for each unfinished batch in turn, then S4 |
 | S4 | Review on a finished pass | S6 |
 | S4 | Edit trips | S3 trips review |
-| S4 | Continue | S11 |
+| S4 | Continue | S10 |
+| S10 | Continue | S11 |
+| S10 | Back | S4 |
 | S5 | complete (single batch) | S6 |
 | S5 | cancel | S4 |
 | S5 | model ready (junk) | pass starts |
@@ -329,7 +339,7 @@ quits the app).
 | S5 | RPC error | error screen → S4 |
 | S6 | Done | S4 |
 | S11 | Copy | S12 |
-| S11 | Back | S4 |
+| S11 | Back | S10 |
 | S12 | complete | S13 |
 | S12 | cancel | S11 |
 | S13 | Start over | S0 (fresh session) |
