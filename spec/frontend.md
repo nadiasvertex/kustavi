@@ -260,6 +260,9 @@ Each pass has its own review, limited to the active batch:
   line under them shows how many images the current slider values would flag
   in this batch (`PreviewQualityThresholds` with the batch scope), next to the
   count from the last run. [Rerun pass] re-runs the batch with the new values.
+  A flagged photo with unflagged photos taken within two minutes of it (up to
+  two on each side, videos excluded) shows an "N nearby" chip. The detail view
+  lists those photos as thumbnails under "Nearby shots"; tapping one opens it.
 - **Junk, Video.** Same keep / delete layout, most confident first; reason
   chips show the classification.
 - **Duplicates.** Group cards: "Group <i> — <M> similar photos", a row of
@@ -467,7 +470,9 @@ frontend/lib/
       domain.dart           # ImageInfo, flags, groups, trips, BackendError
       decisions.dart        # DeletionPlan
       model_status.dart     # modelStatusProvider
-      wizard.dart           # WizardController (AsyncNotifier)
+      wizard.dart           # Wizard (AsyncNotifier): fields, build, plumbing
+      wizard_*.dart         # part files: session, trips, batches, passes,
+                            #   deletion, commit (extensions on Wizard)
     ui/
       wizard_shell.dart     # step indicator, action bar, screen routing
       start.dart

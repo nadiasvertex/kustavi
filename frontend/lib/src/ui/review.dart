@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../state/decisions.dart';
 import '../state/domain.dart';
+import '../state/neighbors.dart';
 import '../state/wizard.dart';
 import 'widgets/badges.dart';
 import 'widgets/detail_view.dart';
@@ -29,6 +30,9 @@ class FlaggedReview extends ConsumerStatefulWidget {
 
 class _FlaggedReviewState extends ConsumerState<FlaggedReview> {
   bool _deletePanelExpanded = true;
+
+  /// Unflagged photos near each flagged one (quality review only).
+  Map<String, List<ImageInfo>> _neighbors = const <String, List<ImageInfo>>{};
 
   DeletionStep get step => widget.step;
 
@@ -71,6 +75,16 @@ class _FlaggedReviewState extends ConsumerState<FlaggedReview> {
         return cb.compareTo(ca);
       });
     }
+
+    _neighbors = step == DeletionStep.quality
+        ? findNeighbors(
+            candidates: scope == null
+                ? wizard.orderedImages
+                : wizard.orderedImages.where((i) => scope.contains(i.id)),
+            flaggedIds: flaggedIds,
+            excluded: qualityFlagged,
+          )
+        : const <String, List<ImageInfo>>{};
 
     bool marked(String id) => isMarkedForDeletion(
       plan,
@@ -256,7 +270,11 @@ class _FlaggedReviewState extends ConsumerState<FlaggedReview> {
         if (flag == null) {
           return const <Widget>[];
         }
-        return flag.reasons.map((reason) => ReasonChip(reason.label)).toList();
+        return [
+          ...flag.reasons.map((reason) => ReasonChip(reason.label)),
+          if (_neighbors.containsKey(id))
+            ReasonChip('${_neighbors[id]!.length} nearby'),
+        ];
       case DeletionStep.junk:
         final flag = wizard.junkFlags[id];
         if (flag == null) {
@@ -303,6 +321,8 @@ class _FlaggedReviewState extends ConsumerState<FlaggedReview> {
       junkConfidence: junk?.confidence,
       videoReason: video?.reason,
       videoConfidence: video?.confidence,
+      neighbors: _neighbors[image.id] ?? const <ImageInfo>[],
+      onOpenNeighbor: (neighbor) => _openDetail(context, wizard, neighbor),
     );
   }
 }

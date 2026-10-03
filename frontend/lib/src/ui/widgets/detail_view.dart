@@ -31,6 +31,8 @@ Future<T?> showImageDetail<T extends Object?>(
   String? videoReason,
   double? videoConfidence,
   Map<String, String> mappings = const <String, String>{},
+  List<ImageInfo> neighbors = const <ImageInfo>[],
+  void Function(ImageInfo neighbor)? onOpenNeighbor,
 }) {
   return showDialog<T>(
     context: context,
@@ -51,6 +53,8 @@ Future<T?> showImageDetail<T extends Object?>(
         videoReason: videoReason,
         videoConfidence: videoConfidence,
         mappings: mappings,
+        neighbors: neighbors,
+        onOpenNeighbor: onOpenNeighbor,
       ),
     ),
   );
@@ -76,6 +80,8 @@ class DetailView extends ConsumerStatefulWidget {
     this.videoReason,
     this.videoConfidence,
     this.mappings = const <String, String>{},
+    this.neighbors = const <ImageInfo>[],
+    this.onOpenNeighbor,
   });
 
   final ImageInfo image;
@@ -95,6 +101,13 @@ class DetailView extends ConsumerStatefulWidget {
   /// Extra label → value rows (trip, leg, place, group…) shown in the
   /// metadata panel (spec/frontend.md §7.2 "group/trip metadata mappings").
   final Map<String, String> mappings;
+
+  /// Unflagged photos taken just before and after this one.
+  final List<ImageInfo> neighbors;
+
+  /// Called when a neighbor is tapped; the caller closes this view and opens
+  /// the neighbor.
+  final void Function(ImageInfo neighbor)? onOpenNeighbor;
 
   @override
   ConsumerState<DetailView> createState() => _DetailViewState();
@@ -373,6 +386,7 @@ class _DetailViewState extends ConsumerState<DetailView>
         for (final entry in widget.mappings.entries)
           if (entry.value.isNotEmpty) _metaRow(theme, entry.key, entry.value),
         const Spacer(),
+        if (widget.neighbors.isNotEmpty) _neighborStrip(theme),
         Row(
           children: [
             const Expanded(child: Text('Marked for deletion')),
@@ -392,6 +406,57 @@ class _DetailViewState extends ConsumerState<DetailView>
           label: const Text('Close'),
         ),
       ],
+    );
+  }
+
+  Widget _neighborStrip(ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'NEARBY SHOTS',
+            style: theme.textTheme.labelSmall?.copyWith(
+              color: theme.colorScheme.outline,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: [
+              for (final neighbor in widget.neighbors)
+                Tooltip(
+                  message: neighbor.name,
+                  child: InkWell(
+                    onTap: widget.onOpenNeighbor == null
+                        ? null
+                        : () {
+                            _close();
+                            widget.onOpenNeighbor!(neighbor);
+                          },
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: Image(
+                        image: FileImage(File(neighbor.workingImagePath)),
+                        width: 90,
+                        height: 68,
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) =>
+                            const SizedBox(
+                              width: 90,
+                              height: 68,
+                              child: Icon(Icons.broken_image),
+                            ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
