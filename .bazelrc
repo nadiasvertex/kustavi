@@ -41,6 +41,11 @@ build --@curl//:ssl_lib=boringssl
 # These flag spellings are rejected by MSVC cl.exe, so they are scoped to the
 # platforms that actually use Clang/GCC. See the build:windows block below.
 
+# Pin the Xcode that Bazel's Apple toolchain uses instead of whatever
+# `xcode-select` points at. Update the path when Xcode is upgraded or installed
+# elsewhere, or override it per machine on the command line.
+build:macos --repo_env=DEVELOPER_DIR=/Applications/Xcode-27.0.0.app/Contents/Developer
+
 # Ignore several warnings from packages we depend on
 build:linux --per_file_copt=external/.*@-Wno-nullability-extension,-Wno-gcc-compat,-Wno-deprecated-declarations,-Wno-unused-function
 build:macos --per_file_copt=external/.*@-Wno-nullability-extension,-Wno-gcc-compat,-Wno-deprecated-declarations,-Wno-unused-function
