@@ -16,6 +16,13 @@
 #include <system_error>
 #include <vector>
 
+// <windows.h> (pulled in transitively via paths.h on MSVC) defines DELETE as a
+// macro in winnt.h, which collides with the proto-generated Decision::DELETE
+// enumerator below. WIN32_LEAN_AND_MEAN / NOMINMAX do not suppress it.
+#ifdef DELETE
+#undef DELETE
+#endif
+
 namespace kustavi {
 
 namespace fs = std::filesystem;
