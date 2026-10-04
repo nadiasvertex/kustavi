@@ -59,8 +59,9 @@ struct dated {
 auto parse_filename_date(std::string_view file_name)
     -> std::optional<filename_date> {
   // Not preceded by a digit; date; optional time of day. The separators cover
-  // IMG_20190704_123456, 2019-07-04 at 12.34.56 and Screenshot_2019-07-04-12-34-56;
-  // digits after the seconds (PXL_..._123456789) are fractions and ignored.
+  // IMG_20190704_123456, 2019-07-04 at 12.34.56 and
+  // Screenshot_2019-07-04-12-34-56; digits after the seconds
+  // (PXL_..._123456789) are fractions and ignored.
   static const std::regex pattern(
       R"((?:^|[^0-9])((?:19|20)[0-9]{2})[-_.]?(0[1-9]|1[0-2])[-_.]?(0[1-9]|[12][0-9]|3[01])(?:(?:[ _T-]|[ _]at[ _])?([01][0-9]|2[0-3])[-_.:]?([0-5][0-9])[-_.:]?([0-5][0-9]|60)[0-9]*)?(?:[^0-9]|$))",
       std::regex::ECMAScript);
@@ -202,8 +203,8 @@ auto detect_clock_offsets(const std::vector<repair_input> &inputs,
   // Presence bitmap over reference minutes, widened by the match window, so
   // each (photo, shift) check is O(1).
   const std::int64_t base = reference.front() - k_match_window_minutes;
-  const auto span =
-      static_cast<std::size_t>(reference.back() - base + k_match_window_minutes + 1);
+  const auto span = static_cast<std::size_t>(reference.back() - base +
+                                             k_match_window_minutes + 1);
   std::vector<bool> present(span, false);
   for (const auto minute : reference) {
     for (std::int64_t d = -k_match_window_minutes; d <= k_match_window_minutes;
@@ -275,7 +276,9 @@ auto detect_clock_offsets(const std::vector<repair_input> &inputs,
     best_hits = hits_at(best_shift);
     const auto unshifted = hits[static_cast<std::size_t>(k_max_shift_minutes)];
     auto sorted = hits;
-    std::ranges::nth_element(sorted, sorted.begin() + static_cast<std::ptrdiff_t>(sorted.size() / 2));
+    std::ranges::nth_element(
+        sorted,
+        sorted.begin() + static_cast<std::ptrdiff_t>(sorted.size() / 2));
     const auto median = sorted[sorted.size() / 2];
 
     const auto margin = std::max<std::size_t>(5, count / 4);

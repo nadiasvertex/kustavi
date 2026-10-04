@@ -24,10 +24,12 @@ struct image_record {
   std::int64_t original_width = 0;
   std::int64_t original_height = 0;
   std::int64_t size_bytes = 0;
-  std::string camera;                          //! EXIF make/model; may be empty.
-  std::optional<std::int64_t> taken_exif_ms;   //! Capture time as read from the file.
-  std::string date_source;                     //! "exif", "filename", "modified", "exif+offset" or empty.
-  std::string gps_source;                      //! "exif", "inferred" or empty.
+  std::string camera; //! EXIF make/model; may be empty.
+  std::optional<std::int64_t>
+      taken_exif_ms; //! Capture time as read from the file.
+  std::string
+      date_source; //! "exif", "filename", "modified", "exif+offset" or empty.
+  std::string gps_source; //! "exif", "inferred" or empty.
 };
 
 /** Repaired date and position for one image, as written back to the index. */

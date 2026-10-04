@@ -96,8 +96,8 @@ auto kustavi_service::RunVideoPass(grpc::ServerContext *context,
   const bool vision_available =
       net::asset_ready(text) && net::asset_ready(mmproj);
 
-  const std::unordered_set<std::string> scope(request->scope_image_ids().begin(),
-                                              request->scope_image_ids().end());
+  const std::unordered_set<std::string> scope(
+      request->scope_image_ids().begin(), request->scope_image_ids().end());
   std::vector<store::image_record> records;
   std::unordered_set<std::string> already_done;
   try {

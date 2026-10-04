@@ -109,8 +109,8 @@ auto kustavi_service::RunQualityPass(grpc::ServerContext *context,
   thresholds.underexposed_threshold = under;
   thresholds.overexposed_threshold = over;
 
-  const std::unordered_set<std::string> scope(request->scope_image_ids().begin(),
-                                              request->scope_image_ids().end());
+  const std::unordered_set<std::string> scope(
+      request->scope_image_ids().begin(), request->scope_image_ids().end());
   std::vector<fs::path> paths;
   std::unordered_map<std::string, std::string> path_to_id;
   try {
@@ -238,7 +238,8 @@ auto kustavi_service::RunQualityPass(grpc::ServerContext *context,
 }
 
 auto kustavi_service::PreviewQualityThresholds(
-    grpc::ServerContext *context, const PreviewQualityThresholdsRequest *request,
+    grpc::ServerContext *context,
+    const PreviewQualityThresholdsRequest *request,
     PreviewQualityThresholdsResponse *response) -> grpc::Status {
   if (!check_auth(context)) {
     return unauthenticated();
@@ -276,8 +277,8 @@ auto kustavi_service::PreviewQualityThresholds(
     std::uint32_t over = 0;
     while (stmt.step() == SQLITE_ROW) {
       if (!scope.empty()) {
-        const auto *id = reinterpret_cast<const char *>(
-            sqlite3_column_text(stmt.raw(), 4));
+        const auto *id =
+            reinterpret_cast<const char *>(sqlite3_column_text(stmt.raw(), 4));
         if (id == nullptr || !scope.contains(id)) {
           continue;
         }

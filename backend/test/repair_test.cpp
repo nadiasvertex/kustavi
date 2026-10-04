@@ -62,8 +62,10 @@ void test_filename_dates() {
 
 auto input(std::string id, std::string camera, std::optional<std::int64_t> exif,
            bool gps = false) -> repair_input {
-  repair_input in{.id = std::move(id), .file_name = "x.jpg",
-                  .camera = std::move(camera), .exif_taken_ms = exif};
+  repair_input in{.id = std::move(id),
+                  .file_name = "x.jpg",
+                  .camera = std::move(camera),
+                  .exif_taken_ms = exif};
   if (gps) {
     in.exif_latitude = 48.85;
     in.exif_longitude = 2.35;
@@ -74,8 +76,8 @@ auto input(std::string id, std::string camera, std::optional<std::int64_t> exif,
 void test_date_fallbacks() {
   std::vector<repair_input> in;
   in.push_back(input("a", "Cam", 1'000'000));
-  repair_input named{.id = "b", .file_name = "IMG_20190704_123456.jpg",
-                     .modified_ms = 5};
+  repair_input named{
+      .id = "b", .file_name = "IMG_20190704_123456.jpg", .modified_ms = 5};
   in.push_back(named);
   repair_input modified{.id = "c", .file_name = "scan.jpg", .modified_ms = 777};
   in.push_back(modified);
@@ -96,10 +98,11 @@ void test_date_fallbacks() {
 void test_offset_application() {
   repair_params params;
   params.offset_minutes_by_camera["Dslr"] = -300;
-  const auto out = repair_metadata({input("a", "Dslr", 10 * k_hour_ms),
-                                    input("b", "Phone", 10 * k_hour_ms)},
-                                   params);
-  check(out[0].taken_unix_ms == 5 * k_hour_ms && out[0].date_source == "exif+offset",
+  const auto out = repair_metadata(
+      {input("a", "Dslr", 10 * k_hour_ms), input("b", "Phone", 10 * k_hour_ms)},
+      params);
+  check(out[0].taken_unix_ms == 5 * k_hour_ms &&
+            out[0].date_source == "exif+offset",
         "offset moves the chosen camera");
   check(out[1].taken_unix_ms == 10 * k_hour_ms && out[1].date_source == "exif",
         "other cameras are untouched");
@@ -124,12 +127,14 @@ void test_gps_borrowing() {
   repair_input after = input("after", "Phone", t0 + 8 * k_minute_ms, true);
   after.exif_latitude = 35.0;
   after.exif_longitude = 139.0;
-  out = repair_metadata({before, after, input("mid", "Dslr", t0 + 4 * k_minute_ms)}, {});
-  check(out[2].gps_source.empty(), "far-apart donors on both sides are ambiguous");
+  out = repair_metadata(
+      {before, after, input("mid", "Dslr", t0 + 4 * k_minute_ms)}, {});
+  check(out[2].gps_source.empty(),
+        "far-apart donors on both sides are ambiguous");
 
   // A date from modified time is not trusted enough to borrow by.
-  repair_input stale{.id = "stale", .file_name = "scan.jpg",
-                     .modified_ms = t0 + k_minute_ms};
+  repair_input stale{
+      .id = "stale", .file_name = "scan.jpg", .modified_ms = t0 + k_minute_ms};
   out = repair_metadata({input("phone", "Phone", t0, true), stale}, {});
   check(out[1].gps_source.empty(), "modified-time dates never borrow GPS");
 
@@ -151,14 +156,16 @@ void test_clock_offset_detection() {
     const std::int64_t start = (200 + outing * 3) * day + 14 * k_hour_ms;
     for (int shot = 0; shot < 6; ++shot) {
       in.push_back(input("p", "Phone", start + shot * 3 * k_minute_ms, true));
-      in.push_back(input("d", "Dslr", start + shot * 3 * k_minute_ms - 3 * k_hour_ms));
+      in.push_back(
+          input("d", "Dslr", start + shot * 3 * k_minute_ms - 3 * k_hour_ms));
     }
   }
   auto found = detect_clock_offsets(in);
   check(found.size() == 1 && found[0].camera == "Dslr" &&
             found[0].offset_minutes == 180,
         "slow DSLR clock is detected (+180 minutes)");
-  check(!found.empty() && found[0].matched >= 60 && found[0].matched_unshifted == 0,
+  check(!found.empty() && found[0].matched >= 60 &&
+            found[0].matched_unshifted == 0,
         "evidence counts reflect the shift");
 
   // The same camera with a correct clock yields nothing.
@@ -170,7 +177,8 @@ void test_clock_offset_detection() {
     }
     aligned.push_back(copy);
   }
-  check(detect_clock_offsets(aligned).empty(), "aligned clocks give no suggestion");
+  check(detect_clock_offsets(aligned).empty(),
+        "aligned clocks give no suggestion");
 
   // A phone that shoots around the clock matches at every shift: no evidence.
   std::vector<repair_input> dense;

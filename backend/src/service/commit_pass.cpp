@@ -22,10 +22,9 @@ using algorithm::append_range;
 // Pass 6: commit
 // ---------------------------------------------------------------------------
 
-auto kustavi_service::collect_commit_sources(const CommitRequest &request,
-                                             std::vector<commit_source> &sources,
-                                             std::vector<std::string> &errors)
-    -> std::optional<grpc::Status> {
+auto kustavi_service::collect_commit_sources(
+    const CommitRequest &request, std::vector<commit_source> &sources,
+    std::vector<std::string> &errors) -> std::optional<grpc::Status> {
   try {
     const auto records = store::get_image_records(session_db_);
     std::unordered_map<std::string, fs::path> id_to_path;
@@ -82,9 +81,9 @@ auto kustavi_service::EstimateCommit(grpc::ServerContext *context,
   if (const auto err = collect_commit_sources(*request, sources, errors)) {
     return *err;
   }
-  const auto estimate = estimate_commit(
-      session_folder_, destination, sources,
-      {.merge_existing = request->merge_existing()});
+  const auto estimate =
+      estimate_commit(session_folder_, destination, sources,
+                      {.merge_existing = request->merge_existing()});
   response->set_total_bytes(estimate.total_bytes);
   response->set_new_bytes(estimate.new_bytes);
   response->set_already_present(
@@ -142,11 +141,11 @@ auto kustavi_service::Commit(grpc::ServerContext *context,
   std::stop_source stop_source;
   std::exception_ptr producer_error;
 
-  std::thread producer = run_producer(
-      queue, stop_source, producer_error,
-      [&](const std::stop_token &st) -> void {
-        auto summary =
-            commit_files(session_folder_, destination, sources, st,
+  std::thread producer =
+      run_producer(queue, stop_source, producer_error,
+                   [&](const std::stop_token &st) -> void {
+                     auto summary = commit_files(
+                         session_folder_, destination, sources, st,
                          [&](std::size_t done, std::size_t total,
                              const fs::path &current) -> void {
                            queue.push(commit_progress_evt{
@@ -155,15 +154,16 @@ auto kustavi_service::Commit(grpc::ServerContext *context,
                                .current_name = current.filename().string()});
                          },
                          options);
-        for (const auto &error : errors) {
-          summary.errors.push_back(error);
-        }
-        queue.push(commit_complete_evt{.copied = summary.copied,
-                                       .skipped = summary.skipped,
-                                       .already_present = summary.already_present,
-                                       .companions = summary.companions,
-                                       .errors = std::move(summary.errors)});
-      });
+                     for (const auto &error : errors) {
+                       summary.errors.push_back(error);
+                     }
+                     queue.push(commit_complete_evt{
+                         .copied = summary.copied,
+                         .skipped = summary.skipped,
+                         .already_present = summary.already_present,
+                         .companions = summary.companions,
+                         .errors = std::move(summary.errors)});
+                   });
 
   grpc::Status status = stream_pass(
       context, writer, queue, stop_source, [&](const commit_event &ev) -> bool {

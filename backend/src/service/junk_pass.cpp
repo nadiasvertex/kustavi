@@ -197,8 +197,8 @@ auto kustavi_service::RunJunkPass(grpc::ServerContext *context,
   // (see session_resume.cpp for the WizardStep index map).
   record_step(3);
 
-  const std::unordered_set<std::string> scope(request->scope_image_ids().begin(),
-                                              request->scope_image_ids().end());
+  const std::unordered_set<std::string> scope(
+      request->scope_image_ids().begin(), request->scope_image_ids().end());
   std::vector<store::image_record> records;
   std::unordered_set<std::string> already_done;
   try {

@@ -40,8 +40,8 @@ auto kustavi_service::RunSimilarPass(grpc::ServerContext *context,
   pass_guard guard(pass_active_, true);
   record_step(2); // WizardStep.duplicates
 
-  const std::unordered_set<std::string> scope(request->scope_image_ids().begin(),
-                                              request->scope_image_ids().end());
+  const std::unordered_set<std::string> scope(
+      request->scope_image_ids().begin(), request->scope_image_ids().end());
   std::vector<fs::path> paths;
   std::unordered_map<std::string, std::string> path_to_id;
   std::unordered_map<std::string, double> sharpness_by_id;

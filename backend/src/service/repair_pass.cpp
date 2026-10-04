@@ -161,8 +161,7 @@ auto kustavi_service::RunRepairPass(grpc::ServerContext *context,
       });
 
   grpc::Status status = stream_pass(
-      context, writer, queue, stop_source,
-      [&](const repair_event &ev) -> bool {
+      context, writer, queue, stop_source, [&](const repair_event &ev) -> bool {
         RepairEvent proto;
         std::visit(
             [&](const auto &e) -> auto {

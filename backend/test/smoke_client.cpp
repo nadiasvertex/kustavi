@@ -2,9 +2,9 @@
 
 #include <proto/service.grpc.pb.h>
 
+#include <algorithm>
 #include <array>
 #include <charconv>
-#include <algorithm>
 #include <chrono>
 #include <csignal>
 #include <cstdint>
@@ -710,8 +710,8 @@ void run_commit(const options &opts) {
     if (!estimate_status.ok()) {
       fail("EstimateCommit: " + estimate_status.error_message());
     }
-    if (estimate.new_bytes() == 0 || estimate.new_bytes() != estimate.total_bytes() ||
-        !estimate.fits()) {
+    if (estimate.new_bytes() == 0 ||
+        estimate.new_bytes() != estimate.total_bytes() || !estimate.fits()) {
       fail("EstimateCommit: unexpected sizes for a fresh destination");
     }
     std::println("ok: EstimateCommit new_bytes={} free_known={}",
@@ -1136,7 +1136,8 @@ void run_batch_check(const options &opts) {
         for (const auto &id : event.group().image_ids()) {
           if (std::find(g_image_ids.begin(),
                         g_image_ids.begin() + static_cast<std::ptrdiff_t>(half),
-                        id) == g_image_ids.begin() + static_cast<std::ptrdiff_t>(half)) {
+                        id) ==
+              g_image_ids.begin() + static_cast<std::ptrdiff_t>(half)) {
             fail("scoped RunSimilarPass: grouped an image outside the scope");
           }
         }

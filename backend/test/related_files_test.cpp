@@ -48,10 +48,9 @@ auto fresh_dir(const char *name) -> fs::path {
 
 void test_discovery() {
   const auto dir = fresh_dir("kustavi_related_discovery");
-  for (const char *f :
-       {"IMG_1.jpg", "IMG_1.CR2", "IMG_1.xmp", "IMG_1.jpg.xmp", "IMG_1.mov",
-        "IMG_1.png", "IMG_10.jpg", "IMG_10.CR2", "clip.mp4", "clip.mov",
-        "clip.xmp"}) {
+  for (const char *f : {"IMG_1.jpg", "IMG_1.CR2", "IMG_1.xmp", "IMG_1.jpg.xmp",
+                        "IMG_1.mov", "IMG_1.png", "IMG_10.jpg", "IMG_10.CR2",
+                        "clip.mp4", "clip.mov", "clip.xmp"}) {
     touch(dir / f);
   }
 
@@ -89,15 +88,19 @@ void test_grouped_commit() {
   check(summary.copied == 1 && summary.companions == 2 &&
             summary.errors.empty(),
         "commit copies the jpg with its two companions");
-  check(fs::exists(dst / "a" / "IMG_1.CR2") && fs::exists(dst / "a" / "IMG_1.xmp"),
+  check(fs::exists(dst / "a" / "IMG_1.CR2") &&
+            fs::exists(dst / "a" / "IMG_1.xmp"),
         "companions land beside the primary");
 
   // Trip layout: a same-name collision suffixes the whole group.
-  summary = commit_files(
-      src, dst,
-      {{.id = "a/IMG_1.jpg", .path = src / "a" / "IMG_1.jpg", .dest_subdir = "trip"},
-       {.id = "b/IMG_1.jpg", .path = src / "b" / "IMG_1.jpg", .dest_subdir = "trip"}},
-      stop.get_token(), nullptr);
+  summary = commit_files(src, dst,
+                         {{.id = "a/IMG_1.jpg",
+                           .path = src / "a" / "IMG_1.jpg",
+                           .dest_subdir = "trip"},
+                          {.id = "b/IMG_1.jpg",
+                           .path = src / "b" / "IMG_1.jpg",
+                           .dest_subdir = "trip"}},
+                         stop.get_token(), nullptr);
   check(fs::exists(dst / "trip" / "IMG_1.jpg") &&
             fs::exists(dst / "trip" / "IMG_1.CR2") &&
             fs::exists(dst / "trip" / "IMG_1.xmp"),
@@ -135,7 +138,8 @@ void test_merge_and_estimate() {
   const auto plain = estimate_commit(src, lib, sources);
   check(plain.already_present == 0 && plain.new_bytes == plain.total_bytes,
         "without merge nothing counts as present");
-  const auto merged = estimate_commit(src, lib, sources, {.merge_existing = true});
+  const auto merged =
+      estimate_commit(src, lib, sources, {.merge_existing = true});
   check(merged.already_present == 1,
         "merge estimate finds the identical library file under another name");
   check(merged.total_bytes - merged.new_bytes ==
@@ -144,8 +148,8 @@ void test_merge_and_estimate() {
   check(merged.free_bytes.has_value(), "free space is reported");
 
   std::stop_source stop;
-  const auto summary = commit_files(src, lib, sources, stop.get_token(), nullptr,
-                                    {.merge_existing = true});
+  const auto summary = commit_files(src, lib, sources, stop.get_token(),
+                                    nullptr, {.merge_existing = true});
   check(summary.already_present == 1 && summary.copied == 2 &&
             summary.errors.empty(),
         "merge commit skips the duplicate and copies the rest");

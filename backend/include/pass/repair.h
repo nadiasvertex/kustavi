@@ -25,9 +25,9 @@ auto parse_filename_date(std::string_view file_name)
 struct repair_input {
   std::string id;
   std::string file_name;
-  std::string camera;                         //! EXIF make/model; may be empty.
-  std::optional<std::int64_t> exif_taken_ms;  //! Time stored in the file.
-  std::optional<std::int64_t> modified_ms;    //! File modification time.
+  std::string camera;                        //! EXIF make/model; may be empty.
+  std::optional<std::int64_t> exif_taken_ms; //! Time stored in the file.
+  std::optional<std::int64_t> modified_ms;   //! File modification time.
   std::optional<double> exif_latitude;
   std::optional<double> exif_longitude;
 };
@@ -55,9 +55,9 @@ struct repaired_metadata {
 /** A proposed clock correction for one camera. */
 struct clock_offset_suggestion {
   std::string camera;
-  int offset_minutes = 0;          //! Add to the camera's times.
-  std::size_t photos = 0;          //! Photos from the camera with an EXIF time.
-  std::size_t matched = 0;         //! Photos near a reference photo after the shift.
+  int offset_minutes = 0;  //! Add to the camera's times.
+  std::size_t photos = 0;  //! Photos from the camera with an EXIF time.
+  std::size_t matched = 0; //! Photos near a reference photo after the shift.
   std::size_t matched_unshifted = 0; //! The same count with no shift.
 };
 

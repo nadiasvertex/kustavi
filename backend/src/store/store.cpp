@@ -64,7 +64,8 @@ auto get_image_records(database &db) -> std::vector<image_record> {
 
   sqlite_statement stmt = db.prepare(
       "SELECT id, absolute_path, working_image_path, taken_unix_ms, latitude, "
-      "longitude, kind, file_name, original_width, original_height, size_bytes, "
+      "longitude, kind, file_name, original_width, original_height, "
+      "size_bytes, "
       "camera, taken_exif_ms, date_source, gps_source "
       "FROM images;");
 
@@ -220,9 +221,9 @@ auto get_session_value(database &db, std::string_view key)
 auto list_session_keys(database &db, std::string_view prefix)
     -> std::vector<std::string> {
   std::vector<std::string> keys;
-  auto stmt = db.prepare(
-      "SELECT key FROM session_state WHERE substr(key, 1, ?) = ? "
-      "ORDER BY key;");
+  auto stmt =
+      db.prepare("SELECT key FROM session_state WHERE substr(key, 1, ?) = ? "
+                 "ORDER BY key;");
   stmt.bind_int(1, static_cast<int>(prefix.size()));
   stmt.bind_text(2, std::string(prefix));
   while (stmt.step() == SQLITE_ROW) {

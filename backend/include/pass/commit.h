@@ -32,9 +32,10 @@ struct commit_options {
 /** Outcome of a commit run. */
 struct commit_summary {
   std::size_t copied = 0;
-  std::size_t already_present = 0; //! Skipped: identical file already in the library.
+  std::size_t already_present =
+      0; //! Skipped: identical file already in the library.
   std::size_t skipped = 0;
-  std::size_t companions = 0; //! Related files copied with their primary.
+  std::size_t companions = 0;      //! Related files copied with their primary.
   std::vector<std::string> errors; //! "<id>: <reason>" per failure.
 };
 
@@ -66,8 +67,8 @@ auto commit_files(
 
 /** What a commit would write, and the room available for it. */
 struct commit_estimate {
-  std::uint64_t total_bytes = 0; //! Every kept file with its related files.
-  std::uint64_t new_bytes = 0;   //! Bytes a commit would actually write.
+  std::uint64_t total_bytes = 0;   //! Every kept file with its related files.
+  std::uint64_t new_bytes = 0;     //! Bytes a commit would actually write.
   std::size_t already_present = 0; //! Items a commit would not copy.
   std::optional<std::uint64_t> free_bytes; //! Unset when it cannot be read.
 };

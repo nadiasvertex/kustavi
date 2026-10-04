@@ -97,7 +97,8 @@ int main() {
                  "('b', '/b', 'b', 1, 1, 1, NULL, NULL, NULL, '', 0);");
       for (const char *column :
            {"camera", "taken_exif_ms", "date_source", "gps_source"}) {
-        db.execute(std::string("ALTER TABLE images DROP COLUMN ") + column + ";");
+        db.execute(std::string("ALTER TABLE images DROP COLUMN ") + column +
+                   ";");
       }
       db.execute("PRAGMA user_version = 1;");
     }

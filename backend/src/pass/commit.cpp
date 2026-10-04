@@ -151,7 +151,8 @@ auto match_existing_dirs(const fs::path &destination, const fs::path &subdir)
 /** Where `source` lands under `destination`, or the reason it has no place. */
 auto destination_path(const fs::path &session_folder,
                       const fs::path &destination, const commit_source &source,
-                      bool merge_existing) -> std::expected<fs::path, std::string> {
+                      bool merge_existing)
+    -> std::expected<fs::path, std::string> {
   if (source.dest_subdir.empty()) {
     std::error_code rel_ec;
     const auto relative = fs::relative(source.path, session_folder, rel_ec);
@@ -206,9 +207,8 @@ void copy_companions(const commit_source &source,
         summary.companions++;
         continue;
       }
-      summary.errors.push_back(source.id + ": " +
-                               companion.filename().string() +
-                               ": name conflict");
+      summary.errors.push_back(
+          source.id + ": " + companion.filename().string() + ": name conflict");
       continue;
     }
     std::error_code copy_ec;
@@ -331,7 +331,8 @@ auto commit_files(
   return summary;
 }
 
-auto estimate_commit(const fs::path &session_folder, const fs::path &destination,
+auto estimate_commit(const fs::path &session_folder,
+                     const fs::path &destination,
                      const std::vector<commit_source> &sources,
                      const commit_options &options) -> commit_estimate {
   commit_estimate estimate;

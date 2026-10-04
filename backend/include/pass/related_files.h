@@ -10,7 +10,7 @@ namespace kustavi {
 /** Extensions of files that travel with a photo or video: RAW originals, HEIC
  * stills, Live Photo motion clips and edit sidecars (.xmp, .aae, ...). */
 inline constexpr std::array<std::string_view, 17> companion_extensions{
-    "cr2", "cr3", "nef", "arw", "dng", "orf", "rw2", "raf", "srw",
+    "cr2", "cr3",  "nef",  "arw", "dng", "orf", "rw2", "raf", "srw",
     "pef", "heic", "heif", "mov", "xmp", "aae", "dop", "pp3"};
 
 /** Siblings of `primary` that belong with it, sorted by path.

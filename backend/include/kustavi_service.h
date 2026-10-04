@@ -289,10 +289,10 @@ public:
   grpc::Status InspectSession(grpc::ServerContext *context,
                               const InspectSessionRequest *request,
                               InspectSessionResponse *response) override;
-  grpc::Status PreviewQualityThresholds(
-      grpc::ServerContext *context,
-      const PreviewQualityThresholdsRequest *request,
-      PreviewQualityThresholdsResponse *response) override;
+  grpc::Status
+  PreviewQualityThresholds(grpc::ServerContext *context,
+                           const PreviewQualityThresholdsRequest *request,
+                           PreviewQualityThresholdsResponse *response) override;
 
   grpc::Status GetSessionResults(grpc::ServerContext *context,
                                  const GetSessionResultsRequest *request,
