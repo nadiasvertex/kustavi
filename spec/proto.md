@@ -389,6 +389,12 @@ running.
   in `ScanComplete.errors` as `"<id>: <reason>"`.
 - A new `ScanFolder` discards the previous session's index and cache.
 
+### Trip edits
+`SaveSessionStateRequest.trip_edits` stores the GUI's hand edits to the trips
+layout as one string, and `GetSessionResultsResponse.trip_edits` returns it
+unchanged. The back end does not parse it. An empty string clears the saved
+edits; leaving the field unset keeps them.
+
 ### Batch scope (quality, junk, similar, video)
 `RunQualityPassRequest`, `RunJunkPassRequest`, `RunSimilarPassRequest` and
 `RunVideoPassRequest` accept `scope_image_ids` and `batch_key`. A non-empty

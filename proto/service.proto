@@ -96,6 +96,9 @@ message GetSessionResultsResponse {
   // Batch-scoped passes that ran to completion, as "step:batch_key" where
   // step is the WizardStep index of the pass.
   repeated string completed_batch_passes = 15;
+  // The user's hand edits to the trips layout, exactly as the GUI saved them
+  // (opaque to the back end; empty when there are none).
+  string trip_edits = 16;
 }
 
 enum Decision {
@@ -119,6 +122,9 @@ message SaveSessionStateRequest {
   repeated DecisionEntry         decisions          = 5;
   // Replaces the stored similar-group keeper overrides when non-empty.
   map<uint32, string>            group_keepers      = 6;
+  // Replaces the stored trip edits (an opaque GUI-defined string). An empty
+  // string clears them.
+  optional string                trip_edits         = 7;
 }
 
 message SaveSessionStateResponse {}

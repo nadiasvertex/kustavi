@@ -357,8 +357,13 @@ and the user's decisions, then re-runs the cheap trips pass (there is no
 persisted trips result) and lands on S4 — or S11 when the session was saved on
 the commit summary. A pass the saved session finished over the whole library
 counts as done for every batch; per-batch completions come back in
-`completed_batch_passes`. Manual trip edits are not persisted and are lost on
-resume.
+`completed_batch_passes`. Manual trip edits (moved photos, hand-made trips,
+renamed folders, the folder-layout switch) are saved with the session as an
+opaque `trip_edits` string and laid back over the new clustering when the
+trips pass finishes on resume. An edit is dropped when its photo no longer
+exists, when it names a trip id the new clustering did not produce, or when a
+renamed trip's generated name differs from the one recorded at the time. Re-running
+the trips pass with new settings discards the edits, on disk as well.
 
 ## 7. Shared UI
 

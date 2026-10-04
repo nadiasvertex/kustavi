@@ -6,6 +6,7 @@ import 'package:kustavi/src/state/decisions.dart';
 import 'package:kustavi/src/state/domain.dart';
 import 'package:kustavi/src/state/model_status.dart';
 import 'package:kustavi/src/state/phases.dart';
+import 'package:kustavi/src/state/trip_edits.dart';
 import 'package:kustavi/src/state/wizard.dart';
 
 import '../helpers.dart';
@@ -1465,6 +1466,104 @@ void main() {
       };
       expect(done, {'Oslo': false, 'Rome': true});
     });
+
+    test('hand edits to the trips are saved with the session', () async {
+      final client = FakeKustaviClient(
+        scanEvents: [
+          scanImage('a.jpg'),
+          scanImage('b.jpg'),
+          scanComplete(images: 2),
+        ],
+        tripsEvents: [
+          tripEvent(0, ['a.jpg'], folder: 'Rome'),
+          tripEvent(1, ['b.jpg'], folder: 'Oslo'),
+        ],
+      );
+      container = makeContainer(client);
+      await reachConfirmFolder(container, client);
+      container.read(wizardProvider.notifier).continueFromConfirm();
+      await pumpUntil(
+        container,
+        () => container.read(wizardProvider).value is WizardTripsReview,
+      );
+      final wizard = container.read(wizardProvider.notifier);
+      client.savedSessionStates.clear();
+
+      wizard.moveImagesToTrip(['b.jpg'], 0);
+      wizard.renameTripFolder(0, 'Italy and Norway');
+      await Future<void>.delayed(Duration.zero);
+
+      final saved = client.savedSessionStates
+          .where((r) => r.hasTripEdits())
+          .last
+          .tripEdits;
+      final edits = TripEdits.decode(saved)!;
+      expect(edits.membership, {'b.jpg': 0});
+      expect(edits.renames.single.tripId, 0);
+      expect(edits.renames.single.from, 'Rome');
+      expect(edits.renames.single.name, 'Italy and Norway');
+    });
+
+    test(
+      'resume lays the saved trip edits back over the new clustering',
+      () async {
+        const edits = TripEdits(
+          membership: {'b.jpg': 0, 'gone.jpg': 0, 'a.jpg': 77},
+          userTrips: [],
+          renames: [
+            FolderRenameEdit(tripId: 0, from: 'Rome', name: 'Italy'),
+            // The generated name changed since: this rename must be dropped.
+            FolderRenameEdit(tripId: 1, from: 'Bergen', name: 'Wrong'),
+          ],
+          organizeIntoFolders: false,
+        );
+        final client = FakeKustaviClient(
+          inspectSessionResponse: inspectSession(imageCount: 2, resumeStep: 1),
+          scanEvents: [
+            scanImage('a.jpg'),
+            scanImage('b.jpg'),
+            scanComplete(images: 2, resumed: true, resumeStep: 1),
+          ],
+          tripsEvents: [
+            tripEvent(0, ['a.jpg'], folder: 'Rome'),
+            tripEvent(1, ['b.jpg'], folder: 'Oslo'),
+          ],
+          sessionResults: sessionResults(
+            resumeStep: 1,
+            tripEdits: edits.encode(),
+          ),
+        );
+        container = makeContainer(client);
+        await pumpUntil(
+          container,
+          () => container.read(wizardProvider).value is WizardStart,
+        );
+        container.read(wizardProvider.notifier).selectFolder('/photos');
+        await pumpUntil(
+          container,
+          () => container.read(wizardProvider).value is WizardSessionRestore,
+        );
+        client.savedSessionStates.clear();
+        container.read(wizardProvider.notifier).resumeSession();
+        await pumpUntil(
+          container,
+          () => container.read(wizardProvider).value is WizardBatchMenu,
+        );
+
+        final wizard = container.read(wizardProvider.notifier);
+        // b.jpg moved into trip 0; the entries for a missing photo and an
+        // unknown trip id are ignored.
+        expect(wizard.tripResults.map((t) => t.id), [0]);
+        expect(wizard.tripResults.single.memberIds, ['a.jpg', 'b.jpg']);
+        expect(wizard.tripFolders.map((f) => f.name), ['Italy']);
+        expect(wizard.organizeIntoTripFolders, isFalse);
+        // The resume itself must not overwrite the saved edits.
+        expect(
+          client.savedSessionStates.where((r) => r.hasTripEdits()),
+          isEmpty,
+        );
+      },
+    );
 
     test('start fresh from the restore prompt scans normally', () async {
       final client = FakeKustaviClient(

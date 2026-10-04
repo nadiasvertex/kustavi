@@ -83,6 +83,7 @@ pb.GetSessionResultsResponse sessionResults({
   Map<String, bool> decisions = const {}, // image id -> true means delete
   Map<int, String> groupKeepers = const {},
   List<String> completedBatchPasses = const [],
+  String tripEdits = '',
 }) {
   final response = pb.GetSessionResultsResponse()
     ..resumeStep = resumeStep
@@ -95,7 +96,8 @@ pb.GetSessionResultsResponse sessionResults({
     ..similarGroups.addAll(similarGroups)
     ..junkFlags.addAll(junkFlags)
     ..videoFlags.addAll(videoFlags)
-    ..completedBatchPasses.addAll(completedBatchPasses);
+    ..completedBatchPasses.addAll(completedBatchPasses)
+    ..tripEdits = tripEdits;
   decisions.forEach((id, remove) {
     response.decisions.add(
       pb.DecisionEntry()

@@ -262,6 +262,7 @@ extension WizardSession on Wizard {
       folder: _sourceFolder,
       imageCount: _orderedIds.length,
     );
+    _pendingTripEdits = results.tripEdits;
     _startTripsPass();
   }
 

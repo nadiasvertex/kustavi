@@ -22,6 +22,7 @@ extension WizardTrips on Wizard {
   bool get organizeIntoTripFolders => _organizeIntoTripFolders;
   set organizeIntoTripFolders(bool value) {
     _organizeIntoTripFolders = value;
+    _persistTripEdits();
     _publishTripsReviewPhase();
   }
 
@@ -172,6 +173,7 @@ extension WizardTrips on Wizard {
     for (final id in imageIds) {
       _tripMembership[id] = tripId ?? Wizard._kUnassignedTrip;
     }
+    _persistTripEdits();
     _publishTripsReviewPhase();
   }
 
@@ -213,6 +215,7 @@ extension WizardTrips on Wizard {
     for (final imgId in ids) {
       _tripMembership[imgId] = id;
     }
+    _persistTripEdits();
     _publishTripsReviewPhase();
     return id;
   }
@@ -293,7 +296,104 @@ extension WizardTrips on Wizard {
       return;
     }
     _tripFolderNames[tripId] = newName;
+    _persistTripEdits();
     _publishTripsReviewPhase();
+  }
+
+  /// Saves the current hand edits with the session. Skipped while a resume is
+  /// still waiting to restore the saved ones, so they are not overwritten.
+  void _persistTripEdits() {
+    if (_pendingTripEdits != null) {
+      return;
+    }
+    final client = _ref.read(kustaviClientProvider).value;
+    if (client == null) {
+      return;
+    }
+    final renames = <FolderRenameEdit>[];
+    _tripFolderNames.forEach((tripId, name) {
+      renames.add(
+        FolderRenameEdit(
+          tripId: tripId,
+          from: _generatedFolderOf(tripId),
+          name: name,
+        ),
+      );
+    });
+    final edits = TripEdits(
+      membership: Map<String, int>.of(_tripMembership),
+      userTrips: [
+        for (final t in _userTrips)
+          UserTripEdit(
+            id: t.id,
+            startMs: t.start.millisecondsSinceEpoch,
+            folder: t.folder ?? '',
+            placeName: t.placeName,
+          ),
+      ],
+      renames: renames,
+      organizeIntoFolders: _organizeIntoTripFolders,
+    );
+    unawaited(
+      _safeSave(
+        client,
+        pb.SaveSessionStateRequest()..tripEdits = edits.encode(),
+      ),
+    );
+  }
+
+  /// The folder name the trips pass or a hand-made trip gave [tripId].
+  String _generatedFolderOf(int tripId) {
+    for (final trip in [..._tripResults, ..._userTrips]) {
+      if (trip.id == tripId) {
+        return trip.folder ?? '';
+      }
+    }
+    return '';
+  }
+
+  /// Lays the edits saved with the session back over the fresh clustering.
+  /// Anything that no longer fits (a photo that is gone, a trip id the pass
+  /// did not produce, a rename whose trip now has a different generated name)
+  /// is dropped rather than applied to the wrong trip.
+  void _applyPendingTripEdits() {
+    final raw = _pendingTripEdits;
+    _pendingTripEdits = null;
+    final edits = raw == null ? null : TripEdits.decode(raw);
+    if (edits == null) {
+      return;
+    }
+    for (final t in edits.userTrips) {
+      final start = DateTime.fromMillisecondsSinceEpoch(t.startMs);
+      _userTrips.add(
+        TripInfo(
+          id: t.id,
+          start: start,
+          end: start,
+          memberIds: const <String>[],
+          folder: t.folder,
+          placeName: t.placeName,
+        ),
+      );
+      if (t.id >= _nextUserTripId) {
+        _nextUserTripId = t.id + 1;
+      }
+    }
+    final known = {
+      for (final t in [..._tripResults, ..._userTrips]) t.id,
+    };
+    edits.membership.forEach((imageId, tripId) {
+      if (_images.containsKey(imageId) &&
+          (tripId == Wizard._kUnassignedTrip || known.contains(tripId))) {
+        _tripMembership[imageId] = tripId;
+      }
+    });
+    for (final r in edits.renames) {
+      if (known.contains(r.tripId) && _generatedFolderOf(r.tripId) == r.from) {
+        _tripFolderNames[r.tripId] = r.name;
+      }
+    }
+    _organizeIntoTripFolders = edits.organizeIntoFolders;
   }
 
   void _resetTripEdits() {
@@ -312,6 +412,7 @@ extension WizardTrips on Wizard {
   void _startTripsPass() {
     _tripResults.clear();
     _resetTripEdits();
+    _persistTripEdits();
     _state = const AsyncValue.data(WizardTripsRunning());
     final client = _ref.read(kustaviClientProvider).requireValue;
     _subscribe(
@@ -335,6 +436,7 @@ extension WizardTrips on Wizard {
       return;
     }
     _cancelPass();
+    _pendingTripEdits = null;
     _state = AsyncValue.data(_returnPhase ?? const WizardStart());
   }
 
@@ -400,6 +502,7 @@ extension WizardTrips on Wizard {
     if (_state.value is! WizardTripsRunning) {
       return;
     }
+    _applyPendingTripEdits();
     final target = _resumeTargetStep;
     if (target != null) {
       // A resumed session re-runs the (cheap) trips pass, then lands where it

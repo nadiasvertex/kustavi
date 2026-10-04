@@ -902,6 +902,7 @@ void run_resume_check(const options &opts) {
   {
     k::SaveSessionStateRequest request;
     request.set_step(4); // WizardStep.video
+    request.set_trip_edits(R"({"v":1,"membership":{"a":1}})");
     request.set_replace_decisions(true);
     if (g_image_ids.size() >= 2) {
       auto *keep = request.add_decisions();
@@ -1002,6 +1003,11 @@ void run_resume_check(const options &opts) {
     }
     if (response.junk_done() || response.video_done()) {
       fail("GetSessionResults: junk/video marked done though they never ran");
+    }
+    // The opaque trip edits come back exactly as saved.
+    if (response.trip_edits() != R"({"v":1,"membership":{"a":1}})") {
+      fail("GetSessionResults: trip_edits did not round-trip, got '" +
+           response.trip_edits() + "'");
     }
     std::println("ok: GetSessionResults decisions={} quality_flags={} "
                  "quality_done={} similar_done={} junk_done={}",

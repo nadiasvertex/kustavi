@@ -43,6 +43,7 @@ constexpr std::string_view k_distance_key = "trip_distance_km";
 constexpr std::string_view k_home_key = "trip_home_radius_km";
 constexpr std::string_view k_leg_key = "trip_leg_radius_km";
 constexpr std::string_view k_keepers_key = "group_keepers";
+constexpr std::string_view k_trip_edits_key = "trip_edits";
 
 auto parse_double(const std::optional<std::string> &raw) -> double {
   if (!raw) {
@@ -361,6 +362,9 @@ auto kustavi_service::GetSessionResults(grpc::ServerContext *context,
             store::get_session_value(session_db_, k_keepers_key)) {
       decode_group_keepers(*encoded, response->mutable_group_keepers());
     }
+    if (auto edits = store::get_session_value(session_db_, k_trip_edits_key)) {
+      response->set_trip_edits(std::move(*edits));
+    }
   } catch (const std::exception &e) {
     return {grpc::StatusCode::INTERNAL,
             std::string("failed to read session results: ") + e.what()};
@@ -419,6 +423,10 @@ auto kustavi_service::SaveSessionState(grpc::ServerContext *context,
     if (!request->group_keepers().empty()) {
       store::set_session_value(session_db_, k_keepers_key,
                                encode_group_keepers(request->group_keepers()));
+    }
+    if (request->has_trip_edits()) {
+      store::set_session_value(session_db_, k_trip_edits_key,
+                               request->trip_edits());
     }
   } catch (const std::exception &e) {
     return {grpc::StatusCode::INTERNAL,

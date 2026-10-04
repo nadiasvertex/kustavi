@@ -12,6 +12,7 @@ import 'decisions.dart';
 import 'domain.dart';
 import 'model_status.dart';
 import 'phases.dart';
+import 'trip_edits.dart';
 
 part 'wizard.g.dart';
 part 'wizard_batches.dart';
@@ -90,6 +91,10 @@ class Wizard extends _$Wizard {
   /// Trips the user created by hand; their members live in [_tripMembership].
   final List<TripInfo> _userTrips = [];
   int _nextUserTripId = 1000000;
+
+  /// Saved trip edits waiting for the trips pass to finish on a resume; null
+  /// when no resume is in progress.
+  String? _pendingTripEdits;
 
   /// Whether the commit step should lay files out in trip/leg folders.
   bool _organizeIntoTripFolders = true;
@@ -220,6 +225,7 @@ class Wizard extends _$Wizard {
     _tripHomeRadiusKm = homeRadiusKm ?? _tripHomeRadiusKm;
     _tripLegRadiusKm = legRadiusKm ?? _tripLegRadiusKm;
     _resetTripEdits();
+    _persistTripEdits();
     _tripResults.clear();
     state = const AsyncValue.data(WizardTripsRunning());
     final client = ref.read(kustaviClientProvider).requireValue;
@@ -365,6 +371,7 @@ class Wizard extends _$Wizard {
     _runAllStep = null;
     _tripResults.clear();
     _resetTripEdits();
+    _pendingTripEdits = null;
     _commitDestination = '';
     _commitKeepIds = const <String>[];
     _commitTotalBytes = 0;
