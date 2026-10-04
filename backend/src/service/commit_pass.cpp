@@ -104,6 +104,7 @@ auto kustavi_service::Commit(grpc::ServerContext *context,
         }
         queue.push(commit_complete_evt{.copied = summary.copied,
                                        .skipped = summary.skipped,
+                                       .companions = summary.companions,
                                        .errors = std::move(summary.errors)});
       });
 
@@ -122,6 +123,7 @@ auto kustavi_service::Commit(grpc::ServerContext *context,
                 auto *c = proto.mutable_complete();
                 c->set_copied(static_cast<uint32_t>(e.copied));
                 c->set_skipped(static_cast<uint32_t>(e.skipped));
+                c->set_companions(static_cast<uint32_t>(e.companions));
                 append_range(c->mutable_errors(), e.errors);
               }
             },

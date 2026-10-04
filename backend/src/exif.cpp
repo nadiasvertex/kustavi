@@ -324,6 +324,27 @@ auto read_exif(const std::filesystem::path &path) -> exif_info {
   }
   const auto ifd0 = read_ifd(view, tiff_base, *ifd0_off);
 
+  // Camera identity: IFD0.Make and IFD0.Model. Models often repeat the make
+  // ("Canon Canon EOS 5D"), so the make is dropped when the model starts
+  // with it.
+  {
+    const auto text_of = [&](uint16_t tag) -> std::string {
+      const auto *entry = find_entry(ifd0, tag);
+      const auto text = entry != nullptr ? read_ascii(view, *entry)
+                                         : std::optional<std::string>{};
+      return text.value_or(std::string{});
+    };
+    const auto trim = [](std::string text) -> std::string {
+      const auto first = text.find_first_not_of(" \t");
+      const auto last = text.find_last_not_of(" \t");
+      return first == std::string::npos ? std::string{}
+                                        : text.substr(first, last - first + 1);
+    };
+    const auto make = trim(text_of(0x010F));
+    const auto model = trim(text_of(0x0110));
+    info.camera = model.starts_with(make) ? model : trim(make + " " + model);
+  }
+
   // Timestamp: ExifIFD.DateTimeOriginal, falling back to IFD0.DateTime.
   const auto *exif_ptr = find_entry(ifd0, 0x8769);
   std::vector<ifd_entry> exif_entries;

@@ -148,6 +148,12 @@ auto kustavi_service::ScanFolder(grpc::ServerContext *context,
                 if (r.duration_ms.has_value()) {
                   m->set_duration_ms(*r.duration_ms);
                 }
+                if (r.taken_unix_ms.has_value()) {
+                  m->set_date_source("exif");
+                }
+                if (r.latitude.has_value() && r.longitude.has_value()) {
+                  m->set_gps_source("exif");
+                }
               } else if constexpr (std::is_same_v<evt, scan_meta_evt>) {
                 auto *m = proto.mutable_image();
                 const auto &r = e.record;
@@ -170,6 +176,8 @@ auto kustavi_service::ScanFolder(grpc::ServerContext *context,
                 m->set_thumbnail_path(r.working_path.string());
                 m->set_kind(r.kind == "video" ? MediaKind::VIDEO
                                               : MediaKind::PHOTO);
+                m->set_date_source(r.date_source);
+                m->set_gps_source(r.gps_source);
               } else {
                 auto *c = proto.mutable_complete();
                 c->set_images(static_cast<uint32_t>(e.images));

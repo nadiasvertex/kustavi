@@ -24,6 +24,20 @@ struct image_record {
   std::int64_t original_width = 0;
   std::int64_t original_height = 0;
   std::int64_t size_bytes = 0;
+  std::string camera;                          //! EXIF make/model; may be empty.
+  std::optional<std::int64_t> taken_exif_ms;   //! Capture time as read from the file.
+  std::string date_source;                     //! "exif", "filename", "modified", "exif+offset" or empty.
+  std::string gps_source;                      //! "exif", "inferred" or empty.
+};
+
+/** Repaired date and position for one image, as written back to the index. */
+struct metadata_update {
+  std::string id;
+  std::optional<std::int64_t> taken_unix_ms;
+  std::optional<double> latitude;
+  std::optional<double> longitude;
+  std::string date_source;
+  std::string gps_source;
 };
 
 /** One persisted keep/delete choice. */
@@ -41,6 +55,11 @@ auto get_original_image_paths(database &db)
 
 /** Get every image row (id, paths, EXIF metadata) from the session index. */
 auto get_image_records(database &db) -> std::vector<image_record>;
+
+/** Write repaired dates and positions back to `images` (one transaction).
+ * Leaves the original EXIF capture time (`taken_exif_ms`) untouched. */
+auto update_image_metadata(database &db,
+                           const std::vector<metadata_update> &updates) -> void;
 
 /** Get Laplacian sharpness per image id from the quality pass results. */
 auto get_quality_scores(database &db)

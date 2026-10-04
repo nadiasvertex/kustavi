@@ -39,6 +39,11 @@ service Kustavi {
   // --- pass 5: video quality -----------------------------------------------
   rpc RunVideoPass(RunVideoPassRequest) returns (stream VideoEvent);
 
+  // --- metadata repair ----------------------------------------------------
+  // Fills missing dates and GPS, and proposes per-camera clock corrections.
+  // Run after the scan and before the trips pass.
+  rpc RunRepairPass(RunRepairPassRequest) returns (stream RepairEvent);
+
   // --- pass 6: trips -----------------------------------------------------
   rpc RunTripsPass(RunTripsPassRequest) returns (stream TripsEvent);
 
@@ -154,6 +159,13 @@ message ImageMeta {
   string thumbnail_path = 9;   // absolute path, written before emit
   MediaKind kind = 10;
   optional int64 duration_ms = 11;  // video length; unset for photos
+  // Where taken_unix_ms came from: "exif", "filename", "modified" (file
+  // modification time) or "exif+offset" (EXIF time plus an accepted camera
+  // clock correction). Empty when there is no date.
+  string date_source = 12;
+  // Where gps came from: "exif" or "inferred" (copied from a photo taken a few
+  // minutes apart). Empty when there is no position.
+  string gps_source = 13;
 }
 
 // --- pass 1: scan --------------------------------------------------------
@@ -392,6 +404,64 @@ message VideoComplete {
   uint32 total = 2;
 }
 
+// --- metadata repair ----------------------------------------------------------
+
+// A clock correction the user accepted for one camera.
+message CameraOffset {
+  string camera = 1;           // as reported in ClockOffsetSuggestion.camera
+  int32 offset_minutes = 2;    // added to every EXIF time from that camera
+}
+
+message RunRepairPassRequest {
+  // Corrections to apply. Offsets are always applied to the original EXIF
+  // time, so re-running the pass with the same list is idempotent; an empty
+  // list removes previously applied corrections.
+  repeated CameraOffset apply_offsets = 1;
+  int32 gps_window_minutes = 2;  // max time distance to borrow GPS (default 10)
+}
+
+message RepairEvent {
+  oneof event {
+    RepairProgress progress = 1;
+    MetadataRepair repair = 2;
+    ClockOffsetSuggestion offset = 3;
+    RepairComplete complete = 4;
+  }
+}
+
+message RepairProgress {
+  uint32 done = 1;
+  uint32 total = 2;
+}
+
+// The current date and position of one image whose values do not come straight
+// from its EXIF block.
+message MetadataRepair {
+  string image_id = 1;
+  optional int64 taken_unix_ms = 2;
+  optional GpsPoint gps = 3;
+  string date_source = 4;      // see ImageMeta.date_source
+  string gps_source = 5;       // see ImageMeta.gps_source
+}
+
+// A camera whose photos line up with a GPS-tagged camera (usually a phone)
+// only after shifting its clock.
+message ClockOffsetSuggestion {
+  string camera = 1;
+  int32 offset_minutes = 2;    // add this to the camera's times
+  uint32 photos = 3;           // photos from that camera with an EXIF time
+  uint32 matched = 4;          // of those, within 5 minutes of a reference photo after the shift
+  uint32 matched_unshifted = 5;  // the same count with no shift
+  bool applied = 6;            // true when this run's request already applied it
+}
+
+message RepairComplete {
+  uint32 dates_from_filename = 1;
+  uint32 dates_from_modified_time = 2;
+  uint32 dates_shifted = 3;    // EXIF times moved by an applied offset
+  uint32 gps_filled = 4;
+}
+
 // --- pass 6: trips ----------------------------------------------------------------
 
 message RunTripsPassRequest {
@@ -447,7 +517,10 @@ message CommitRequest {
   // Optional per-image destination sub-path (a trip/leg folder slug). When an
   // id is present, its file is copied into that sub-path of the destination
   // under its original filename; ids absent from the map keep their path
-  // relative to the session folder.
+  // relative to the session folder. Each item's related files (same-stem RAW,
+  // HEIC and .mov Live Photo clips, .xmp/.aae sidecars) are copied with it
+  // under the same final name, so a keep/delete decision on the item covers
+  // the whole group.
   map<string, string> folder_for_id = 3;
 }
 
@@ -467,5 +540,6 @@ message CommitProgress {
 message CommitComplete {
   uint32 copied = 1;
   uint32 skipped = 2;        // name collisions (different content)
+  uint32 companions = 4;     // related files copied with their item (RAW, Live Photo clip, sidecars)
   repeated string errors = 3;  // "<id>: <reason>"
 }

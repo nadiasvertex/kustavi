@@ -1,6 +1,7 @@
 #include "pass/downscaler.h"
 #include "exec/scheduler.h"
 #include "exif.h"
+#include "pass/related_files.h"
 #include "paths.h"
 #include "store/database.h"
 
@@ -245,8 +246,8 @@ void insert_ingested_images(database &db,
   db.begin_transaction();
   try {
     auto insert_stmt = db.prepare(R"(
-            INSERT OR IGNORE INTO images (id, absolute_path, file_name, original_width, original_height, size_bytes, taken_unix_ms, latitude, longitude, working_image_path, kind, scanned_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s','now'));
+            INSERT OR IGNORE INTO images (id, absolute_path, file_name, original_width, original_height, size_bytes, taken_unix_ms, latitude, longitude, working_image_path, kind, camera, taken_exif_ms, date_source, gps_source, scanned_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, strftime('%s','now'));
         )");
 
     for (const auto &img : images) {
@@ -272,6 +273,23 @@ void insert_ingested_images(database &db,
       }
       insert_stmt.bind_text(10, img.working_path);
       insert_stmt.bind_text(11, img.kind);
+      if (img.camera.empty()) {
+        insert_stmt.bind_null(12);
+      } else {
+        insert_stmt.bind_text(12, img.camera);
+      }
+      if (img.taken_unix_ms.has_value()) {
+        insert_stmt.bind_int64(13, *img.taken_unix_ms);
+        insert_stmt.bind_text(14, "exif");
+      } else {
+        insert_stmt.bind_null(13);
+        insert_stmt.bind_null(14);
+      }
+      if (img.latitude.has_value() && img.longitude.has_value()) {
+        insert_stmt.bind_text(15, "exif");
+      } else {
+        insert_stmt.bind_null(15);
+      }
       insert_stmt.step();
       insert_stmt.reset();
     }
@@ -305,7 +323,11 @@ auto execute_folder_ingestion_pass(
     const auto &abs_path = entry.path();
     spdlog::debug("evaluating '{}'", abs_path.string());
 
-    if (classify_media_kind(abs_path).has_value()) {
+    const auto kind = classify_media_kind(abs_path);
+    // A Live Photo's motion clip travels with its still instead of being a
+    // separate item.
+    if (kind.has_value() &&
+        !(kind == media_kind_video && is_live_photo_motion(abs_path))) {
       images_found++;
       paths_to_process.push_back(abs_path);
     }
@@ -362,6 +384,7 @@ auto execute_folder_ingestion_pass(
           result.taken_unix_ms = metadata.taken_unix_ms;
           result.latitude = metadata.latitude;
           result.longitude = metadata.longitude;
+          result.camera = metadata.camera;
 
           successful_images.fetch_add(1, std::memory_order_relaxed);
           if (on_image) {

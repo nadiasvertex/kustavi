@@ -3,6 +3,7 @@
 #include "collection/event_queue.h"
 #include "pass/downscaler.h"
 #include "pass/quality.h"
+#include "pass/repair.h"
 #include "pass/trips.h"
 #include "store/database.h"
 #include "store/store.h"
@@ -145,6 +146,26 @@ struct video_complete_evt {
 using video_event =
     std::variant<video_progress_evt, video_flag_evt, video_complete_evt>;
 
+struct repair_progress_evt {
+  std::size_t done = 0;
+  std::size_t total = 0;
+};
+struct repair_item_evt {
+  repaired_metadata value;
+};
+struct repair_offset_evt {
+  clock_offset_suggestion value;
+  bool applied = false;
+};
+struct repair_complete_evt {
+  std::size_t dates_from_filename = 0;
+  std::size_t dates_from_modified_time = 0;
+  std::size_t dates_shifted = 0;
+  std::size_t gps_filled = 0;
+};
+using repair_event = std::variant<repair_progress_evt, repair_item_evt,
+                                  repair_offset_evt, repair_complete_evt>;
+
 struct commit_progress_evt {
   std::size_t done = 0;
   std::size_t total = 0;
@@ -153,6 +174,7 @@ struct commit_progress_evt {
 struct commit_complete_evt {
   std::size_t copied = 0;
   std::size_t skipped = 0;
+  std::size_t companions = 0;
   std::vector<std::string> errors;
 };
 using commit_event = std::variant<commit_progress_evt, commit_complete_evt>;
@@ -297,6 +319,9 @@ public:
   grpc::Status RunTripsPass(grpc::ServerContext *context,
                             const RunTripsPassRequest *request,
                             grpc::ServerWriter<TripsEvent> *writer) override;
+  grpc::Status RunRepairPass(grpc::ServerContext *context,
+                             const RunRepairPassRequest *request,
+                             grpc::ServerWriter<RepairEvent> *writer) override;
   grpc::Status RunVideoPass(grpc::ServerContext *context,
                             const RunVideoPassRequest *request,
                             grpc::ServerWriter<VideoEvent> *writer) override;

@@ -79,12 +79,13 @@ public:
   int schema_version();
 
   // Latest schema version this build knows how to produce.
-  static constexpr int kSchemaVersion = 1;
+  static constexpr int kSchemaVersion = 2;
 
 private:
   sqlite3 *db_ = nullptr;
   void initialize_schema();
   void migrate_v1();
+  void migrate_v2();
   static const std::array<void (database::*)(), kSchemaVersion> kMigrations;
   void add_column_if_missing(std::string_view table, std::string_view column,
                              std::string_view decl);

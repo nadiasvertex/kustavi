@@ -26,6 +26,8 @@ test-gui:
 # then shuts the server down.
 test-backend:
   bazel build //backend:server //backend:smoke_client //backend:trips_test
+  bazel run //backend:repair_test
+  bazel run //backend:related_files_test
   KUSTAVI_GEO_DATA="$(pwd)/backend/data/cities.tsv" bazel run //backend:trips_test
   tmp="$(mktemp -d)" && \
   trap 'rm -rf "$tmp"' EXIT && \

@@ -87,6 +87,9 @@ service Kustavi {
   // --- pass 4: similar images -------------------------------------------
   rpc RunSimilarPass(RunSimilarPassRequest) returns (stream SimilarEvent);
 
+  // --- metadata repair ---------------------------------------------------
+  rpc RunRepairPass(RunRepairPassRequest) returns (stream RepairEvent);
+
   // --- pass 5: trips -----------------------------------------------------
   rpc RunTripsPass(RunTripsPassRequest) returns (stream TripsEvent);
 
@@ -330,6 +333,53 @@ message TripsComplete {
   uint32 unassigned = 2;  // images without a usable timestamp
 }
 
+// --- metadata repair ------------------------------------------------------------------
+
+message CameraOffset {
+  string camera = 1;           // as reported in ClockOffsetSuggestion.camera
+  int32 offset_minutes = 2;    // added to every EXIF time from that camera
+}
+
+message RunRepairPassRequest {
+  repeated CameraOffset apply_offsets = 1;  // accepted corrections; empty removes earlier ones
+  int32 gps_window_minutes = 2;             // default 10
+}
+
+message RepairEvent {
+  oneof event {
+    RepairProgress progress = 1;
+    MetadataRepair repair = 2;
+    ClockOffsetSuggestion offset = 3;
+    RepairComplete complete = 4;
+  }
+}
+
+message RepairProgress { uint32 done = 1; uint32 total = 2; }
+
+message MetadataRepair {
+  string image_id = 1;
+  optional int64 taken_unix_ms = 2;
+  optional GpsPoint gps = 3;
+  string date_source = 4;  // "exif" | "exif+offset" | "filename" | "modified"
+  string gps_source = 5;   // "exif" | "inferred"
+}
+
+message ClockOffsetSuggestion {
+  string camera = 1;
+  int32 offset_minutes = 2;
+  uint32 photos = 3;
+  uint32 matched = 4;
+  uint32 matched_unshifted = 5;
+  bool applied = 6;
+}
+
+message RepairComplete {
+  uint32 dates_from_filename = 1;
+  uint32 dates_from_modified_time = 2;
+  uint32 dates_shifted = 3;
+  uint32 gps_filled = 4;
+}
+
 // --- pass 6: commit ------------------------------------------------------------------
 
 message CommitRequest {
@@ -354,9 +404,12 @@ message CommitProgress {
 message CommitComplete {
   uint32 copied = 1;
   uint32 skipped = 2;        // name collisions (different content)
+  uint32 companions = 4;     // related files copied with their item
   repeated string errors = 3;  // "<id>: <reason>"
 }
 ```
+
+`ImageMeta` also carries `date_source` (field 12) and `gps_source` (field 13).
 
 ## 5. Method Semantics
 
@@ -523,9 +576,53 @@ Preconditions: active session; no pass running. Re-runnable at any time
 - Metadata-only work: must complete in well under a second for a
   50,000-image session; `TripsProgress` is emitted for uniformity.
 
+### RunRepairPass
+
+Preconditions: active session; no pass running. Run after `ScanFolder` and
+before `RunTripsPass`; it does not change the wizard step.
+
+Repairs the date and position the trips pass reads, writing the results back
+to the session index. Every run starts from the values read at scan time
+(`taken_exif_ms`, EXIF GPS), so re-running is idempotent.
+
+- **Dates.** EXIF time, else a date in the file name (`IMG_20190704_123456`,
+  `PXL_…`, `WhatsApp Image 2019-07-04 at 12.34.56`, `Screenshot_…`; a name
+  with only a date gets 12:00), else the file modification time. The source is
+  reported as `date_source`.
+- **Camera clock offsets.** Cameras are identified by EXIF Make + Model.
+  Cameras whose photos mostly carry GPS (phones) are the reference clock. For
+  every other camera with at least 10 EXIF-timed photos, whole-minute shifts
+  within ±14 h are scored by how many of its photos fall within 5 minutes of a
+  reference photo; the best shift is snapped to a quarter hour when it scores
+  within 10%. A `ClockOffsetSuggestion` is emitted when the shift covers at
+  least 40% of the camera's photos, beats no shift by at least a quarter of
+  them, and clearly exceeds the typical shift (so a reference that shoots all
+  day never yields a suggestion). Suggestions are never applied on their own:
+  the client sends accepted ones in `apply_offsets`, which shifts that
+  camera's EXIF times (`date_source = "exif+offset"`) before GPS is filled.
+- **GPS.** A photo without GPS borrows the position of the nearest photo with
+  EXIF GPS within `gps_window_minutes`, when both times are trustworthy (EXIF,
+  shifted EXIF, or a file name with a time of day). If photos on both sides
+  qualify and are more than 2 km apart, nothing is borrowed. Borrowed
+  positions (`gps_source = "inferred"`) are never donors.
+- Emits `MetadataRepair` for each image whose values changed or do not come
+  straight from EXIF, then the suggestions, then `RepairComplete`.
+- Sessions scanned before schema version 2 have no camera recorded, so they
+  yield no offset suggestions until rescanned.
+
 ### Commit
 
 Preconditions: active session; no pass running.
+
+- Items travel with their related files. During `ScanFolder`, a `.mov` that
+  shares its stem with a still in the same folder (a Live Photo clip) is not
+  a separate item. At `Commit`, every kept item is copied together with
+  same-directory siblings that share its stem and have a RAW (`cr2`, `cr3`,
+  `nef`, `arw`, `dng`, `orf`, `rw2`, `raf`, `srw`, `pef`), `heic`/`heif`,
+  `mov`, or sidecar (`xmp`, `aae`, `dop`, `pp3`) extension, or that are named
+  `<file name>.<ext>` (`IMG_1.jpg.xmp`). A decision on the item therefore
+  covers the group. Companions take the item's final name, including any `-<n>`
+  suffix, and are counted in `companions`, not `copied`.
 
 - Creates `destination` (and any missing parents) if absent.
 - Copies each `keep_id`'s file into `destination`. By default the path

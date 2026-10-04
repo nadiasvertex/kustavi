@@ -83,6 +83,45 @@ int main() {
           "legacy quality_flags.reasons added");
   }
 
+  // A version 1 database gains the repair columns and its EXIF values are
+  // marked as EXIF-sourced.
+  {
+    auto dir = fresh_dir("kustavi_db_v1");
+    {
+      database db;
+      db.open(dir);
+      db.execute("INSERT INTO images (id, absolute_path, file_name, "
+                 "original_width, original_height, size_bytes, taken_unix_ms, "
+                 "latitude, longitude, working_image_path, scanned_at) VALUES "
+                 "('a', '/a', 'a', 1, 1, 1, 1000, 1.5, 2.5, '', 0), "
+                 "('b', '/b', 'b', 1, 1, 1, NULL, NULL, NULL, '', 0);");
+      for (const char *column :
+           {"camera", "taken_exif_ms", "date_source", "gps_source"}) {
+        db.execute(std::string("ALTER TABLE images DROP COLUMN ") + column + ";");
+      }
+      db.execute("PRAGMA user_version = 1;");
+    }
+    database db;
+    db.open(dir);
+    check(db.schema_version() == database::kSchemaVersion,
+          "version 1 database is upgraded");
+    check(has_column(db, "images", "camera") &&
+              has_column(db, "images", "taken_exif_ms") &&
+              has_column(db, "images", "date_source") &&
+              has_column(db, "images", "gps_source"),
+          "repair columns added");
+    auto stmt = db.prepare("SELECT id, taken_exif_ms, date_source, gps_source "
+                           "FROM images ORDER BY id;");
+    bool ok = stmt.step() == SQLITE_ROW &&
+              sqlite3_column_int64(stmt.raw(), 1) == 1000 &&
+              sqlite3_column_type(stmt.raw(), 2) == SQLITE_TEXT &&
+              sqlite3_column_type(stmt.raw(), 3) == SQLITE_TEXT;
+    ok = ok && stmt.step() == SQLITE_ROW &&
+         sqlite3_column_type(stmt.raw(), 2) == SQLITE_NULL &&
+         sqlite3_column_type(stmt.raw(), 3) == SQLITE_NULL;
+    check(ok, "EXIF values are backfilled as exif-sourced");
+  }
+
   // A database from a newer build is refused.
   {
     auto dir = fresh_dir("kustavi_db_newer");

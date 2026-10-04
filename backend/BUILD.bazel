@@ -60,6 +60,40 @@ cc_binary(
     visibility = ["//visibility:public"],
 )
 
+# Assertions for metadata repair: filename dates, GPS borrowing, camera clock
+# offset detection. Run via `just test-backend`.
+cc_binary(
+    name = "repair_test",
+    srcs = [
+        "src/pass/repair.cpp",
+        "test/repair_test.cpp",
+    ] + glob(["include/pass/repair.h"]),
+    includes = ["include"],
+    visibility = ["//visibility:public"],
+)
+
+# Assertions for related-file discovery (RAW/Live Photo/sidecars) and the
+# grouped commit. Run via `just test-backend`.
+cc_binary(
+    name = "related_files_test",
+    srcs = [
+        "src/pass/commit.cpp",
+        "src/pass/related_files.cpp",
+        "test/related_files_test.cpp",
+    ] + glob([
+        "include/pass/commit.h",
+        "include/pass/related_files.h",
+        "include/pass/downscaler.h",
+        "include/store/database.h",
+    ]),
+    includes = ["include"],
+    deps = [
+        "@sqlite3",
+        "@spdlog",
+    ],
+    visibility = ["//visibility:public"],
+)
+
 cc_binary(
     name = "keeper_signals_test",
     srcs = [

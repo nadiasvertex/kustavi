@@ -23,12 +23,15 @@ struct commit_source {
 struct commit_summary {
   std::size_t copied = 0;
   std::size_t skipped = 0;
+  std::size_t companions = 0; //! Related files copied with their primary.
   std::vector<std::string> errors; //! "<id>: <reason>" per failure.
 };
 
-/** Copies `sources` into `destination`. Each file's path relative to
- * `session_folder` is preserved, unless its `dest_subdir` is set (trip/leg
- * folder layout).
+/** Copies `sources` into `destination`, each with its related files (RAW
+ * originals, Live Photo clips, sidecars; see `find_companions`). Companions
+ * land beside the primary and share its final name, including a `-<n>`
+ * collision suffix. Each file's path relative to `session_folder` is
+ * preserved, unless its `dest_subdir` is set (trip/leg folder layout).
  *
  * Collision policy: an existing destination file with the same size is
  * counted as copied (idempotent re-commits). A different size in the

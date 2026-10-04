@@ -641,6 +641,32 @@ void run_junk(const options &opts) {
   std::println("ok: RunJunkPass flagged={} total={}", flags, complete_total);
 }
 
+void run_repair(const options &opts) {
+  auto stub = k::Kustavi::NewStub(make_channel(opts));
+  k::RunRepairPassRequest request;
+  grpc::ClientContext context;
+  add_auth_metadata(context, opts);
+  auto reader = stub->RunRepairPass(&context, request);
+  k::RepairEvent event;
+  bool completed = false;
+  std::size_t repairs = 0;
+  while (reader->Read(&event)) {
+    if (event.has_repair()) {
+      repairs++;
+    } else if (event.has_complete()) {
+      completed = true;
+    }
+  }
+  const auto status = reader->Finish();
+  if (!status.ok()) {
+    fail("RunRepairPass: " + status.error_message());
+  }
+  if (!completed) {
+    fail("RunRepairPass: no complete event");
+  }
+  std::println("ok: RunRepairPass repaired={}", repairs);
+}
+
 void run_trips(const options &opts) {
   auto stub = k::Kustavi::NewStub(make_channel(opts));
   k::RunTripsPassRequest request;
@@ -1185,6 +1211,7 @@ auto main(int argc, char **argv) -> int {
       }
       run_quality(opts);
       run_similar(opts);
+      run_repair(opts);
       run_trips(opts);
       if (!opts.destination.empty()) {
         std::error_code ec;

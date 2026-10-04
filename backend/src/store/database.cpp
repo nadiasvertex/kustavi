@@ -231,8 +231,26 @@ void database::migrate_v1() {
                         "INTEGER NOT NULL DEFAULT 0");
 }
 
+// Version 2 adds the metadata-repair columns to `images`: the camera that took
+// the file, the capture time as read from the file itself (so a repair run can
+// always start from the original), and where the current date and GPS came
+// from. Rows scanned before this version already hold EXIF values in
+// `taken_unix_ms` / `latitude`, so those are backfilled as EXIF-sourced.
+void database::migrate_v2() {
+  add_column_if_missing("images", "camera", "TEXT");
+  add_column_if_missing("images", "taken_exif_ms", "INTEGER");
+  add_column_if_missing("images", "date_source", "TEXT");
+  add_column_if_missing("images", "gps_source", "TEXT");
+  execute(R"(
+        UPDATE images SET taken_exif_ms = taken_unix_ms, date_source = 'exif'
+            WHERE taken_unix_ms IS NOT NULL AND date_source IS NULL;
+        UPDATE images SET gps_source = 'exif'
+            WHERE latitude IS NOT NULL AND gps_source IS NULL;
+    )");
+}
+
 const std::array<void (database::*)(), database::kSchemaVersion>
-    database::kMigrations = {&database::migrate_v1};
+    database::kMigrations = {&database::migrate_v1, &database::migrate_v2};
 
 auto database::schema_version() -> int {
   auto stmt = prepare("PRAGMA user_version;");

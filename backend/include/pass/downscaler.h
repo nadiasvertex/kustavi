@@ -47,6 +47,7 @@ struct ingestion_result {
   std::optional<std::int64_t> taken_unix_ms; //! EXIF capture time, if present.
   std::optional<double> latitude;            //! EXIF GPS, if present.
   std::optional<double> longitude;           //! EXIF GPS, if present.
+  std::string camera;                        //! EXIF make/model, if present.
   std::string kind = std::string(media_kind_photo); //! "photo" or "video".
   std::optional<std::int64_t> duration_ms;   //! Video length, if a video.
   std::string error_message; //! An error message describing the reason for

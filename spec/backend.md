@@ -398,5 +398,14 @@ the bundled GeoNames table (`backend/data/cities.tsv`, located through
 absent). At-home photos become monthly `is_home` trips. See
 `spec/proto.md` §RunTripsPass for the full rule set.
 
+### RunRepairPass
+Precondition: Active session. Repairs dates and GPS before the trips pass:
+dates fall back from EXIF to the file name to the file modification time;
+cameras whose clock disagrees with a GPS-tagged reference camera (a phone) get
+a proposed minute offset, applied only when the client sends it back; photos
+without GPS borrow the position of a photo with GPS taken within a few
+minutes. Originals are kept in the session index so each run starts clean. See
+`spec/proto.md` §RunRepairPass.
+
 ### Commit
-Creates target destination path layouts. Copies calculated image files while automatically grabbing matching layout sidecars (such as `.xmp` and `.aae` extensions) sitting adjacent within the original folders. By default each file keeps its path relative to the session folder; when `CommitRequest.folder_for_id` maps its id to a sub-path, the file is placed under `destination/<sub-path>/` (the trip/leg folder layout) instead, with `-<n>` suffixing on same-folder name collisions. Sub-paths that are absolute or contain `..` are ignored. Tracks progress using byte counts (`done_bytes` and `total_bytes`) alongside item counters for linear rendering representation.
+Creates target destination path layouts. Copies each kept item together with its related files: same-stem RAW and HEIC originals, Live Photo `.mov` clips (which the scan does not list as separate items), and `.xmp`/`.aae` sidecars sitting adjacent within the original folders. Companions share the item's final name, so a `-<n>` collision suffix applies to the whole group. By default each file keeps its path relative to the session folder; when `CommitRequest.folder_for_id` maps its id to a sub-path, the file is placed under `destination/<sub-path>/` (the trip/leg folder layout) instead, with `-<n>` suffixing on same-folder name collisions. Sub-paths that are absolute or contain `..` are ignored. Tracks progress using byte counts (`done_bytes` and `total_bytes`) alongside item counters for linear rendering representation.

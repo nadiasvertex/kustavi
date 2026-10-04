@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <string>
 
 namespace kustavi::exif {
 
@@ -12,9 +13,11 @@ struct exif_info {
   std::optional<std::int64_t> taken_unix_ms;
   std::optional<double> latitude;
   std::optional<double> longitude;
+  std::string camera; //!< "<Make> <Model>"; empty when neither tag is present.
 };
 
-/** Reads the capture timestamp and GPS position from a JPEG or TIFF file.
+/** Reads the capture timestamp, GPS position and camera make/model from a
+ * JPEG or TIFF file.
  *
  * Timestamps are stored by cameras as local time without a timezone; this
  * reader interprets them in the machine's local timezone. Files of any other

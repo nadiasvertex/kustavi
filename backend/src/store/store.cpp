@@ -64,7 +64,8 @@ auto get_image_records(database &db) -> std::vector<image_record> {
 
   sqlite_statement stmt = db.prepare(
       "SELECT id, absolute_path, working_image_path, taken_unix_ms, latitude, "
-      "longitude, kind, file_name, original_width, original_height, size_bytes "
+      "longitude, kind, file_name, original_width, original_height, size_bytes, "
+      "camera, taken_exif_ms, date_source, gps_source "
       "FROM images;");
 
   while (stmt.step() == SQLITE_ROW) {
@@ -108,11 +109,64 @@ auto get_image_records(database &db) -> std::vector<image_record> {
     record.original_width = sqlite3_column_int64(raw, 8);
     record.original_height = sqlite3_column_int64(raw, 9);
     record.size_bytes = sqlite3_column_int64(raw, 10);
+    const auto text_at = [&](int column) -> std::string {
+      const auto *text =
+          reinterpret_cast<const char *>(sqlite3_column_text(raw, column));
+      return text != nullptr ? std::string(text) : std::string{};
+    };
+    record.camera = text_at(11);
+    if (sqlite3_column_type(raw, 12) == SQLITE_INTEGER) {
+      record.taken_exif_ms = sqlite3_column_int64(raw, 12);
+    }
+    record.date_source = text_at(13);
+    record.gps_source = text_at(14);
 
     records.push_back(std::move(record));
   }
 
   return records;
+}
+
+auto update_image_metadata(database &db,
+                           const std::vector<metadata_update> &updates)
+    -> void {
+  db.begin_transaction();
+  try {
+    auto stmt = db.prepare(
+        "UPDATE images SET taken_unix_ms = ?, latitude = ?, longitude = ?, "
+        "date_source = ?, gps_source = ? WHERE id = ?;");
+    for (const auto &update : updates) {
+      if (update.taken_unix_ms.has_value()) {
+        stmt.bind_int64(1, *update.taken_unix_ms);
+      } else {
+        stmt.bind_null(1);
+      }
+      if (update.latitude.has_value() && update.longitude.has_value()) {
+        stmt.bind_double(2, *update.latitude);
+        stmt.bind_double(3, *update.longitude);
+      } else {
+        stmt.bind_null(2);
+        stmt.bind_null(3);
+      }
+      if (update.date_source.empty()) {
+        stmt.bind_null(4);
+      } else {
+        stmt.bind_text(4, update.date_source);
+      }
+      if (update.gps_source.empty()) {
+        stmt.bind_null(5);
+      } else {
+        stmt.bind_text(5, update.gps_source);
+      }
+      stmt.bind_text(6, update.id);
+      stmt.step();
+      stmt.reset();
+    }
+    db.commit_transaction();
+  } catch (...) {
+    db.rollback_transaction();
+    throw;
+  }
 }
 
 /** Get Laplacian sharpness per image id from the quality pass results. */
