@@ -149,6 +149,21 @@ cc_binary(
     visibility = ["//visibility:public"],
 )
 
+# Assertions for the session database's user_version migrations.
+cc_binary(
+    name = "database_test",
+    srcs = [
+        "src/store/database.cpp",
+        "test/database_test.cpp",
+    ] + glob([
+        "include/store/database.h",
+        "include/paths.h",
+    ]),
+    includes = ["include"],
+    deps = ["@sqlite3"],
+    visibility = ["//visibility:public"],
+)
+
 cc_binary(
     name = "smoke_client",
     srcs = ["test/smoke_client.cpp"],

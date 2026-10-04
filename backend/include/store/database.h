@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <filesystem>
 #include <sqlite3.h>
 #include <stdexcept>
@@ -74,9 +75,17 @@ public:
 
   sqlite3 *raw_handle() { return db_; }
 
+  // Version stored in the database's `PRAGMA user_version`.
+  int schema_version();
+
+  // Latest schema version this build knows how to produce.
+  static constexpr int kSchemaVersion = 1;
+
 private:
   sqlite3 *db_ = nullptr;
   void initialize_schema();
+  void migrate_v1();
+  static const std::array<void (database::*)(), kSchemaVersion> kMigrations;
   void add_column_if_missing(std::string_view table, std::string_view column,
                              std::string_view decl);
 };

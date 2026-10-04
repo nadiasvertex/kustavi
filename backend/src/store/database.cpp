@@ -1,7 +1,9 @@
 #include "store/database.h"
 #include "paths.h"
 
+#include <array>
 #include <filesystem>
+#include <string>
 #include <string_view>
 
 namespace fs = std::filesystem;
@@ -125,7 +127,17 @@ void sqlite_statement::reset() {
   }
 }
 
-void database::initialize_schema() {
+// Schema versioning. The on-disk version lives in SQLite's `PRAGMA
+// user_version`. Each entry below upgrades the schema from version N to N+1
+// (entry 0 builds version 1), so kSchemaVersion is the entry count. To change
+// the schema, append a step and never edit an existing one: caches already at
+// that version will not run it again.
+//
+// Version 1 is the baseline. Caches created before versioning existed report
+// user_version 0 and may already hold any subset of the version 1 tables and
+// columns, so that step is written to be idempotent.
+
+void database::migrate_v1() {
   // Structural layout mirrors the agreed database design
   execute(R"(
         CREATE TABLE IF NOT EXISTS session_state (
@@ -217,6 +229,40 @@ void database::initialize_schema() {
                         "REAL NOT NULL DEFAULT 0");
   add_column_if_missing("quality_flags", "reasons",
                         "INTEGER NOT NULL DEFAULT 0");
+}
+
+const std::array<void (database::*)(), database::kSchemaVersion>
+    database::kMigrations = {&database::migrate_v1};
+
+auto database::schema_version() -> int {
+  auto stmt = prepare("PRAGMA user_version;");
+  if (stmt.step() != SQLITE_ROW) {
+    throw sqlite_exception("Failed to read database schema version");
+  }
+  return sqlite3_column_int(stmt.raw(), 0);
+}
+
+void database::initialize_schema() {
+  const int current = schema_version();
+  if (current > kSchemaVersion) {
+    throw sqlite_exception(
+        "Session database schema version " + std::to_string(current) +
+        " is newer than this build supports (" +
+        std::to_string(kSchemaVersion) + "); upgrade Kustavi to open it");
+  }
+
+  for (int v = current; v < kSchemaVersion; ++v) {
+    begin_transaction();
+    try {
+      (this->*kMigrations[static_cast<size_t>(v)])();
+      // PRAGMA does not accept bound parameters; v + 1 is an int we control.
+      execute("PRAGMA user_version = " + std::to_string(v + 1) + ";");
+      commit_transaction();
+    } catch (...) {
+      rollback_transaction();
+      throw;
+    }
+  }
 }
 
 void database::add_column_if_missing(std::string_view table,
