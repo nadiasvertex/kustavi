@@ -1,3 +1,4 @@
+import '../generated/kustavi/service.pb.dart' as pb;
 import '../state/domain.dart';
 
 /// The wizard's steps, in order (spec/frontend.md §6.1).
@@ -335,10 +336,18 @@ final class WizardCommitSummary extends WizardPhase {
     required this.keepBytes,
     required this.leftBehindCount,
     required this.destination,
+    this.estimate,
   });
 
   final int keepCount;
   final int keepBytes;
+
+  /// Size and free-space estimate for [destination]; null until the back end
+  /// has answered for the current destination.
+  final pb.EstimateCommitResponse? estimate;
+
+  /// True once the estimate is in and the destination has room.
+  bool get spaceConfirmed => estimate != null && estimate!.fits;
 
   /// Images marked for deletion across every step (left in the source folder).
   final int leftBehindCount;
@@ -380,10 +389,14 @@ final class WizardDone extends WizardPhase {
     required this.copiedCount,
     required this.destination,
     this.skippedCount = 0,
+    this.alreadyPresentCount = 0,
     this.errors = const <String>[],
   });
 
   final int copiedCount;
+
+  /// Items left uncopied because the destination library already had them.
+  final int alreadyPresentCount;
 
   /// Name collisions with different content (proto `CommitComplete.skipped`).
   final int skippedCount;

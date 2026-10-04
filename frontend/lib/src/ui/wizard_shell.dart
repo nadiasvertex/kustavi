@@ -252,12 +252,14 @@ class _WizardShellState extends ConsumerState<WizardShell> {
               :final keepBytes,
               :final leftBehindCount,
               :final destination,
+              :final estimate,
             ) =>
           CommitSummaryScreen(
             keepCount: keepCount,
             keepBytes: keepBytes,
             leftBehindCount: leftBehindCount,
             destination: destination,
+            estimate: estimate,
             pickDirectory: widget.pickDirectory,
           ),
         WizardCommitting(
@@ -277,12 +279,14 @@ class _WizardShellState extends ConsumerState<WizardShell> {
         WizardDone(
               :final copiedCount,
               :final skippedCount,
+              :final alreadyPresentCount,
               :final destination,
               :final errors,
             ) =>
           DoneScreen(
             copiedCount: copiedCount,
             skippedCount: skippedCount,
+            alreadyPresentCount: alreadyPresentCount,
             destination: destination,
             errors: errors,
           ),
@@ -438,14 +442,15 @@ class _WizardShellState extends ConsumerState<WizardShell> {
             child: const Text('Continue'),
           ),
         ],
-      WizardCommitSummary(:final destination) => [
+      WizardCommitSummary(:final destination, :final spaceConfirmed) => [
           OutlinedButton(
             onPressed: wizard.backFromCommitSummary,
             child: const Text('Back'),
           ),
           FilledButton(
-            onPressed:
-                destination.trim().isEmpty ? null : wizard.startCommit,
+            onPressed: destination.trim().isEmpty || !spaceConfirmed
+                ? null
+                : wizard.startCommit,
             child: const Text('Copy'),
           ),
         ],

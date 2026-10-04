@@ -1,6 +1,7 @@
 #pragma once
 
 #include "collection/event_queue.h"
+#include "pass/commit.h"
 #include "pass/downscaler.h"
 #include "pass/quality.h"
 #include "pass/repair.h"
@@ -174,6 +175,7 @@ struct commit_progress_evt {
 struct commit_complete_evt {
   std::size_t copied = 0;
   std::size_t skipped = 0;
+  std::size_t already_present = 0;
   std::size_t companions = 0;
   std::vector<std::string> errors;
 };
@@ -328,11 +330,20 @@ public:
   grpc::Status Commit(grpc::ServerContext *context,
                       const CommitRequest *request,
                       grpc::ServerWriter<CommitEvent> *writer) override;
+  grpc::Status EstimateCommit(grpc::ServerContext *context,
+                              const CommitRequest *request,
+                              EstimateCommitResponse *response) override;
 
 private:
   auto check_auth(const grpc::ServerContext *context) const -> bool;
   auto require_session() -> std::optional<grpc::Status>;
   auto try_begin_pass() -> std::optional<grpc::Status>;
+  /** Resolves a commit request's keep ids to sources; unknown ids go to
+   * `errors`. Returns a status when the session cannot be read. */
+  auto collect_commit_sources(const CommitRequest &request,
+                              std::vector<commit_source> &sources,
+                              std::vector<std::string> &errors)
+      -> std::optional<grpc::Status>;
 
   /// Best-effort: record the wizard's current step in the session DB so a
   /// later launch can offer to resume here. Logs and swallows DB errors —

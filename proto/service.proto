@@ -49,6 +49,9 @@ service Kustavi {
 
   // --- pass 7: commit ----------------------------------------------------
   rpc Commit(CommitRequest) returns (stream CommitEvent);
+  // Sizes a commit without writing anything: bytes to write, bytes already
+  // in the destination library, and the free space there.
+  rpc EstimateCommit(CommitRequest) returns (EstimateCommitResponse);
 }
 
 // --- lifecycle ---------------------------------------------------------
@@ -522,6 +525,21 @@ message CommitRequest {
   // under the same final name, so a keep/delete decision on the item covers
   // the whole group.
   map<string, string> folder_for_id = 3;
+  // Treat the destination as an existing library. Items whose bytes already
+  // exist anywhere under it are not copied (counted in `already_present`), and
+  // folder_for_id sub-path components reuse existing folders that differ only
+  // in letter case. Commit refuses to start (FAILED_PRECONDITION) when the
+  // bytes still to write exceed the destination's free space.
+  bool merge_existing = 4;
+}
+
+message EstimateCommitResponse {
+  uint64 total_bytes = 1;      // every kept file with its related files
+  uint64 new_bytes = 2;        // bytes a commit would write
+  uint32 already_present = 3;  // items a commit would not copy
+  bool free_bytes_known = 4;   // false when the destination's space is unreadable
+  uint64 free_bytes = 5;       // space available at the destination
+  bool fits = 6;               // new_bytes <= free_bytes (true when unknown)
 }
 
 message CommitEvent {
@@ -541,5 +559,6 @@ message CommitComplete {
   uint32 copied = 1;
   uint32 skipped = 2;        // name collisions (different content)
   uint32 companions = 4;     // related files copied with their item (RAW, Live Photo clip, sidecars)
+  uint32 already_present = 5; // items skipped because the destination already held them (merge_existing)
   repeated string errors = 3;  // "<id>: <reason>"
 }

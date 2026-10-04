@@ -154,7 +154,13 @@ class Wizard extends _$Wizard {
   String _committedDestination = '';
   int _commitCopied = 0;
   int _commitSkipped = 0;
+  int _commitAlreadyPresent = 0;
   List<String> _commitErrors = const <String>[];
+
+  /// Latest `EstimateCommit` answer and the destination it was computed for.
+  pb.EstimateCommitResponse? _commitEstimate;
+  String _commitEstimateFor = '';
+  Timer? _estimateTimer;
 
   Map<String, ImageInfo> get images => UnmodifiableMapView(_images);
 
@@ -242,6 +248,8 @@ class Wizard extends _$Wizard {
 
   @override
   FutureOr<WizardPhase> build() async {
+    ref.onDispose(() => _estimateTimer?.cancel());
+
     // S5: the moment the model becomes ready while the user waits on the
     // junk preparation screen, start the junk pass automatically.
     ref.listen(modelStatusProvider, (previous, next) {
@@ -306,7 +314,6 @@ class Wizard extends _$Wizard {
 
   final List<String> _runAllQueue = [];
   WizardStep? _runAllStep;
-
 
   void _subscribe<T>(
     Stream<T> stream,
@@ -378,7 +385,11 @@ class Wizard extends _$Wizard {
     _committedDestination = '';
     _commitCopied = 0;
     _commitSkipped = 0;
+    _commitAlreadyPresent = 0;
     _commitErrors = const <String>[];
+    _estimateTimer?.cancel();
+    _commitEstimate = null;
+    _commitEstimateFor = '';
     _resumeTargetStep = null;
     _resuming = false;
     if (!keepReturnPhase) {

@@ -30,6 +30,7 @@ abstract interface class KustaviClient {
   Future<void> saveSessionState(SaveSessionStateRequest request);
 
   Stream<ScanEvent> scanFolder(ScanFolderRequest request);
+
   /// [scopeImageIds] limits the run to a batch (empty = whole session);
   /// [batchKey] records a per-batch completion on the back end.
   Stream<QualityEvent> runQualityPass({
@@ -67,6 +68,7 @@ abstract interface class KustaviClient {
     String batchKey,
   });
   Stream<CommitEvent> commit(CommitRequest request);
+  Future<EstimateCommitResponse> estimateCommit(CommitRequest request);
 }
 
 /// Maps a raw gRPC error object to a [BackendError] value (§10.5).
@@ -259,6 +261,16 @@ class GrpcKustaviClient implements KustaviClient {
   @override
   Stream<CommitEvent> commit(CommitRequest request) {
     return _pass(_client.commit(request, options: _options));
+  }
+
+  @override
+  Future<EstimateCommitResponse> estimateCommit(CommitRequest request) {
+    return _client
+        .estimateCommit(request, options: _options)
+        .then(
+          (response) => response,
+          onError: (Object error) => throw mapToBackendError(error),
+        );
   }
 
   Stream<T> _pass<T>(ResponseStream<T> stream) async* {

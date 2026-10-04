@@ -195,12 +195,14 @@ pb.CommitEvent commitProgress({
 pb.CommitEvent commitComplete({
   int copied = 0,
   int skipped = 0,
+  int alreadyPresent = 0,
   List<String> errors = const [],
 }) {
   return pb.CommitEvent()
     ..complete = (pb.CommitComplete()
       ..copied = copied
       ..skipped = skipped
+      ..alreadyPresent = alreadyPresent
       ..errors.addAll(errors));
 }
 

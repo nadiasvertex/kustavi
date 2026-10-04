@@ -34,7 +34,52 @@ extension WizardCommit on Wizard {
       keepBytes: keepBytes,
       leftBehindCount: _images.length - keepIds.length,
       destination: _effectiveCommitDestination,
+      estimate: _commitEstimateFor == _effectiveCommitDestination
+          ? _commitEstimate
+          : null,
     );
+  }
+
+  /// The commit request for [destination]. The destination is treated as a
+  /// library that may already hold some of these photos.
+  pb.CommitRequest _commitRequest(String destination, List<String> keepIds) {
+    return pb.CommitRequest(
+      destination: destination,
+      keepIds: keepIds,
+      folderForId: commitFolderPlan().entries,
+      mergeExisting: true,
+    );
+  }
+
+  /// Asks the back end how much a commit to the current destination would
+  /// write and whether it fits. Called when the summary opens and, debounced,
+  /// as the destination field changes. A stale answer is dropped.
+  void refreshCommitEstimate({
+    Duration delay = const Duration(milliseconds: 400),
+  }) {
+    _estimateTimer?.cancel();
+    final destination = _effectiveCommitDestination;
+    if (_state.value is! WizardCommitSummary || destination.trim().isEmpty) {
+      return;
+    }
+    _estimateTimer = Timer(delay, () async {
+      final client = _ref.read(kustaviClientProvider).requireValue;
+      try {
+        final estimate = await client.estimateCommit(
+          _commitRequest(destination, _keepIds()),
+        );
+        if (_state.value is! WizardCommitSummary ||
+            destination != _effectiveCommitDestination) {
+          return;
+        }
+        _commitEstimate = estimate;
+        _commitEstimateFor = destination;
+        _state = AsyncValue.data(_commitSummaryPhase);
+      } on Object {
+        // An unreadable estimate leaves [Copy] disabled; the user can retry
+        // by editing the destination.
+      }
+    });
   }
 
   /// S11 destination field edit. Republishes the summary so the shell's
@@ -46,6 +91,7 @@ extension WizardCommit on Wizard {
     }
     _commitDestination = value;
     _state = AsyncValue.data(_commitSummaryPhase);
+    refreshCommitEstimate();
   }
 
   /// S11 [Back] -> trips review.
@@ -78,6 +124,7 @@ extension WizardCommit on Wizard {
     );
     _commitCopied = 0;
     _commitSkipped = 0;
+    _commitAlreadyPresent = 0;
     _commitErrors = const <String>[];
     _state = AsyncValue.data(
       WizardCommitting(
@@ -86,11 +133,7 @@ extension WizardCommit on Wizard {
       ),
     );
     final client = _ref.read(kustaviClientProvider).requireValue;
-    final request = pb.CommitRequest(
-      destination: destination,
-      keepIds: _commitKeepIds,
-      folderForId: commitFolderPlan().entries,
-    );
+    final request = _commitRequest(destination, _commitKeepIds);
     _subscribe(client.commit(request), _onCommitEvent, _onCommitDone);
   }
 
@@ -127,6 +170,7 @@ extension WizardCommit on Wizard {
       case pb.CommitEvent_Event.complete:
         _commitCopied = event.complete.copied;
         _commitSkipped = event.complete.skipped;
+        _commitAlreadyPresent = event.complete.alreadyPresent;
         _commitErrors = List<String>.unmodifiable(event.complete.errors);
       case pb.CommitEvent_Event.notSet:
         break;
@@ -141,6 +185,7 @@ extension WizardCommit on Wizard {
       WizardDone(
         copiedCount: _commitCopied,
         skippedCount: _commitSkipped,
+        alreadyPresentCount: _commitAlreadyPresent,
         destination: _committedDestination,
         errors: _commitErrors,
       ),

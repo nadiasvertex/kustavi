@@ -286,6 +286,11 @@ Destination: text field + [Choose folder…] (directory picker; the
 suggested default, pre-filled, is a sibling of the source named
 `<source-name>-kept`). [Back] (→ S10). [Copy] (disabled until a
 destination is set and space availability is confirmed) → S12.
+The screen calls `EstimateCommit` (with `merge_existing`) when it opens and,
+debounced, when the destination changes, and shows "Needs <size> · <free>
+free · <n> already there". When the estimate says the copy does not fit, the
+line turns to an error and [Copy] stays disabled. S13 reports how many
+photos were already in the destination.
 
 **S12 — Committing.**
 Entry: `Commit` with `destination` and calculated user/automated `keep_ids`.

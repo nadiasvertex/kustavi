@@ -95,6 +95,7 @@ service Kustavi {
 
   // --- pass 6: commit ----------------------------------------------------
   rpc Commit(CommitRequest) returns (stream CommitEvent);
+  rpc EstimateCommit(CommitRequest) returns (EstimateCommitResponse);
 }
 
 // --- lifecycle ---------------------------------------------------------
@@ -386,6 +387,16 @@ message CommitRequest {
   string destination = 1;        // absolute path; created if missing
   repeated string keep_ids = 2;  // image ids to copy
   map<string, string> folder_for_id = 3;  // optional per-image destination sub-path (trip/leg slug)
+  bool merge_existing = 4;       // destination is an existing library (see Commit semantics)
+}
+
+message EstimateCommitResponse {
+  uint64 total_bytes = 1;      // every kept file with its related files
+  uint64 new_bytes = 2;        // bytes a commit would write
+  uint32 already_present = 3;  // items a commit would not copy
+  bool free_bytes_known = 4;
+  uint64 free_bytes = 5;       // space available at the destination
+  bool fits = 6;               // new_bytes <= free_bytes (true when unknown)
 }
 
 message CommitEvent {
@@ -405,6 +416,7 @@ message CommitComplete {
   uint32 copied = 1;
   uint32 skipped = 2;        // name collisions (different content)
   uint32 companions = 4;     // related files copied with their item
+  uint32 already_present = 5; // skipped: destination already held the item (merge_existing)
   repeated string errors = 3;  // "<id>: <reason>"
 }
 ```
@@ -639,6 +651,17 @@ Preconditions: active session; no pass running.
   Different size in the `folder_for_id` layout: written under a `-<n>`
   suffix, since two distinct files legitimately share a name in one trip
   folder.
+- Merge into an existing library (`merge_existing`): before copying, the
+  back end indexes the destination by file size. An item whose bytes are
+  identical to a file anywhere under the destination is not copied and is
+  counted in `already_present`. Components of a `folder_for_id` sub-path
+  reuse an existing destination folder that differs only in letter case.
+  The check runs after the same-path, same-size check above.
+- Free space: `Commit` fails with `FAILED_PRECONDITION` before copying when
+  the bytes still to write exceed the space available at the destination
+  (or its nearest existing ancestor). `EstimateCommit` returns the same
+  figures without writing: `new_bytes` excludes items already present, and
+  `fits` is true when the free space cannot be read.
 - Copy failures (permissions, disk full, source disappeared) are
   reported per-file in `errors` and do not abort the run.
 - Emits `CommitProgress` per file, then `CommitComplete`.

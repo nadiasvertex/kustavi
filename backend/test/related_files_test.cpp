@@ -116,11 +116,57 @@ void test_grouped_commit() {
         "re-commit reports no conflicts");
 }
 
+void test_merge_and_estimate() {
+  const auto src = fresh_dir("kustavi_merge_src");
+  const auto lib = fresh_dir("kustavi_merge_lib");
+  touch(src / "IMG_1.jpg", "already-in-library");
+  touch(src / "IMG_1.xmp", "xmp");
+  touch(src / "IMG_2.jpg", "brand-new-photo");
+  // Same size as IMG_2 but different bytes: must not count as present.
+  touch(src / "IMG_3.jpg", std::string("brand-new-photo").substr(0, 14) + "!");
+  touch(lib / "Italy-2019-07" / "IMG_9.jpg", "already-in-library");
+
+  const std::vector<commit_source> sources = {
+      {.id = "1", .path = src / "IMG_1.jpg", .dest_subdir = "italy-2019-07"},
+      {.id = "2", .path = src / "IMG_2.jpg", .dest_subdir = "italy-2019-07"},
+      {.id = "3", .path = src / "IMG_3.jpg", .dest_subdir = "italy-2019-07"},
+  };
+
+  const auto plain = estimate_commit(src, lib, sources);
+  check(plain.already_present == 0 && plain.new_bytes == plain.total_bytes,
+        "without merge nothing counts as present");
+  const auto merged = estimate_commit(src, lib, sources, {.merge_existing = true});
+  check(merged.already_present == 1,
+        "merge estimate finds the identical library file under another name");
+  check(merged.total_bytes - merged.new_bytes ==
+            std::string("already-in-library").size() + 3,
+        "present item's bytes, including its sidecar, are not new");
+  check(merged.free_bytes.has_value(), "free space is reported");
+
+  std::stop_source stop;
+  const auto summary = commit_files(src, lib, sources, stop.get_token(), nullptr,
+                                    {.merge_existing = true});
+  check(summary.already_present == 1 && summary.copied == 2 &&
+            summary.errors.empty(),
+        "merge commit skips the duplicate and copies the rest");
+  check(fs::exists(lib / "Italy-2019-07" / "IMG_2.jpg") &&
+            fs::exists(lib / "Italy-2019-07" / "IMG_3.jpg"),
+        "new items go into the existing folder despite letter case");
+  std::vector<std::string> folders;
+  for (const auto &entry : fs::directory_iterator(lib)) {
+    folders.push_back(entry.path().filename().string());
+  }
+  check(folders == std::vector<std::string>{"Italy-2019-07"} &&
+            !fs::exists(lib / "Italy-2019-07" / "IMG_1.jpg"),
+        "no parallel folder is created and the duplicate is not copied");
+}
+
 } // namespace
 
 int main() {
   test_discovery();
   test_grouped_commit();
+  test_merge_and_estimate();
 
   if (g_failures > 0) {
     std::printf("\n%d check(s) failed\n", g_failures);

@@ -701,6 +701,22 @@ void run_commit(const options &opts) {
   for (const auto &id : g_image_ids) {
     request.add_keep_ids(id);
   }
+  {
+    grpc::ClientContext estimate_context;
+    add_auth_metadata(estimate_context, opts);
+    k::EstimateCommitResponse estimate;
+    const auto estimate_status =
+        stub->EstimateCommit(&estimate_context, request, &estimate);
+    if (!estimate_status.ok()) {
+      fail("EstimateCommit: " + estimate_status.error_message());
+    }
+    if (estimate.new_bytes() == 0 || estimate.new_bytes() != estimate.total_bytes() ||
+        !estimate.fits()) {
+      fail("EstimateCommit: unexpected sizes for a fresh destination");
+    }
+    std::println("ok: EstimateCommit new_bytes={} free_known={}",
+                 estimate.new_bytes(), estimate.free_bytes_known());
+  }
   grpc::ClientContext context;
   add_auth_metadata(context, opts);
   auto reader = stub->Commit(&context, request);
@@ -742,6 +758,25 @@ void run_commit(const options &opts) {
          std::to_string(copied));
   }
   std::println("ok: Commit copied={} (re-run consistent)", copied);
+
+  // Merge into the library just written: nothing new to copy.
+  k::CommitRequest merge = request;
+  merge.set_merge_existing(true);
+  grpc::ClientContext merge_context;
+  add_auth_metadata(merge_context, opts);
+  auto merge_reader = stub->Commit(&merge_context, merge);
+  k::CommitEvent merge_event;
+  uint32_t merge_present = 0;
+  while (merge_reader->Read(&merge_event)) {
+    if (merge_event.has_complete()) {
+      merge_present = merge_event.complete().already_present() +
+                      merge_event.complete().copied();
+    }
+  }
+  if (!merge_reader->Finish().ok() || merge_present != copied) {
+    fail("Commit merge: expected every item present or unchanged");
+  }
+  std::println("ok: Commit merge_existing consistent");
 
   // Trip-folder layout: folder_for_id routes every kept file under one
   // sub-directory of a fresh destination.

@@ -77,8 +77,20 @@ class FakeKustavi extends KustaviServiceBase {
   ) => const Stream.empty();
 
   @override
+  Stream<RepairEvent> runRepairPass(
+    ServiceCall call,
+    RunRepairPassRequest request,
+  ) => const Stream.empty();
+
+  @override
   Stream<CommitEvent> commit(ServiceCall call, CommitRequest request) =>
       const Stream.empty();
+
+  @override
+  Future<EstimateCommitResponse> estimateCommit(
+    ServiceCall call,
+    CommitRequest request,
+  ) async => EstimateCommitResponse();
 }
 
 void main() {

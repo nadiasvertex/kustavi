@@ -1,5 +1,6 @@
 import 'dart:ui' show AppExitResponse;
 
+import 'package:fixnum/fixnum.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -131,6 +132,67 @@ void main() {
       await tester.tap(find.text('Continue'));
       await tester.pump();
       expect(container.read(wizardProvider).value, isA<WizardCommitSummary>());
+
+      // The space estimate arrives and enables [Copy].
+      await tester.pump(Duration.zero);
+      await tester.pump();
+      expect(client.lastEstimateRequest?.mergeExisting, isTrue);
+      expect(
+        tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Copy'))
+            .onPressed,
+        isNotNull,
+      );
+    });
+
+    testWidgets('Copy stays disabled when the destination is too small', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final client = FakeKustaviClient(
+        scanEvents: [scanImage('a.jpg'), scanComplete(images: 1)],
+        estimateCommitResponse: EstimateCommitResponse(
+          totalBytes: Int64(10),
+          newBytes: Int64(10),
+          freeBytesKnown: true,
+          freeBytes: Int64(1),
+          fits: false,
+        ),
+      );
+      final container = makeContainer(client);
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(
+            home: WizardShell(pickDirectory: _pickPhotos),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.tap(find.text('Select folder…'));
+      await tester.pump();
+      await tester.pump();
+      await tester.tap(find.text('Continue'));
+      await tester.pump();
+      await tester.pump();
+      await tester.tap(find.text('Continue'));
+      await tester.pump();
+      await tester.tap(find.text('Continue'));
+      await tester.pump();
+      await tester.tap(find.text('Continue'));
+      await tester.pump();
+      expect(container.read(wizardProvider).value, isA<WizardCommitSummary>());
+      await tester.pump(Duration.zero);
+      await tester.pump();
+
+      expect(find.textContaining('Not enough space'), findsOneWidget);
+      expect(
+        tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Copy'))
+            .onPressed,
+        isNull,
+      );
     });
 
     testWidgets('quality sliders update and enable rerun', (tester) async {

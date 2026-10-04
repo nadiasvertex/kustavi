@@ -10,12 +10,16 @@ class DoneScreen extends StatelessWidget {
     required this.copiedCount,
     required this.destination,
     this.skippedCount = 0,
+    this.alreadyPresentCount = 0,
     this.errors = const <String>[],
   });
 
   final int copiedCount;
   final String destination;
   final int skippedCount;
+
+  /// Photos not copied because the destination already held them.
+  final int alreadyPresentCount;
   final List<String> errors;
 
   @override
@@ -48,6 +52,15 @@ class DoneScreen extends StatelessWidget {
                 ),
               ],
             ),
+            if (alreadyPresentCount > 0) ...[
+              const SizedBox(height: 8),
+              Text(
+                '${formatInt(alreadyPresentCount)} '
+                '${alreadyPresentCount == 1 ? 'photo was' : 'photos were'} '
+                'already in the destination and not copied again.',
+                style: theme.textTheme.bodyMedium,
+              ),
+            ],
             const SizedBox(height: 12),
             Text(
               'Your original files were not modified. You can safely delete '

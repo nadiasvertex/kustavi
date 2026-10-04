@@ -64,6 +64,7 @@ service Kustavi {
 
   // --- pass 6: commit ----------------------------------------------------
   rpc Commit(CommitRequest) returns (stream CommitEvent);
+  rpc EstimateCommit(CommitRequest) returns (EstimateCommitResponse);
 }
 
 // --- lifecycle ---------------------------------------------------------
@@ -408,4 +409,4 @@ minutes. Originals are kept in the session index so each run starts clean. See
 `spec/proto.md` §RunRepairPass.
 
 ### Commit
-Creates target destination path layouts. Copies each kept item together with its related files: same-stem RAW and HEIC originals, Live Photo `.mov` clips (which the scan does not list as separate items), and `.xmp`/`.aae` sidecars sitting adjacent within the original folders. Companions share the item's final name, so a `-<n>` collision suffix applies to the whole group. By default each file keeps its path relative to the session folder; when `CommitRequest.folder_for_id` maps its id to a sub-path, the file is placed under `destination/<sub-path>/` (the trip/leg folder layout) instead, with `-<n>` suffixing on same-folder name collisions. Sub-paths that are absolute or contain `..` are ignored. Tracks progress using byte counts (`done_bytes` and `total_bytes`) alongside item counters for linear rendering representation.
+Creates target destination path layouts. Copies each kept item together with its related files: same-stem RAW and HEIC originals, Live Photo `.mov` clips (which the scan does not list as separate items), and `.xmp`/`.aae` sidecars sitting adjacent within the original folders. Companions share the item's final name, so a `-<n>` collision suffix applies to the whole group. By default each file keeps its path relative to the session folder; when `CommitRequest.folder_for_id` maps its id to a sub-path, the file is placed under `destination/<sub-path>/` (the trip/leg folder layout) instead, with `-<n>` suffixing on same-folder name collisions. Sub-paths that are absolute or contain `..` are ignored. When `CommitRequest.merge_existing` is set, items already present byte-for-byte under the destination are skipped (`already_present`) and new items reuse existing destination folders. `EstimateCommit` reports the bytes to write and the free space at the destination, and `Commit` refuses to start with `FAILED_PRECONDITION` when they do not fit. Tracks progress using byte counts (`done_bytes` and `total_bytes`) alongside item counters for linear rendering representation.

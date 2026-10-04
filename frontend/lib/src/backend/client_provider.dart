@@ -37,6 +37,7 @@ class FakeKustaviClient implements KustaviClient {
     this.tripsEvents = const <TripsEvent>[],
     this.videoEvents = const <VideoEvent>[],
     this.commitEvents = const <CommitEvent>[],
+    EstimateCommitResponse? estimateCommitResponse,
     this.inspectSessionResponse,
     this.sessionResults,
     this.scanError,
@@ -47,7 +48,9 @@ class FakeKustaviClient implements KustaviClient {
     this.ensureModelError,
     this.modelStreamStaysOpen = false,
     this.scanStreamStaysOpen = false,
-  }) : info = info ?? _defaultInfo();
+  }) : info = info ?? _defaultInfo(),
+       estimateCommitResponse =
+           estimateCommitResponse ?? EstimateCommitResponse(fits: true);
 
   static GetInfoResponse _defaultInfo() {
     return GetInfoResponse()
@@ -91,6 +94,10 @@ class FakeKustaviClient implements KustaviClient {
   ScanFolderRequest? lastScanRequest;
   RunQualityPassRequest? lastQualityRequest;
   CommitRequest? lastCommitRequest;
+
+  /// Returned by `EstimateCommit`; defaults to "fits".
+  final EstimateCommitResponse estimateCommitResponse;
+  CommitRequest? lastEstimateRequest;
   RunTripsPassRequest? lastTripsRequest;
   List<String> lastJunkSkipIds = const [];
   List<String> lastSimilarSkipIds = const [];
@@ -272,6 +279,12 @@ class FakeKustaviClient implements KustaviClient {
   Stream<CommitEvent> commit(CommitRequest request) {
     lastCommitRequest = request;
     return Stream.fromIterable(commitEvents);
+  }
+
+  @override
+  Future<EstimateCommitResponse> estimateCommit(CommitRequest request) async {
+    lastEstimateRequest = request;
+    return estimateCommitResponse;
   }
 
   Stream<T> _script<T>(List<T> events, Object? error) {
