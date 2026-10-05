@@ -24,7 +24,8 @@ Layout produced under `dist/`:
                dist/Kustavi/mdk.dll and the libraries that it loads
                dist/Kustavi/VERSION               (payload version marker)
                dist/kustavi-windows-<version>.zip (Kustavi/...)
-               dist/Kustavi-<version>-x64.msi     (with --installer; WiX v5)
+               dist/Kustavi-<version>-x64.msi     (with --installer; WiX v5, wizard)
+               dist/Kustavi-<version>-x64-store.msi (same run; silent, for the Store)
 
 The version is the repo-root VERSION.txt file, maintained by tools/version.py.
 
@@ -361,8 +362,11 @@ def package_windows(args: argparse.Namespace) -> Path:
     (app_dir / "VERSION").write_text(f"{version}\n", encoding="utf-8")
 
     if args.installer:
-        print(f"[4/4] Building the WiX MSI installer (v{version})")
-        return build_msi(dist, app_dir, version)
+        print(f"[4/4] Building the WiX MSI installers (v{version})")
+        msi = build_msi(dist, app_dir, version, store=False)
+        store_msi = build_msi(dist, app_dir, version, store=True)
+        print(f"  store installer: {store_msi}")
+        return msi
 
     if args.keep:
         print("[4/4] --keep: leaving dist/ unpacked, skipping the archive")
@@ -374,10 +378,14 @@ def package_windows(args: argparse.Namespace) -> Path:
     return archive
 
 
-def build_msi(dist: Path, staging: Path, version: str) -> Path:
-    """Run `wix build` over the staged dist/Kustavi tree -> dist/Kustavi-<v>-x64.msi.
+def build_msi(dist: Path, staging: Path, version: str, *, store: bool) -> Path:
+    """Run `wix build` over the staged dist/Kustavi tree.
 
-    Requires WiX v5 on PATH (`dotnet tool install --global wix`). The whole
+    Produces dist/Kustavi-<v>-x64.msi (wizard UI), or with `store` the silent
+    dist/Kustavi-<v>-x64-store.msi for the Microsoft Store.
+
+    Requires WiX v5 on PATH (`dotnet tool install --global wix`) and, for the
+    wizard flavour, `wix extension add --global WixToolset.UI.wixext/5.0.2`. The whole
     staging tree is harvested automatically via the `Stage` bindpath referenced
     by tools/installer/kustavi.wxs; the `Resources` bindpath points at the
     resources directory so the MSI's ARP / shortcut icon is the app icon
@@ -392,17 +400,21 @@ def build_msi(dist: Path, staging: Path, version: str) -> Path:
         )
     if not WXS_FILE.exists():
         raise SystemExit(f"missing installer source: {WXS_FILE}")
-    msi = dist / f"{APP_NAME}-{version}-x64.msi"
+    suffix = "-store" if store else ""
+    msi = dist / f"{APP_NAME}-{version}-x64{suffix}.msi"
     if msi.exists():
         msi.unlink()
-    run([
+    cmd = [
         "wix", "build", str(WXS_FILE),
         "-arch", "x64",
         "-d", f"Version={version}",
+        "-d", f"Store={1 if store else 0}",
         "-bindpath", f"Stage={staging}",
         "-bindpath", f"Resources={icon_dir}",
-        "-out", str(msi),
-    ])
+    ]
+    if not store:
+        cmd += ["-ext", "WixToolset.UI.wixext"]
+    run(cmd + ["-out", str(msi)])
     return msi
 
 

@@ -4,16 +4,22 @@
 
   Built by "tools/package.py (installer flag)", which stages the full
   application tree into the dist Kustavi folder and then invokes "wix build"
-  with: arch x64, define Version=X.Y.Z, bindpath Stage=<dist Kustavi folder>,
-  bindpath Resources=<the resources folder> (the app_icon.ico),
-  out dist/Kustavi-X.Y.Z-x64.msi
+  with: arch x64, define Version=X.Y.Z, define Store=0|1, bindpath
+  Stage=<dist Kustavi folder>, bindpath Resources=<the resources folder> (the
+  app_icon.ico), out dist/Kustavi-X.Y.Z-x64[-store].msi
+
+  Two flavours come from this one source:
+    Store=0  normal installer with the WixUI_InstallDir wizard (needs
+             "-ext WixToolset.UI.wixext").
+    Store=1  Microsoft Store installer: no UI at all, it just installs.
 
   Version comes from the repo-root VERSION file (see tools/version.py). The
   whole staged payload is harvested automatically via the Files element and
   the Stage bindpath. Per-user install: no elevation prompt. See
   tools/installer/README.md.
 -->
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package
       Name="Kustavi"
       Manufacturer="Kustavi"
@@ -27,6 +33,20 @@
     <MajorUpgrade DowngradeErrorMessage="A newer version of Kustavi is already installed." />
 
     <MediaTemplate EmbedCab="yes" />
+
+    <?if $(Store) = 1?>
+    <!-- Microsoft Store flavour: no wizard, no questions. It installs straight
+         to the default per-user location. -->
+    <?else?>
+    <!-- Standard flavour: welcome page, install-folder choice, progress and a
+         finish page. The licence page is skipped (the app ships no licence
+         text to show). -->
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <UI>
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Order="2" />
+      <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="2" />
+    </UI>
+    <?endif?>
 
     <!-- Add/Remove Programs metadata. The ARP entry and the Start Menu shortcut
          use the app icon (resources/app_icon.ico, generated from
