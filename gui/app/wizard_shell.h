@@ -1,0 +1,62 @@
+#pragma once
+
+#include "app/image_grid.h"
+#include "app/image_loader.h"
+#include "app/screens.h"
+#include "core/model_status.h"
+#include "core/wizard_controller.h"
+
+#include "basalt/basalt.h"
+
+#include <functional>
+#include <memory>
+
+namespace kustavi::gui {
+
+// The wizard's frame: the step indicator, the screen for the current phase, and the action bar. It
+// builds the widget tree from the controller's state and builds it again when the state changes.
+// The crash and log dialogs open over it.
+class wizard_shell {
+public:
+  // `tree` gets the shell as its root. The controller, the model status and the loader outlive
+  // the shell.
+  wizard_shell(basalt::widget_tree &tree, wizard_controller &controller, model_status &model,
+               image_loader &loader, shell_services services);
+  wizard_shell(wizard_shell const &) = delete;
+  auto operator=(wizard_shell const &) -> wizard_shell & = delete;
+  ~wizard_shell();
+
+  // The controller or the model status changed. The tree is rebuilt on the next `update`.
+  auto mark_dirty() -> void;
+  // Rebuilds the screens if something changed, gives finished images to the grid, and moves the
+  // busy bar. Call it once per frame, before layout.
+  auto update() -> void;
+
+  // The back end died or could not start. The dialog offers a retry or leaving.
+  auto show_crash_dialog(std::string message, std::function<void()> on_retry) -> void;
+  // The output of the back end, in a dialog.
+  auto show_log_dialog(std::string const &log) -> void;
+
+  [[nodiscard]] auto overlays() -> basalt::overlay_host & { return *host_; }
+  [[nodiscard]] auto services() -> shell_services & { return services_; }
+  // True while the screen needs another frame, such as a busy bar.
+  [[nodiscard]] auto animating() const -> bool { return busy_ != nullptr; }
+
+private:
+  auto rebuild() -> void;
+  auto build_body() -> std::unique_ptr<basalt::widget>;
+
+  basalt::widget_tree &tree_;
+  wizard_controller &controller_;
+  model_status &model_;
+  image_loader &loader_;
+  shell_services services_;
+  basalt::overlay_host *host_ = nullptr;
+  basalt::box *frame_ = nullptr;
+  basalt::progress_bar *busy_ = nullptr;
+  // Declared after the widgets that it points into: it goes first on destruction.
+  std::unique_ptr<image_grid> grid_;
+  bool dirty_ = true;
+};
+
+} // namespace kustavi::gui

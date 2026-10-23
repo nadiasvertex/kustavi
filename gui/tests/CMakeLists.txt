@@ -1,5 +1,6 @@
 add_executable(gui_core_tests
   background_test.cpp
+  backend_host_test.cpp
   backend_launch_test.cpp
   batches_test.cpp
   deletion_test.cpp

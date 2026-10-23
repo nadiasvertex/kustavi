@@ -1,6 +1,7 @@
 add_library(kustavi_gui_core STATIC
   background.cpp
   backend_error.cpp
+  backend_host.cpp
   backend_launch.cpp
   batches.cpp
   deletion.cpp
