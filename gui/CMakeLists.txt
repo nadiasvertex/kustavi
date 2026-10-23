@@ -1,6 +1,7 @@
 # The GUI's logic, free of any window or widget, and its tests.
 add_subdirectory(core)
 if(KUSTAVI_BUILD_TESTS)
+  add_subdirectory(testing)
   add_subdirectory(tests)
 endif()
 
