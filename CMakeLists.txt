@@ -21,6 +21,7 @@ endif()
 
 option(KUSTAVI_SANITIZE "Build Kustavi's own targets with ASan and UBSan" OFF)
 option(KUSTAVI_BUILD_TESTS "Build and register the back-end tests" ON)
+option(KUSTAVI_BUILD_GUI "Build the C++ GUI, which needs Basalt and Magma" OFF)
 
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
@@ -63,3 +64,8 @@ endif()
 
 add_subdirectory(proto)
 add_subdirectory(backend)
+
+if(KUSTAVI_BUILD_GUI)
+  include(gui_dependencies)
+  add_subdirectory(gui)
+endif()

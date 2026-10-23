@@ -17,6 +17,10 @@ checksums are in `cmake/dependency_pins.cmake`. The Flutter GUI is built
 separately with `just build-gui`. The migration plan is
 `spec/plans/cpp-gui-rewrite.md`.
 
+The C++ GUI (`gui/`) builds with `-DKUSTAVI_BUILD_GUI=ON`, which also needs
+`-DKUSTAVI_BASALT_SOURCE_DIR=<checkout>` and `-DKUSTAVI_MAGMA_SOURCE_DIR=<checkout>`
+until releases are pinned. `gui/main.cpp` documents the spike's options.
+
 <!-- graft:start -->
 ## Graft — repo context graph
 
