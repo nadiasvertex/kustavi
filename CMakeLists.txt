@@ -52,8 +52,11 @@ if(MSVC)
 else()
   target_compile_options(kustavi_options INTERFACE -Wall -Wextra)
   if(KUSTAVI_SANITIZE)
+    # The dependencies are built without the sanitizers, and they share containers with Kustavi's
+    # code. libc++'s container annotations would then flag memory that the unsanitized side wrote.
     target_compile_options(kustavi_options INTERFACE
       -fsanitize=address,undefined -fno-omit-frame-pointer)
+    target_compile_definitions(kustavi_options INTERFACE __SANITIZER_DISABLE_CONTAINER_OVERFLOW__)
     target_link_options(kustavi_options INTERFACE -fsanitize=address,undefined)
   endif()
 endif()

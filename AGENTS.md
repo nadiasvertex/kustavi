@@ -22,7 +22,9 @@ The C++ GUI (`gui/`) builds with `-DKUSTAVI_BUILD_GUI=ON`, which also needs
 until releases are pinned. `gui/main.cpp` documents the spike's options.
 `gui/core` holds the GUI's logic without any window or widget (domain types, the deletion
 model, the trips plan, the gRPC client and the back-end launcher), and `common/process` holds the
-process launching that the GUI and the smoke client share. `just test-gui-core` runs their tests.
+process launching that the GUI and the smoke client share. `just test-gui-core` runs their tests. The `sanitize` test preset leaves out the `grpc` label: those
+tests run a gRPC server, and the unsanitized gRPC and the sanitized test share inline library code,
+which the sanitizers report at server shutdown.
 
 <!-- graft:start -->
 ## Graft — repo context graph
