@@ -122,7 +122,7 @@ kustavi_test(llama_smoke
 if(NOT WIN32)
   kustavi_executable(smoke_client
     SOURCES test/smoke_client.cpp
-    LIBS kustavi::proto gRPC::grpc++)
+    LIBS kustavi::proto kustavi::process gRPC::grpc++)
   add_dependencies(smoke_client server)
   # Runs against a scratch copy of test/photos (see cmake/run_smoke.cmake).
   add_test(NAME smoke

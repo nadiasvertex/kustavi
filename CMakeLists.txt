@@ -62,6 +62,7 @@ if(KUSTAVI_BUILD_TESTS)
   enable_testing()
 endif()
 
+add_subdirectory(common/process)
 add_subdirectory(proto)
 add_subdirectory(backend)
 

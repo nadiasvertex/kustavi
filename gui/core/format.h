@@ -18,6 +18,7 @@ struct civil_time {
   int day = 1;
   int hour = 0;
   int minute = 0;
+  int second = 0;
 
   [[nodiscard]] friend auto operator==(civil_time const &, civil_time const &) -> bool = default;
 };

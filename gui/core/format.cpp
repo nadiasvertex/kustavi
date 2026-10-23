@@ -16,7 +16,8 @@ auto to_local_civil(time_ms instant) -> civil_time {
 #else
   localtime_r(&stamp, &local);
 #endif
-  return {local.tm_year + 1900, local.tm_mon + 1, local.tm_mday, local.tm_hour, local.tm_min};
+  return {local.tm_year + 1900, local.tm_mon + 1, local.tm_mday,
+          local.tm_hour,        local.tm_min,     local.tm_sec};
 }
 
 auto format_gb(std::uint64_t bytes) -> std::string {

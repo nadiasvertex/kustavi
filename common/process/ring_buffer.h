@@ -4,7 +4,7 @@
 #include <string>
 #include <string_view>
 
-namespace kustavi::gui {
+namespace kustavi::process {
 
 // The most recent lines of the back end's output. Old lines go first when the buffer is full.
 // Not thread-safe; the owner locks it.
@@ -25,4 +25,4 @@ private:
   std::string text_;
 };
 
-} // namespace kustavi::gui
+} // namespace kustavi::process

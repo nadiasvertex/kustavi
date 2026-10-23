@@ -1,8 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include "core/ring_buffer.h"
+#include "process/ring_buffer.h"
 
-using kustavi::gui::ring_buffer;
+using kustavi::process::ring_buffer;
 
 TEST_CASE("a ring buffer accumulates lines until it is full", "[ring_buffer]") {
   ring_buffer buffer{1024};

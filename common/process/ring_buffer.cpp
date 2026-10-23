@@ -1,6 +1,6 @@
-#include "core/ring_buffer.h"
+#include "process/ring_buffer.h"
 
-namespace kustavi::gui {
+namespace kustavi::process {
 
 auto ring_buffer::add_line(std::string_view line) -> void {
   text_.append(line);
@@ -17,4 +17,4 @@ auto ring_buffer::add_line(std::string_view line) -> void {
   }
 }
 
-} // namespace kustavi::gui
+} // namespace kustavi::process
