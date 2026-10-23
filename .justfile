@@ -44,6 +44,11 @@ test-gui:
 test-backend: build
   ctest --preset {{ PRESET }} -L backend
 
+# C++ GUI core tests: the pure logic, the gRPC client against an in-process
+# server, and the process library.
+test-gui-core: build
+  ctest --preset {{ PRESET }} -L "gui|process"
+
 # llama.cpp smoke test: links the vendored llama.cpp and prints the compute
 # devices the platform backend discovered (Metal GPU on macOS).
 test-llama: build
