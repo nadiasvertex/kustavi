@@ -67,5 +67,5 @@ add_subdirectory(backend)
 
 if(KUSTAVI_BUILD_GUI)
   include(gui_dependencies)
-  add_subdirectory(gui)
 endif()
+add_subdirectory(gui)

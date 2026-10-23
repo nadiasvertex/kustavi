@@ -32,3 +32,10 @@ set(KUSTAVI_LLAMA_SHA256 "07de784d07b346647da6bd8796a42127304c7508dd007a21f63ab7
 # them do not exist. When they do, add the release archive and SHA-256 of each here, and
 # cmake/gui_dependencies.cmake will use them. Until then, configure with
 # KUSTAVI_BASALT_SOURCE_DIR and KUSTAVI_MAGMA_SOURCE_DIR.
+
+# The C++ GUI's core library and its tests.
+set(KUSTAVI_NLOHMANN_JSON_URL "https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz")
+set(KUSTAVI_NLOHMANN_JSON_SHA256 "42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa")
+
+set(KUSTAVI_CATCH2_URL "https://github.com/catchorg/Catch2/archive/refs/tags/v3.16.0.tar.gz")
+set(KUSTAVI_CATCH2_SHA256 "0957cae5821b17ce07f0833aaa52b5137643a8382203221f363a8303c109af34")

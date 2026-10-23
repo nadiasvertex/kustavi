@@ -122,7 +122,27 @@ FetchContent_Declare(sqlite3_src
   URL ${KUSTAVI_SQLITE_URL} URL_HASH SHA256=${KUSTAVI_SQLITE_SHA256}
   DOWNLOAD_EXTRACT_TIMESTAMP ON SOURCE_SUBDIR kustavi-no-cmake)
 
-FetchContent_MakeAvailable(cli11 spdlog stdexec sqlite3_src)
+# The C++ GUI's core library reads JSON and its tests use Catch2.
+set(JSON_BuildTests OFF CACHE BOOL "" FORCE)
+set(JSON_Install OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(nlohmann_json
+  URL ${KUSTAVI_NLOHMANN_JSON_URL} URL_HASH SHA256=${KUSTAVI_NLOHMANN_JSON_SHA256}
+  DOWNLOAD_EXTRACT_TIMESTAMP ON SYSTEM)
+set(FETCH_NLOHMANN_JSON nlohmann_json)
+if(KUSTAVI_BUILD_TESTS)
+  set(CATCH_INSTALL_DOCS OFF CACHE BOOL "" FORCE)
+  set(CATCH_INSTALL_EXTRAS OFF CACHE BOOL "" FORCE)
+  set(CATCH_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+  FetchContent_Declare(catch2
+    URL ${KUSTAVI_CATCH2_URL} URL_HASH SHA256=${KUSTAVI_CATCH2_SHA256}
+    DOWNLOAD_EXTRACT_TIMESTAMP ON SYSTEM)
+  set(FETCH_CATCH2 catch2)
+endif()
+
+FetchContent_MakeAvailable(cli11 spdlog stdexec sqlite3_src ${FETCH_NLOHMANN_JSON} ${FETCH_CATCH2})
+if(KUSTAVI_BUILD_TESTS)
+  list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
+endif()
 
 if(NOT TARGET stdexec_kustavi)
   file(GLOB stdexec_scheduler_sources CONFIGURE_DEPENDS
