@@ -1,5 +1,6 @@
 #include "core/format.h"
 
+#include <array>
 #include <cmath>
 #include <ctime>
 #include <format>
@@ -98,6 +99,34 @@ auto format_media_duration(std::chrono::milliseconds length) -> std::string {
     return std::format("{}:{:02}:{:02}", hours, minutes, seconds);
   }
   return std::format("{}:{:02}", minutes, seconds);
+}
+
+auto format_month_year(time_ms instant) -> std::string {
+  constexpr std::array months{"January", "February", "March",     "April",   "May",      "June",
+                              "July",    "August",   "September", "October", "November", "December"};
+  auto const civil = to_local_civil(instant);
+  return std::format("{} {}", months[static_cast<std::size_t>(civil.month - 1)], civil.year);
+}
+
+auto slugify(std::string_view text) -> std::string {
+  std::string out;
+  bool pending_separator = false;
+  for (char const raw : text) {
+    auto const c = static_cast<unsigned char>(raw);
+    bool const digit = c >= '0' && c <= '9';
+    bool const upper = c >= 'A' && c <= 'Z';
+    bool const lower = c >= 'a' && c <= 'z';
+    if (!digit && !upper && !lower) {
+      pending_separator = true;
+      continue;
+    }
+    if (pending_separator && !out.empty()) {
+      out.push_back('-');
+    }
+    pending_separator = false;
+    out.push_back(upper ? static_cast<char>(c - 'A' + 'a') : static_cast<char>(c));
+  }
+  return out;
 }
 
 } // namespace kustavi::gui

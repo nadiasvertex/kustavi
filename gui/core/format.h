@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace kustavi::gui {
 
@@ -42,5 +43,12 @@ struct civil_time {
 [[nodiscard]] auto format_duration(time_ms start, time_ms end) -> std::string;
 // A clip length as `m:ss`, or `h:mm:ss` from one hour.
 [[nodiscard]] auto format_media_duration(std::chrono::milliseconds length) -> std::string;
+
+// `April 2026` for the local date of `instant`.
+[[nodiscard]] auto format_month_year(time_ms instant) -> std::string;
+
+// A name as lowercase letters and digits with single hyphens between runs of anything else. The
+// back end's folder slugs follow the same rule.
+[[nodiscard]] auto slugify(std::string_view text) -> std::string;
 
 } // namespace kustavi::gui
