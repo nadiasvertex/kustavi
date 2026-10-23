@@ -20,10 +20,10 @@ just installer
 
 which runs `python tools/package.py --installer`. That:
 
-1. builds the release back end (`//backend:server --config=release`) and the
-   Flutter Windows bundle (`//frontend:kustavi_windows`) with Bazel,
+1. builds the release back end (the `release` CMake preset, `server` target) and the
+   Flutter Windows bundle (`flutter build windows --release`),
 2. stages the full application tree into `dist/Kustavi/` (GUI, `kustavi-backend.exe`,
-   llama.cpp DLLs, `cities.tsv`, `face_detection_yunet.onnx`, a `VERSION` marker),
+   `cities.tsv`, `face_detection_yunet.onnx`, a `VERSION` marker),
 3. runs `wix build` to produce `dist/Kustavi-<version>-x64.msi`.
 
 `<version>` is the repo-root `VERSION.txt` file, maintained by `tools/version.py`

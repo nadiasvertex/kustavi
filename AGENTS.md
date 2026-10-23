@@ -8,6 +8,15 @@ Code conventions in `spec/CONVENTIONS` must be honored.
   - C++: spec/CONVENTIONS/C++.md
   - dart/flutter: spec/CONVENTIONS/FLUTTER.md
 
+## Build
+
+The repo builds with CMake (presets `debug`, `release`, `sanitize`; output in
+`.build/<preset>`). Use the `just` recipes: `just build`, `just test-backend`,
+`just test-quality`, `just test-video`, `just package`. Dependency versions and
+checksums are in `cmake/dependency_pins.cmake`. The Flutter GUI is built
+separately with `just build-gui`. The migration plan is
+`spec/plans/cpp-gui-rewrite.md`.
+
 <!-- graft:start -->
 ## Graft — repo context graph
 

@@ -33,7 +33,7 @@ inline auto env(const char *name) -> std::optional<std::string> {
 }
 
 /** The user's home directory: `$HOME`, or the passwd entry when it is unset
- * (e.g. under `bazel run`, which scrubs the environment). */
+ * (e.g. under a scrubbed test environment). */
 inline auto home_dir() -> std::optional<std::string> {
   if (const auto value = env("HOME")) {
     return value;
@@ -49,7 +49,7 @@ inline auto home_dir() -> std::optional<std::string> {
 
 /** Directory containing the running executable, when the platform can report
  * it. Used to locate assets bundled next to the binary (packaged app) or in
- * the Bazel runfiles tree (`bazel run`). */
+ * the build tree (`.build/<preset>/backend`). */
 inline auto executable_dir() -> std::optional<std::filesystem::path> {
 #if defined(__APPLE__)
   std::uint32_t size = 0;
@@ -124,7 +124,7 @@ inline auto models_path() -> std::filesystem::path {
  * reverse-geocode trip centroids into folder names ("Rome, Italy").
  *
  * Search order: `$KUSTAVI_GEO_DATA`, then next to the executable (packaged
- * app), then the Bazel runfiles layout (`bazel run` / smoke client), then a
+ * app, and the build tree where `data/` is copied beside the server), then a
  * workspace-relative path (developer shell), then the app-data directory.
  * Returns an empty path when no table is found; the trips pass then falls
  * back to month-year folder names.
@@ -157,7 +157,7 @@ inline auto geo_data_path() -> std::filesystem::path {
 namespace detail {
 
 /**
- * Locate a small data file bundled next to the executable / in the Bazel
+ * Locate a small data file bundled next to the executable / in the build
  * runfiles tree / in a workspace-relative `backend/data` directory. Mirrors
  * the search order of `geo_data_path`. `env_override`, when set and non-empty,
  * wins outright. Returns an empty path when nothing is found.

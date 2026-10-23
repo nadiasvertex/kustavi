@@ -13,7 +13,6 @@
 #include <cstring>
 #include <fcntl.h>
 #include <filesystem>
-#include <fstream>
 #include <poll.h>
 #include <print>
 #include <random>
@@ -157,9 +156,9 @@ auto own_executable_path() -> fs::path {
   return path;
 }
 
-/** Locates the server binary. Order: an explicit --server path, the bazel
- * runfiles manifest, common runfiles layouts, a sibling of this executable,
- * and ./bazel-bin/backend/server. Fails the process if none is found. */
+/** Locates the server binary. Order: an explicit --server path, then a sibling
+ * of this executable (the CMake build puts both in `.build/<preset>/backend`).
+ * Fails the process if none is found. */
 auto find_server_binary(const options &opts) -> fs::path {
   if (!opts.server.empty()) {
     fs::path path{opts.server};
@@ -170,45 +169,10 @@ auto find_server_binary(const options &opts) -> fs::path {
   }
 
   const auto exe = own_executable_path();
-  const auto runfiles_root =
-      exe.parent_path() / (exe.filename().string() + ".runfiles");
-
-  // The runfiles MANIFEST maps runfiles paths to real output paths regardless
-  // of the repo-prefix scheme in use.
-  std::ifstream manifest(runfiles_root / "MANIFEST");
-  if (manifest) {
-    std::string line;
-    while (std::getline(manifest, line)) {
-      const auto sep = line.find(' ');
-      if (sep == std::string::npos) {
-        continue;
-      }
-      const auto key = line.substr(0, sep);
-      if (key == "backend/server" || key.ends_with("/backend/server")) {
-        fs::path real{line.substr(sep + 1)};
-        if (fs::is_regular_file(real)) {
-          return real;
-        }
-      }
-    }
-  }
-
-  for (const auto &prefix :
-       {std::string{}, std::string{"_main/"}, std::string{"kustavi/"}}) {
-    auto candidate = runfiles_root / (prefix + "backend/server");
-    if (fs::is_regular_file(candidate)) {
-      return candidate;
-    }
-  }
 
   auto sibling = exe.parent_path() / "server";
   if (fs::is_regular_file(sibling)) {
     return sibling;
-  }
-
-  auto bazel_bin = fs::path{"bazel-bin"} / "backend" / "server";
-  if (fs::is_regular_file(bazel_bin)) {
-    return bazel_bin;
   }
 
   fail("could not locate the server binary; pass --server <path> or "

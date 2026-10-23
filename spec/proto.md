@@ -669,9 +669,9 @@ Preconditions: active session; no pass running.
 
 ## 6. Code Generation
 
-- **C++ (back end):** Bazel `proto_library` + `cpp_grpc_library` from
-  `rules_proto_grpc_cpp` (one rule generates both the protobuf message code
-  and the gRPC service code), wired in `proto/BUILD.bazel`.
+- **C++ (back end):** `protoc` with the gRPC C++ plugin, run by a CMake
+  custom command (one invocation generates both the protobuf message code
+  and the gRPC service code), wired in `proto/CMakeLists.txt`.
 - **Dart (front end):** `protoc` with `protoc_plugin`
   (`dart pub global activate protoc_plugin`; `~/.pub-cache/bin` on `PATH`),
   output under `frontend/lib/src/generated/kustavi/` (gitignored; regenerate
@@ -694,7 +694,7 @@ Preconditions: active session; no pass running.
   `service.pbgrpc.dart`. A `just proto` recipe runs this.
 - The proto file is the contract: any change must be accompanied by
   updates to `spec/proto.md` and regeneration of the generated code on
-  both sides (Bazel for C++, `just proto` for Dart).
+  both sides (CMake for C++, `just proto` for Dart).
 - Field numbers are stable for the lifetime of the project; if a field
   is ever removed, its number must be `reserved`.
 

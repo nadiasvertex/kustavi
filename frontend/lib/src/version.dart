@@ -3,7 +3,7 @@
 // The single source of truth is the repository-root `VERSION.txt` file. Run
 // `python tools/version.py bump {major|minor|patch}` (or `just version-bump`)
 // to change it; that rewrites this file, pubspec.yaml, backend/include/version.h,
-// MODULE.bazel and the Windows runner resource script together.
+// the CMake project and the Windows runner resource script together.
 
 /// The application version (`MAJOR.MINOR.PATCH`), shown in the UI and used for
 /// front-end/back-end version-skew diagnostics.

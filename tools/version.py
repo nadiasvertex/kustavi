@@ -3,10 +3,9 @@
 
 The repository-root ``VERSION.txt`` file (``MAJOR.MINOR.PATCH``) is the one place a
 human edits the app version. This script propagates it to every derived
-location so the front end, the back end, the Bazel module, the Windows
+location so the front end, the back end, the Windows
 executable metadata and the installer all agree:
 
-  * ``MODULE.bazel``                        -- Bazel module version
   * ``frontend/pubspec.yaml``               -- Flutter bundle version (the
                                               ``+<build>`` suffix is preserved)
   * ``frontend/lib/src/version.dart``       -- ``kAppVersion`` runtime constant
@@ -34,9 +33,9 @@ from pathlib import Path
 
 # Repo root = parent of this file's directory (tools/).
 REPO_ROOT = Path(__file__).resolve().parent.parent
-# Not literally "VERSION": Bazel's MSVC toolchain puts the repo root on the
-# angle-include search path, so on a case-insensitive filesystem a repo-root
-# file named VERSION shadows the C++ standard <version> header. See MODULE.bazel.
+# Not literally "VERSION": a repo-root file named VERSION shadows the C++
+# standard <version> header on a case-insensitive filesystem whenever the repo
+# root is on an include path. The root CMakeLists.txt reads this file directly.
 VERSION_FILE = REPO_ROOT / "VERSION.txt"
 
 _SEMVER = re.compile(r"^(\d+)\.(\d+)\.(\d+)$")
@@ -54,16 +53,6 @@ class Target:
 
 def _targets() -> list[Target]:
     return [
-        # module(name = "kustavi", version = "X.Y.Z")
-        Target(
-            REPO_ROOT / "MODULE.bazel",
-            re.compile(
-                r'(module\(\s*\n\s*name\s*=\s*"kustavi",\s*\n\s*version\s*=\s*")'
-                r"\d+\.\d+\.\d+"
-                r'(")'
-            ),
-            r"\g<1>{v}\g<2>",
-        ),
         # version: X.Y.Z+<build>   (keep the build suffix, whatever it is)
         Target(
             REPO_ROOT / "frontend" / "pubspec.yaml",

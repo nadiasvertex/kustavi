@@ -3,64 +3,69 @@
 CLANG_TIDY := "/opt/homebrew/opt/llvm/bin/clang-tidy"
 CLANG_FORMAT := "/opt/homebrew/opt/llvm/bin/clang-format"
 
-build:
-  bazel build //...
+PRESET := env_var_or_default("PRESET", "debug")
+
+configure:
+  cmake --preset {{ PRESET }}
+
+build: configure
+  cmake --build --preset {{ PRESET }}
 
 build-release:
-  bazel build //... --config=release
+  cmake --preset release
+  cmake --build --preset release
 
 build-server-release:
-  bazel build //backend:server --config=release
+  cmake --preset release
+  cmake --build --preset release --target server
 
 build-server:
-  bazel build //backend:server
+  cmake --preset {{ PRESET }}
+  cmake --build --preset {{ PRESET }} --target server
 
+# Builds the Flutter GUI with the host's Flutter SDK. Goes away with the
+# Flutter front end (spec/plans/cpp-gui-rewrite.md, phase 8).
 build-gui:
-  bazel build //frontend:kustavi
+  #!/usr/bin/env sh
+  set -e
+  case "$(uname -s)" in
+    Darwin) target=macos ;;
+    Linux) target=linux ;;
+    *) target=windows ;;
+  esac
+  cd frontend && flutter build "$target" --release
 
 test-gui:
   cd frontend && flutter test
 
-# Backend smoke test: the smoke client spawns the server itself (ephemeral
-# loopback port), exercises every RPC pass against a copy of test/photos,
-# then shuts the server down.
-test-backend:
-  bazel build //backend:server //backend:smoke_client //backend:trips_test
-  bazel run //backend:repair_test
-  bazel run //backend:related_files_test
-  KUSTAVI_GEO_DATA="$(pwd)/backend/data/cities.tsv" bazel run //backend:trips_test
-  tmp="$(mktemp -d)" && \
-  trap 'rm -rf "$tmp"' EXIT && \
-  cp -R test/photos "$tmp/photos" && \
-  bazel run //backend:smoke_client -- --folder "$tmp/photos" --destination "$tmp/committed" --concurrency-check --cancel-check --resume-check --batch-check
+# Back-end tests: unit tests plus the smoke test, where the smoke client spawns
+# the server itself (ephemeral loopback port), exercises every RPC pass against
+# a copy of test/photos, then shuts the server down.
+test-backend: build
+  ctest --preset {{ PRESET }} -L backend
 
 # llama.cpp smoke test: links the vendored llama.cpp and prints the compute
 # devices the platform backend discovered (Metal GPU on macOS).
-test-llama:
-  bazel run //backend:llama_smoke
+test-llama: build
+  ctest --preset {{ PRESET }} -L llama -V
 
 # Vision (junk) pass end-to-end. Downloads the ~3.3 GB Qwen2.5-VL-3B weights on
 # the first run (cached in the OS app-data dir), then runs EnsureModel +
 # RunJunkPass against a copy of test/photos. Not part of `just test`.
-test-junk:
-  bazel build //backend:server //backend:smoke_client
-  tmp="$(mktemp -d)" && \
-  trap 'rm -rf "$tmp"' EXIT && \
-  cp -R test/photos "$tmp/photos" && \
-  bazel run //backend:smoke_client -- --folder "$tmp/photos" --junk-check
+test-junk: build
+  ctest --preset {{ PRESET }} -L junk -V
 
 # Video pass heuristics (duration/blur/motion/corruption) against small
-# synthetic clips. Not part of `just test`; mirrors test-junk's structure but
-# has no model download of its own (video_test never loads the vision model).
-test-video:
-  bazel build //backend:video_test
-  KUSTAVI_TEST_VIDEOS="$(pwd)/test/videos" bazel run //backend:video_test
+# synthetic clips. Not part of `just test`; has no model download of its own
+# (video_test never loads the vision model).
+test-video: build
+  ctest --preset {{ PRESET }} -L video -V
 
 # Quality pass: synthetic blur heuristics plus the real-photo corpus in
 # test/photos/ (blur/exposure classification + near-duplicate grouping). No
 # model download. Not part of `just test`.
-test-quality:
-  KUSTAVI_TEST_PHOTOS="$(pwd)/test/photos" bazel run //backend:quality_test
+test-quality: build
+  ctest --preset {{ PRESET }} -L quality -V
 
 test: test-backend test-llama test-gui
 
@@ -72,11 +77,9 @@ proto:
   PATH="$HOME/.pub-cache/bin:$PATH" protoc -I "$tmp" --dart_out="grpc:frontend/lib/src/generated" kustavi/service.proto && \
   rm -rf "$tmp"
 
+# CMake writes .build/<preset>/compile_commands.json while configuring.
 compile-commands:
-  bazel run :refresh_compile_commands
-
-compile-commands-all:
-  bazel run @hedron_compile_commands//:refresh_all > /dev/null 2>&1
+  cmake --preset {{ PRESET }}
 
 format:
     find ./backend -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) -print0 \
@@ -90,7 +93,7 @@ lint: compile-commands
     # (Apple clang vs. Homebrew clang) and corrupts parsing for every file.
     SDK="$(xcrun --show-sdk-path)"; \
     find ./backend -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) -print0 \
-      | xargs -0 -P1 {{ CLANG_TIDY }} -p=. --fix --fix-errors \
+      | xargs -0 -P1 {{ CLANG_TIDY }} -p=.build/{{ PRESET }} --fix --fix-errors \
           --extra-arg=-isysroot --extra-arg="$SDK"
 
 # Build a redistributable desktop package (zip) for the host OS. The build +
@@ -121,7 +124,7 @@ show-version:
   "$PY" tools/version.py show
 
 # Bump the global version and propagate it to the front end, back end,
-# MODULE.bazel and the Windows resource script. COMPONENT is major|minor|patch.
+# the CMake project and the Windows resource script. COMPONENT is major|minor|patch.
 # Pass `--tag` through to also commit + tag, e.g. `just version-bump patch --tag`.
 bump-version COMPONENT *ARGS:
   #!/usr/bin/env sh

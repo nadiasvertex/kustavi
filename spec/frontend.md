@@ -51,7 +51,7 @@ back-end process.
 Binary discovery, in order:
 
 1. `KUSTAVI_BACKEND_PATH` environment variable (absolute path) — used in
-   development to point at the Bazel output (`bazel-bin/backend/server`).
+   development to point at the CMake output (`.build/debug/backend/server`).
 2. `kustavi-backend` (or `kustavi-backend.exe`) in the same directory as
    the running GUI executable. On macOS this is
    `<App>.app/Contents/MacOS/kustavi-backend`.
