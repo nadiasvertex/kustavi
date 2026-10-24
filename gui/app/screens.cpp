@@ -1,5 +1,6 @@
 #include "app/screens.h"
 
+#include "app/commit_screens.h"
 #include "app/ui_kit.h"
 #include "core/format.h"
 
@@ -204,7 +205,8 @@ auto build_failed_screen(wizard_failed const &phase, shell_services const &servi
 }
 
 auto build_action_bar(wizard_phase const &phase, wizard_controller &controller,
-                      shell_services const &services) -> std::unique_ptr<basalt::widget> {
+                      shell_services const &services, basalt::button **copy)
+    -> std::unique_ptr<basalt::widget> {
   auto bar = ui::row(8);
   bar->set_main_alignment(basalt::alignment::end);
   bar->set_padding(basalt::length_insets::symmetric(basalt::fixed(content_padding),
@@ -216,10 +218,12 @@ auto build_action_bar(wizard_phase const &phase, wizard_controller &controller,
     bool any = false;
 
     auto add(std::string label, std::function<void()> action,
-             button_variant variant = button_variant::secondary, bool enabled = true) -> void {
+             button_variant variant = button_variant::secondary, bool enabled = true)
+        -> basalt::button & {
       auto &button = bar.add_child(ui::make_button(std::move(label), std::move(action), variant));
       button.set_enabled(enabled);
       any = true;
+      return button;
     }
   } add{*bar, controller, services};
 
@@ -268,8 +272,24 @@ auto build_action_bar(wizard_phase const &phase, wizard_controller &controller,
                   button_variant::primary);
         } else if constexpr (std::is_same_v<phase_type, wizard_batch_menu>) {
           add.add("Edit trips", [&controller] { controller.reopen_organize(); });
-          // Continue opens the final review of everything marked, which is not built yet.
-          add.add("Continue", [] {}, button_variant::primary, false);
+          add.add("Continue", [&controller] { controller.continue_from_batches(); },
+                  button_variant::primary);
+        } else if constexpr (std::is_same_v<phase_type, wizard_deletion_review>) {
+          add.add("Back", [&controller] { controller.back_from_deletion_review(); });
+          add.add("Continue", [&controller] { controller.continue_from_deletion_review(); },
+                  button_variant::primary);
+        } else if constexpr (std::is_same_v<phase_type, wizard_commit_summary>) {
+          add.add("Back", [&controller] { controller.back_from_commit_summary(); });
+          auto &button = add.add("Copy", [&controller] { controller.start_commit(); },
+                                 button_variant::primary, commit_summary_screen::can_copy(current));
+          if (copy != nullptr) {
+            *copy = &button;
+          }
+        } else if constexpr (std::is_same_v<phase_type, wizard_committing>) {
+          add.add("Cancel", [&controller] { controller.cancel_commit(); });
+        } else if constexpr (std::is_same_v<phase_type, wizard_done>) {
+          add.add("Start over", [&controller] { controller.reset_to_start(); });
+          add.add("Done", services.exit_app, button_variant::primary);
         } else if constexpr (std::is_same_v<phase_type, wizard_failed>) {
           add.add("Exit app", services.exit_app, button_variant::tertiary);
           add.add("Back", [&controller] { controller.go_back_from_error(); });

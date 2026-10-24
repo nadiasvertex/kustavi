@@ -3,7 +3,7 @@
 //   kustavi_gui_preview --screen NAME --out FILE.png [--photos DIR] [--raster] [--scale S]
 //
 // NAME is one of start, downloading, scanning, restore, confirm, none, failed, crash, log, trips,
-// trips-running, menu, quality, similar, junk-prep and junk-running. A scripted fake back end puts the controller in the state of that screen.
+// trips-running, menu, quality, similar, junk-prep, junk-running, review, summary, copying and done. A scripted fake back end puts the controller in the state of that screen.
 
 #include "app/wizard_shell.h"
 #include "testing/fake_kustavi_client.h"
@@ -260,6 +260,54 @@ auto main(int argc, char **argv) -> int {
       controller.set_model_ready(true);
       client->hold_streams = true;
       controller.start_batch_pass(wizard_step::junk);
+    }
+  } else if (screen == "review" || screen == "summary" || screen == "copying" ||
+             screen == "done") {
+    trips_events();
+    controller.select_folder("/Users/me/Pictures/Alps");
+    settle();
+    controller.continue_from_confirm();
+    settle();
+    controller.continue_from_trips();
+    for (int i = 20; i < 29; ++i) {
+      kustavi::QualityEvent event;
+      event.mutable_flag()->set_image_id(std::format("IMG_{:04}.jpg", i));
+      event.mutable_flag()->add_reasons(kustavi::BLURRY);
+      client->quality_events.push_back(event);
+    }
+    controller.select_batch("Alps · April 2026");
+    controller.start_batch_pass(wizard_step::quality);
+    settle();
+    controller.mark_image("IMG_0040.jpg");
+    controller.close_batch_review();
+    controller.continue_from_batches();
+    if (screen != "review") {
+      client->estimate_response.set_fits(true);
+      client->estimate_response.set_new_bytes(2'400'000'000);
+      client->estimate_response.set_total_bytes(2'400'000'000);
+      client->estimate_response.set_free_bytes_known(true);
+      client->estimate_response.set_free_bytes(180'000'000'000);
+      controller.continue_from_deletion_review();
+      settle();
+    }
+    if (screen == "copying" || screen == "done") {
+      kustavi::CommitEvent progress;
+      progress.mutable_progress()->set_done(31);
+      progress.mutable_progress()->set_total(61);
+      progress.mutable_progress()->set_current_name("2026/04/IMG_0031.jpg");
+      kustavi::CommitEvent complete;
+      complete.mutable_complete()->set_copied(61);
+      complete.mutable_complete()->set_already_present(4);
+      complete.mutable_complete()->add_errors("IMG_0050.jpg: permission denied");
+      client->commit_events = screen == "copying" ? std::vector{progress}
+                                                  : std::vector{progress, complete};
+      client->hold_streams = screen == "copying";
+      controller.start_commit();
+      if (screen == "copying") {
+        client->release_streams();
+        queue.drain();
+        client->hold_streams = true;
+      }
     }
   } else if (screen == "trips-running") {
     trips_events();

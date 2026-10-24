@@ -1,6 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "app/batch_menu_screen.h"
+#include "app/commit_screens.h"
 #include "app/trips_screen.h"
 #include "app/wizard_shell.h"
 #include "testing/fake_kustavi_client.h"
@@ -536,16 +537,6 @@ auto reach_menu_screen(harness &h) -> void {
   REQUIRE(std::holds_alternative<wizard_batch_menu>(h.controller.phase()));
 }
 
-// The text of the labels in the cells of every grid.
-auto cell_captions(harness &h) -> std::vector<std::string> {
-  std::vector<std::string> captions;
-  for (auto *const tile : h.find_all<basalt::image_tile>()) {
-    captions.push_back(tile->caption());
-  }
-  std::ranges::sort(captions);
-  return captions;
-}
-
 } // namespace
 
 TEST_CASE("the batch menu lists the batches and the passes of the selected one", "[app][batches]") {
@@ -560,7 +551,7 @@ TEST_CASE("the batch menu lists the batches and the passes of the selected one",
   CHECK_FALSE(h.has_text("Video"));
   CHECK(h.has_text("Not run"));
   CHECK(h.button("Edit trips") != nullptr);
-  CHECK_FALSE(h.button("Continue")->enabled());
+  CHECK(h.button("Continue")->enabled());
 
   h.button("Rome  ·  2 photos")->press();
   h.refresh();
@@ -768,4 +759,189 @@ TEST_CASE("the edit trips button returns to the trips review", "[app][batches]")
   h.button("Edit trips")->press();
   h.refresh();
   CHECK(std::holds_alternative<wizard_trips_review>(h.controller.phase()));
+}
+
+namespace {
+
+auto commit_progress(std::uint32_t done, std::uint32_t total) -> kustavi::CommitEvent {
+  kustavi::CommitEvent event;
+  event.mutable_progress()->set_done(done);
+  event.mutable_progress()->set_total(total);
+  event.mutable_progress()->set_current_name("b.jpg");
+  return event;
+}
+
+auto reach_final_review(harness &h) -> void {
+  reach_menu_screen(h);
+  h.client->quality_events = {quality_flag("c.jpg")};
+  h.controller.start_batch_pass(wizard_step::quality);
+  h.refresh();
+  h.button("Done")->press();
+  h.refresh();
+  h.button("Continue")->press();
+  h.refresh();
+  REQUIRE(std::holds_alternative<wizard_deletion_review>(h.controller.phase()));
+}
+
+auto reach_summary_screen(harness &h) -> void {
+  reach_final_review(h);
+  h.client->estimate_response.set_fits(true);
+  h.client->estimate_response.set_new_bytes(2'000'000);
+  h.client->estimate_response.set_total_bytes(2'000'000);
+  h.client->estimate_response.set_free_bytes_known(true);
+  h.client->estimate_response.set_free_bytes(40'000'000'000);
+  h.button("Continue")->press();
+  h.refresh();
+  REQUIRE(std::holds_alternative<wizard_commit_summary>(h.controller.phase()));
+}
+
+} // namespace
+
+TEST_CASE("the final review groups the marked photos and a click keeps one", "[app][commit]") {
+  harness h;
+  reach_final_review(h);
+  CHECK(h.has_text("1 photos marked for deletion"));
+  CHECK(h.has_text("Paris · 1"));
+  auto grids = h.find_all<basalt::grid_view>();
+  REQUIRE(grids.size() == 1);
+  h.click(*grids.front()->cell(0));
+  CHECK(h.has_text("Nothing is marked for deletion"));
+  CHECK(h.controller.intent().explicit_kept.contains("c.jpg"));
+  CHECK(h.find_all<basalt::grid_view>().empty());
+}
+
+TEST_CASE("the final review goes back to the menu", "[app][commit]") {
+  harness h;
+  reach_final_review(h);
+  h.button("Back")->press();
+  h.refresh();
+  CHECK(std::holds_alternative<wizard_batch_menu>(h.controller.phase()));
+}
+
+TEST_CASE("the summary shows the counts, the destination and the space", "[app][commit]") {
+  harness h;
+  reach_summary_screen(h);
+  CHECK(h.has_text("Keep 3 photos (0 B)"));
+  CHECK(h.has_text("1 photo will be left behind"));
+  auto fields = h.find_all<basalt::text_field>();
+  REQUIRE(fields.size() == 1);
+  CHECK(fields.front()->text() == "/photos-kept");
+  CHECK(h.has_text_containing("Needs"));
+  CHECK(h.has_text_containing("free"));
+  REQUIRE(h.button("Copy") != nullptr);
+  CHECK(h.button("Copy")->enabled());
+}
+
+TEST_CASE("the copy button waits for room at the destination", "[app][commit]") {
+  harness h;
+  reach_final_review(h);
+  h.client->estimate_response.set_fits(false);
+  h.button("Continue")->press();
+  h.refresh();
+  CHECK_FALSE(h.button("Copy")->enabled());
+  CHECK(h.has_text_containing("Not enough space"));
+}
+
+TEST_CASE("typing a destination updates the screen without rebuilding the field",
+          "[app][commit]") {
+  harness h;
+  reach_summary_screen(h);
+  auto *const field = h.find_all<basalt::text_field>().front();
+  h.client->estimate_response.set_fits(false);
+  field->set_text("/elsewhere");
+  // The field's own change handler runs for edits by the user. The test calls what it calls.
+  h.controller.set_commit_destination("/elsewhere");
+  h.refresh();
+  CHECK(h.find_all<basalt::text_field>().front() == field);
+  CHECK_FALSE(h.button("Copy")->enabled());
+  CHECK(h.has_text_containing("Not enough space"));
+  CHECK(h.client->last_estimate_request->destination() == "/elsewhere");
+}
+
+TEST_CASE("the folder button fills the destination from the chooser", "[app][commit]") {
+  harness h;
+  reach_summary_screen(h);
+  std::function<void(std::string)> answer;
+  h.services.choose_folder = [&answer](std::function<void(std::string)> chosen) {
+    answer = std::move(chosen);
+  };
+  // The shell holds its own copy of the services, so build a fresh screen with the chooser.
+  commit_summary_screen screen{h.controller, h.services.choose_folder};
+  auto const phase = std::get<wizard_commit_summary>(h.controller.phase());
+  auto root = screen.build(phase);
+  h.tree.root();
+  bool found = false;
+  std::vector<basalt::button *> buttons;
+  std::function<void(basalt::widget &)> walk = [&](basalt::widget &w) {
+    if (auto *const button = dynamic_cast<basalt::button *>(&w)) {
+      buttons.push_back(button);
+    }
+    for (std::size_t i = 0; i < w.child_count(); ++i) {
+      walk(w.child(i));
+    }
+  };
+  walk(*root);
+  for (auto *const button : buttons) {
+    if (button->label() == "Choose folder…") {
+      found = button->press();
+    }
+  }
+  REQUIRE(found);
+  REQUIRE(answer);
+  answer("/chosen");
+  CHECK(std::get<wizard_commit_summary>(h.controller.phase()).destination == "/chosen");
+}
+
+TEST_CASE("the estimate text", "[app][commit]") {
+  CHECK(commit_summary_screen::estimate_text(std::nullopt) == "Checking free space…");
+  kustavi::EstimateCommitResponse estimate;
+  estimate.set_fits(true);
+  estimate.set_new_bytes(1000);
+  estimate.set_total_bytes(3000);
+  estimate.set_already_present(2);
+  auto const text = commit_summary_screen::estimate_text(estimate);
+  CHECK(text.starts_with("Needs "));
+  CHECK(text.find("2 already there") != std::string::npos);
+  estimate.set_fits(false);
+  CHECK(commit_summary_screen::estimate_text(estimate).starts_with("Not enough space: "));
+}
+
+TEST_CASE("copying shows progress and then the result", "[app][commit]") {
+  harness h;
+  reach_summary_screen(h);
+  kustavi::CommitEvent complete;
+  complete.mutable_complete()->set_copied(3);
+  complete.mutable_complete()->set_skipped(1);
+  complete.mutable_complete()->add_errors("x.jpg: denied");
+  h.client->hold_streams = true;
+  h.client->commit_events = {commit_progress(2, 3), complete};
+  h.button("Copy")->press();
+  h.refresh();
+  CHECK(h.has_text("Copying photos"));
+  CHECK(h.button("Cancel") != nullptr);
+
+  h.client->release_streams();
+  h.refresh();
+  REQUIRE(std::holds_alternative<wizard_done>(h.controller.phase()));
+  CHECK(h.has_text("Copied 3 photos to /photos-kept"));
+  CHECK(h.has_text("Some files need your attention:"));
+  CHECK(h.has_text("x.jpg: denied"));
+  CHECK(h.has_text_containing("1 file was skipped"));
+  CHECK(h.button("Start over") != nullptr);
+  h.button("Done")->press();
+  CHECK(h.exits == 1);
+  h.button("Start over")->press();
+  h.refresh();
+  CHECK(std::holds_alternative<wizard_start>(h.controller.phase()));
+}
+
+TEST_CASE("cancelling the copy returns to the summary", "[app][commit]") {
+  harness h;
+  reach_summary_screen(h);
+  h.client->hold_streams = true;
+  h.button("Copy")->press();
+  h.refresh();
+  h.button("Cancel")->press();
+  h.refresh();
+  CHECK(std::holds_alternative<wizard_commit_summary>(h.controller.phase()));
 }

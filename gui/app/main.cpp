@@ -116,12 +116,17 @@ auto run(int, char **argv, bool raster) -> int {
 
   shell_services services;
   services.version = KUSTAVI_VERSION;
-  services.pick_folder = [&] {
-    platform.show_open_folder_dialog(*window, [&queue, &controller](auto chosen) {
+  services.choose_folder = [&](std::function<void(std::string)> chosen) {
+    platform.show_open_folder_dialog(*window, [&queue, chosen = std::move(chosen)](auto folders) {
       // The chooser may call back from another thread.
-      if (chosen && !chosen->empty()) {
-        queue.post([&controller, folder = chosen->front()] { controller.select_folder(folder); });
+      if (folders && !folders->empty()) {
+        queue.post([chosen, folder = folders->front()] { chosen(folder); });
       }
+    });
+  };
+  services.pick_folder = [&] {
+    services.choose_folder([&controller](std::string folder) {
+      controller.select_folder(std::move(folder));
     });
   };
   services.exit_app = begin_quit;

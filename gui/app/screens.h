@@ -19,6 +19,8 @@ struct shell_services {
   std::string version;
   // Opens the system's folder chooser. The chosen folder goes to the controller.
   std::function<void()> pick_folder;
+  // Opens the folder chooser for a destination and calls the function with the choice.
+  std::function<void(std::function<void(std::string)>)> choose_folder;
   // Begins an orderly exit.
   std::function<void()> exit_app;
   // Shows the output of the back-end process.
@@ -68,8 +70,10 @@ struct shell_services {
     -> std::unique_ptr<basalt::widget>;
 
 // The buttons along the bottom for the phase, or null when it has none.
+// `copy` receives the Copy button of the commit summary, whose state follows the destination.
 [[nodiscard]] auto build_action_bar(wizard_phase const &phase, wizard_controller &controller,
-                                    shell_services const &services)
+                                    shell_services const &services,
+                                    basalt::button **copy = nullptr)
     -> std::unique_ptr<basalt::widget>;
 
 // "Preparing vision model — 42% (1.2 / 2.9 GB)".

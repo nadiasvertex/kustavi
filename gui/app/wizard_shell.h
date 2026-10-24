@@ -2,6 +2,7 @@
 
 #include "app/image_grid.h"
 #include "app/image_loader.h"
+#include "app/commit_screens.h"
 #include "app/review_screen.h"
 #include "app/screens.h"
 #include "app/trips_screen.h"
@@ -67,6 +68,9 @@ private:
   review_view_state review_state_;
   std::unique_ptr<flagged_review_screen> flagged_;
   std::unique_ptr<similar_review_screen> similar_;
+  std::unique_ptr<deletion_review_screen> deletion_;
+  std::unique_ptr<commit_summary_screen> summary_;
+  basalt::button *copy_button_ = nullptr;
   float similar_scroll_ = 0;
   std::size_t built_phase_index_ = static_cast<std::size_t>(-1);
   std::uint64_t built_revision_ = 0;

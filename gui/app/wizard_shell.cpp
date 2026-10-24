@@ -26,6 +26,8 @@ wizard_shell::~wizard_shell() {
   trips_.reset();
   flagged_.reset();
   similar_.reset();
+  deletion_.reset();
+  summary_.reset();
 }
 
 auto wizard_shell::mark_dirty() -> void { dirty_ = true; }
@@ -36,6 +38,16 @@ auto wizard_shell::phase_changed() -> void {
   if (!dirty_ && review != nullptr && flagged_ && phase.index() == built_phase_index_ &&
       controller_.revision() == built_revision_) {
     flagged_->refresh_thresholds(*review);
+    return;
+  }
+  auto const *summary = std::get_if<wizard_commit_summary>(&phase);
+  if (!dirty_ && summary != nullptr && summary_ && phase.index() == built_phase_index_ &&
+      controller_.revision() == built_revision_) {
+    // The estimate or the destination changed. The field keeps its focus.
+    summary_->refresh(*summary);
+    if (copy_button_ != nullptr) {
+      copy_button_->set_enabled(commit_summary_screen::can_copy(*summary));
+    }
     return;
   }
   dirty_ = true;
@@ -57,6 +69,9 @@ auto wizard_shell::update() -> void {
   if (similar_) {
     similar_->update();
   }
+  if (deletion_) {
+    deletion_->update();
+  }
   if (busy_ != nullptr) {
     busy_->tick(0.02F);
   }
@@ -74,10 +89,16 @@ auto wizard_shell::rebuild() -> void {
   if (similar_) {
     similar_->remember_scroll();
   }
+  if (deletion_) {
+    deletion_->remember_scroll();
+  }
   grid_.reset();
   trips_.reset();
   flagged_.reset();
   similar_.reset();
+  deletion_.reset();
+  summary_.reset();
+  copy_button_ = nullptr;
   auto const phase_index = controller_.phase().index();
   if (phase_index != built_phase_index_) {
     // A review of another kind starts at the top, with its panels as they were first.
@@ -96,7 +117,7 @@ auto wizard_shell::rebuild() -> void {
   auto const &phase = controller_.phase();
   ui::rigid(*frame_, build_step_indicator(stage_index_of(phase)));
   ui::fill(*frame_, build_body());
-  if (auto bar = build_action_bar(phase, controller_, services_)) {
+  if (auto bar = build_action_bar(phase, controller_, services_, &copy_button_)) {
     ui::rigid(*frame_, std::move(bar));
   }
 }
@@ -186,6 +207,24 @@ auto wizard_shell::build_body() -> std::unique_ptr<basalt::widget> {
     }
     auto operator()(wizard_batch_menu const &menu) const -> std::unique_ptr<basalt::widget> {
       return build_batch_menu_screen(menu, shell.controller_);
+    }
+    auto operator()(wizard_deletion_review const &) const -> std::unique_ptr<basalt::widget> {
+      shell.deletion_ = std::make_unique<deletion_review_screen>(
+          shell.controller_, shell.loader_, shell.images_, shell.review_state_.keep_scroll);
+      return shell.deletion_->build();
+    }
+    auto operator()(wizard_commit_summary const &summary) const
+        -> std::unique_ptr<basalt::widget> {
+      shell.summary_ = std::make_unique<commit_summary_screen>(
+          shell.controller_, shell.services_.choose_folder);
+      return shell.summary_->build(summary);
+    }
+    auto operator()(wizard_committing const &committing) const
+        -> std::unique_ptr<basalt::widget> {
+      return build_committing_screen(committing);
+    }
+    auto operator()(wizard_done const &done) const -> std::unique_ptr<basalt::widget> {
+      return build_done_screen(done);
     }
     auto operator()(wizard_failed const &failed) const -> std::unique_ptr<basalt::widget> {
       return build_failed_screen(failed, shell.services_);
