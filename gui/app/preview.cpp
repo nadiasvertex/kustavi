@@ -2,8 +2,8 @@
 //
 //   kustavi_gui_preview --screen NAME --out FILE.png [--photos DIR] [--raster] [--scale S]
 //
-// NAME is one of start, downloading, scanning, restore, confirm, none, failed, crash and log. A
-// scripted fake back end puts the controller in the state of that screen.
+// NAME is one of start, downloading, scanning, restore, confirm, none, failed, crash, log, trips and
+// trips-running. A scripted fake back end puts the controller in the state of that screen.
 
 #include "app/wizard_shell.h"
 #include "testing/fake_kustavi_client.h"
@@ -139,6 +139,51 @@ auto main(int argc, char **argv) -> int {
     client->scan_events.push_back(complete);
   };
 
+  // Sixty photos in three trips (the second has two legs) and ten in none.
+  auto const trips_events = [&] {
+    constexpr std::int64_t day = 86'400'000;
+    constexpr std::int64_t start = 1'775'000'000'000;
+    for (std::size_t i = 0; i < 70 && !photos.empty(); ++i) {
+      kustavi::ScanEvent event;
+      auto *meta = event.mutable_image();
+      meta->set_id(std::format("IMG_{:04}.jpg", i));
+      meta->set_name(std::format("IMG_{:04}.jpg", i));
+      meta->set_thumbnail_path(photos[i % photos.size()].string());
+      meta->set_taken_unix_ms(start + static_cast<std::int64_t>(i) * day / 4);
+      client->scan_events.push_back(event);
+    }
+    kustavi::ScanEvent complete;
+    complete.mutable_complete()->set_images(70);
+    client->scan_events.push_back(complete);
+    auto const make_trip = [&](std::uint32_t id, std::size_t from, std::size_t to, char const *folder,
+                               char const *place) {
+      kustavi::TripsEvent event;
+      auto *trip = event.mutable_trip();
+      trip->set_id(id);
+      trip->set_start_unix_ms(start + static_cast<std::int64_t>(from) * day / 4);
+      trip->set_end_unix_ms(start + static_cast<std::int64_t>(to) * day / 4);
+      trip->set_folder(folder);
+      trip->set_folder_slug(folder);
+      trip->set_place_name(place);
+      for (std::size_t i = from; i < to; ++i) {
+        trip->add_image_ids(std::format("IMG_{:04}.jpg", i));
+      }
+      return event;
+    };
+    auto rome = make_trip(1, 0, 20, "Rome, Italy · April 2026", "Italy");
+    auto alps = make_trip(2, 20, 60, "Alps · April 2026", "Switzerland");
+    for (auto [leg_from, leg_to, name] : {std::tuple{20, 38, "Zermatt, Switzerland"},
+                                          std::tuple{38, 60, "Interlaken, Switzerland"}}) {
+      auto *leg = alps.mutable_trip()->add_legs();
+      leg->set_place_name(name);
+      leg->set_slug(name);
+      for (int i = leg_from; i < leg_to; ++i) {
+        leg->add_image_ids(std::format("IMG_{:04}.jpg", i));
+      }
+    }
+    client->trips_events = {rome, alps};
+  };
+
   auto const &screen = config->screen;
   if (screen == "downloading") {
     kustavi::ModelEvent progress;
@@ -163,6 +208,17 @@ auto main(int argc, char **argv) -> int {
   } else if (screen == "failed") {
     client->stream_error = backend_rpc{grpc::StatusCode::INTERNAL, "The disk is full."};
     controller.select_folder("/Users/me/Pictures/Italy 2024");
+  } else if (screen == "trips") {
+    trips_events();
+    controller.select_folder("/Users/me/Pictures/Alps");
+    settle();
+    controller.continue_from_confirm();
+  } else if (screen == "trips-running") {
+    trips_events();
+    controller.select_folder("/Users/me/Pictures/Alps");
+    settle();
+    client->hold_streams = true;
+    controller.continue_from_confirm();
   } else if (screen != "start" && screen != "crash" && screen != "log") {
     std::println(stderr, "Unknown screen: {}", screen);
     return EXIT_FAILURE;

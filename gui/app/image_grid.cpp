@@ -1,6 +1,7 @@
 #include "app/image_grid.h"
 
 #include <algorithm>
+#include <iterator>
 
 namespace kustavi::gui {
 
@@ -11,8 +12,18 @@ constexpr std::size_t kept_images = 1'500;
 
 } // namespace
 
-image_grid::image_grid(std::vector<image_info> images, image_loader &loader)
-    : images_(std::move(images)), loader_(loader) {}
+image_grid::image_grid(std::vector<image_group> groups, image_loader &loader,
+                       decoded_image_cache &cache)
+    : loader_(loader), decoded_(cache) {
+  for (auto &group : groups) {
+    sections_.push_back({group.images.size(), group.header});
+    std::ranges::move(group.images, std::back_inserter(images_));
+  }
+}
+
+image_grid::image_grid(std::vector<image_info> images, image_loader &loader,
+                       decoded_image_cache &cache)
+    : image_grid(std::vector<image_group>{{std::move(images), false}}, loader, cache) {}
 
 auto image_grid::make_widget() -> std::unique_ptr<basalt::grid_view> {
   auto view = std::make_unique<basalt::grid_view>("Photos");
@@ -23,7 +34,18 @@ auto image_grid::make_widget() -> std::unique_ptr<basalt::grid_view> {
     return make_cell(index, std::move(recycled));
   });
   view->set_on_visible_change([this](basalt::index_range) { request_images(); });
-  view->set_item_count(images_.size());
+  view->set_header_height(basalt::fixed(header_height));
+  if (header_factory_) {
+    view->set_header_factory(header_factory_);
+  }
+  if (on_activate_) {
+    view->set_on_activate([this](std::size_t item) {
+      if (item < images_.size()) {
+        on_activate_(images_[item]);
+      }
+    });
+  }
+  view->set_sections(sections_);
   return view;
 }
 
@@ -39,6 +61,10 @@ auto image_grid::make_cell(std::size_t index, std::unique_ptr<basalt::widget> re
   tile->set_caption(info.name);
   auto const known = decoded_.find(info.id);
   tile->set_image(known != decoded_.end() ? known->second : nullptr);
+  tile->set_selected(false);
+  if (decorator_) {
+    decorator_(*tile, info);
+  }
   return tile;
 }
 
@@ -84,6 +110,12 @@ auto image_grid::apply_ready_images() -> void {
     decoded_[key] = std::move(image);
   }
   trim_images();
+}
+
+auto image_grid::reload() -> void {
+  if (view_ != nullptr) {
+    view_->reload();
+  }
 }
 
 auto image_grid::trim_images() -> void {

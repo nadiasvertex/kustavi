@@ -22,6 +22,7 @@ add_library(kustavi_gui_app STATIC
   app/image_grid.cpp
   app/image_loader.cpp
   app/screens.cpp
+  app/trips_screen.cpp
   app/wizard_shell.cpp)
 target_include_directories(kustavi_gui_app PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(kustavi_gui_app PUBLIC kustavi::gui_core basalt::basalt magma::magma

@@ -3,6 +3,7 @@
 #include "app/image_grid.h"
 #include "app/image_loader.h"
 #include "app/screens.h"
+#include "app/trips_screen.h"
 #include "core/model_status.h"
 #include "core/wizard_controller.h"
 
@@ -55,7 +56,11 @@ private:
   basalt::box *frame_ = nullptr;
   basalt::progress_bar *busy_ = nullptr;
   // Declared after the widgets that it points into: it goes first on destruction.
+  decoded_image_cache images_;
+  trips_view_state trips_state_;
+  std::unique_ptr<trips_screen> trips_;
   std::unique_ptr<image_grid> grid_;
+  bool was_trips_review_ = false;
   bool dirty_ = true;
 };
 

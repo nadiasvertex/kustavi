@@ -8,6 +8,7 @@
 #include "basalt/basalt.h"
 
 #include <functional>
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -37,6 +38,11 @@ struct shell_services {
 
 // S1. `busy` receives the indeterminate bar, which the shell ticks every frame.
 [[nodiscard]] auto build_scanning_screen(wizard_scanning const &phase, basalt::progress_bar *&busy)
+    -> std::unique_ptr<basalt::widget>;
+
+// A pass that runs: a title, a bar that fills as `done` approaches `total`, and the counts.
+[[nodiscard]] auto build_progress_screen(std::string title, std::uint32_t done, std::uint32_t total,
+                                         basalt::progress_bar *&busy)
     -> std::unique_ptr<basalt::widget>;
 
 // S0-B.

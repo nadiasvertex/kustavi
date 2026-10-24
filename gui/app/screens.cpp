@@ -88,6 +88,22 @@ auto build_scanning_screen(wizard_scanning const &phase, basalt::progress_bar *&
   return screen;
 }
 
+auto build_progress_screen(std::string title, std::uint32_t done, std::uint32_t total,
+                           basalt::progress_bar *&busy) -> std::unique_ptr<basalt::widget> {
+  auto screen = ui::centered(12);
+  screen->add_child(ui::text(std::move(title), text_role::heading_small));
+  if (total > 0) {
+    screen->add_child(std::make_unique<basalt::progress_bar>(
+        static_cast<float>(done) / static_cast<float>(total)));
+    screen->add_child(ui::text(std::format("{} of {}", format_int(done), format_int(total))));
+    busy = nullptr;
+  } else {
+    // Without a total the bar moves along its track, and the shell ticks it every frame.
+    busy = &screen->add_child(std::make_unique<basalt::progress_bar>());
+  }
+  return screen;
+}
+
 auto build_session_restore_screen(wizard_session_restore const &phase,
                                   wizard_controller &controller)
     -> std::unique_ptr<basalt::widget> {
@@ -178,7 +194,13 @@ auto build_action_bar(wizard_phase const &phase, wizard_controller &controller,
                   button_variant::primary);
         } else if constexpr (std::is_same_v<phase_type, wizard_confirm_folder>) {
           add.add("Back", [&controller] { controller.back_from_confirm(); });
-          // Continue starts the trips pass, which the controller does not have yet.
+          add.add("Continue", [&controller] { controller.continue_from_confirm(); },
+                  button_variant::primary);
+        } else if constexpr (std::is_same_v<phase_type, wizard_trips_running>) {
+          add.add("Cancel", [&controller] { controller.cancel_trips(); });
+        } else if constexpr (std::is_same_v<phase_type, wizard_trips_review>) {
+          add.add("Back", [&controller] { controller.back_from_trips(); });
+          // Continue opens the batch menu, which is not built yet.
           add.add("Continue", [] {}, button_variant::primary, false);
         } else if constexpr (std::is_same_v<phase_type, wizard_failed>) {
           add.add("Exit app", services.exit_app, button_variant::tertiary);

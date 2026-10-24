@@ -17,8 +17,9 @@ wizard_shell::wizard_shell(basalt::widget_tree &tree, wizard_controller &control
 }
 
 wizard_shell::~wizard_shell() {
-  // The grid refers to a widget in the tree, and its cells refer to the grid.
+  // The grids refer to widgets in the tree, and their cells refer to the grids.
   grid_.reset();
+  trips_.reset();
 }
 
 auto wizard_shell::mark_dirty() -> void { dirty_ = true; }
@@ -30,6 +31,9 @@ auto wizard_shell::update() -> void {
   if (grid_) {
     grid_->apply_ready_images();
   }
+  if (trips_) {
+    trips_->update();
+  }
   if (busy_ != nullptr) {
     busy_->tick(0.02F);
   }
@@ -37,8 +41,17 @@ auto wizard_shell::update() -> void {
 
 auto wizard_shell::rebuild() -> void {
   dirty_ = false;
-  // The grid goes before the widgets that show it.
+  // The grids go before the widgets that show them.
+  if (trips_) {
+    trips_->remember_scroll();
+  }
   grid_.reset();
+  trips_.reset();
+  auto const in_review = std::holds_alternative<wizard_trips_review>(controller_.phase());
+  if (in_review && !was_trips_review_) {
+    trips_state_ = {};
+  }
+  was_trips_review_ = in_review;
   busy_ = nullptr;
   frame_->clear_children();
   auto const &phase = controller_.phase();
@@ -70,11 +83,19 @@ auto wizard_shell::build_body() -> std::unique_ptr<basalt::widget> {
       for (auto const &id : shell.controller_.image_ids()) {
         images.push_back(*shell.controller_.image(id));
       }
-      shell.grid_ = std::make_unique<image_grid>(std::move(images), shell.loader_);
+      shell.grid_ = std::make_unique<image_grid>(std::move(images), shell.loader_, shell.images_);
       return build_confirm_screen(confirm, *shell.grid_);
     }
     auto operator()(wizard_no_images const &none) const -> std::unique_ptr<basalt::widget> {
       return build_no_images_screen(none);
+    }
+    auto operator()(wizard_trips_running const &running) const -> std::unique_ptr<basalt::widget> {
+      return build_progress_screen("Grouping by trip", running.done, running.total, shell.busy_);
+    }
+    auto operator()(wizard_trips_review const &review) const -> std::unique_ptr<basalt::widget> {
+      shell.trips_ = std::make_unique<trips_screen>(shell.controller_, shell.trips_state_,
+                                                    shell.loader_, shell.images_);
+      return shell.trips_->build(review);
     }
     auto operator()(wizard_failed const &failed) const -> std::unique_ptr<basalt::widget> {
       return build_failed_screen(failed, shell.services_);

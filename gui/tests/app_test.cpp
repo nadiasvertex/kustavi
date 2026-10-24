@@ -1,8 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/trips_screen.h"
 #include "app/wizard_shell.h"
 #include "testing/fake_kustavi_client.h"
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <vector>
@@ -34,7 +36,7 @@ struct harness {
     fonts.add_system_fonts();
     shaper = std::make_unique<basalt::text::text_shaper>(fonts);
     tree.set_text_shaper(shaper.get());
-    tree.set_viewport({1000, 700});
+    tree.set_viewport({1000, 1400});
     controller.set_client(client);
     services.version = "1.2.3";
     services.exit_app = [this] { ++exits; };
@@ -43,6 +45,24 @@ struct harness {
     shell = std::make_unique<wizard_shell>(tree, controller, model, loader, services);
     controller.on_change([this] { shell->mark_dirty(); });
     model.on_change([this](model_prep_state const &) { shell->mark_dirty(); });
+    router = std::make_unique<basalt::event_router>(tree);
+    refresh();
+  }
+
+  auto click(basalt::widget &target) -> void {
+    auto const at = target.bounds_in_root().center();
+    router->dispatch(basalt::pointer_event{.action = basalt::pointer_action::down,
+                                           .position = at,
+                                           .button = basalt::pointer_button::primary,
+                                           .buttons = basalt::pointer_button::primary});
+    router->dispatch(basalt::pointer_event{.action = basalt::pointer_action::up,
+                                           .position = at,
+                                           .button = basalt::pointer_button::primary});
+    refresh();
+  }
+
+  auto press_key(basalt::key code) -> void {
+    router->dispatch(basalt::key_event{.code = code, .pressed = true});
     refresh();
   }
 
@@ -111,6 +131,7 @@ struct harness {
   image_loader loader;
   shell_services services;
   std::unique_ptr<wizard_shell> shell;
+  std::unique_ptr<basalt::event_router> router;
   int exits = 0;
   int log_requests = 0;
   int picks = 0;
@@ -213,7 +234,7 @@ TEST_CASE("the confirm screen counts the images and offers back and continue", "
   CHECK(h.has_text("2 images in /photos"));
   CHECK(h.find_all<basalt::grid_view>().size() == 1);
   REQUIRE(h.button("Continue") != nullptr);
-  CHECK_FALSE(h.button("Continue")->enabled());
+  CHECK(h.button("Continue")->enabled());
 
   h.button("Back")->press();
   h.refresh();
@@ -315,4 +336,185 @@ TEST_CASE("the log dialog shows the last lines and closes", "[app]") {
   REQUIRE(h.shell->overlays().overlay_count() == 1);
   h.find_all<basalt::dialog>().front()->choose(0);
   CHECK(h.shell->overlays().overlay_count() == 0);
+}
+
+namespace {
+
+auto trip_event(std::uint32_t id, std::int64_t start_ms, std::vector<std::string> const &ids,
+                std::string const &folder) -> kustavi::TripsEvent {
+  kustavi::TripsEvent event;
+  auto *trip = event.mutable_trip();
+  trip->set_id(id);
+  trip->set_start_unix_ms(start_ms);
+  trip->set_end_unix_ms(start_ms + 1000);
+  for (auto const &image : ids) {
+    trip->add_image_ids(image);
+  }
+  trip->set_folder(folder);
+  trip->set_folder_slug(folder);
+  return event;
+}
+
+// Four photos: a and b in "Rome", c in "Paris", and d in no trip. Ends on the trips review.
+auto reach_trips(harness &h) -> void {
+  h.client->scan_events = {scan_image("a.jpg"), scan_image("b.jpg"), scan_image("c.jpg"),
+                           scan_image("d.jpg"), scan_complete(4)};
+  h.client->trips_events = {trip_event(1, 1000, {"a.jpg", "b.jpg"}, "Rome"),
+                            trip_event(2, 2000, {"c.jpg"}, "Paris")};
+  h.controller.select_folder("/photos");
+  h.refresh();
+  h.button("Continue")->press();
+  h.refresh();
+  REQUIRE(std::holds_alternative<wizard_trips_review>(h.controller.phase()));
+}
+
+} // namespace
+
+TEST_CASE("continue on the confirm screen leads to the trips review", "[app][trips]") {
+  harness h;
+  reach_trips(h);
+  CHECK(h.has_text("2 folders · 2 trips · 0 marked · 1 unassigned"));
+  CHECK(h.has_text("Paris"));
+  CHECK(h.has_text("Rome"));
+  CHECK(h.has_text("Unassigned · 1 photos"));
+  CHECK(h.find_all<basalt::grid_view>().size() == 1);
+  CHECK(h.button("Back") != nullptr);
+  CHECK_FALSE(h.button("Continue")->enabled());
+}
+
+TEST_CASE("the trips pass shows a progress screen that can be cancelled", "[app][trips]") {
+  harness h;
+  h.client->scan_events = {scan_image("a.jpg"), scan_complete(1)};
+  h.controller.select_folder("/photos");
+  h.refresh();
+  h.client->hold_streams = true;
+  h.button("Continue")->press();
+  h.refresh();
+  CHECK(h.has_text("Grouping by trip"));
+  h.button("Cancel")->press();
+  h.refresh();
+  CHECK(std::holds_alternative<wizard_confirm_folder>(h.controller.phase()));
+}
+
+TEST_CASE("a clustering with no trips and no loose photos says so", "[app][trips]") {
+  harness h;
+  h.client->scan_events = {scan_image("a.jpg"), scan_complete(1)};
+  h.client->trips_events = {trip_event(1, 1000, {"a.jpg"}, "Rome")};
+  h.controller.select_folder("/photos");
+  h.refresh();
+  h.button("Continue")->press();
+  h.refresh();
+  h.controller.set_deleted_ids({"a.jpg"});
+  h.refresh();
+  CHECK(h.has_text("No trips found — photos may lack GPS or timestamp data"));
+}
+
+TEST_CASE("the settings open on demand and re-cluster with the slider values", "[app][trips]") {
+  harness h;
+  reach_trips(h);
+  CHECK(h.find_all<basalt::slider>().empty());
+  h.button("Clustering settings")->press();
+  h.refresh();
+  auto sliders = h.find_all<basalt::slider>();
+  REQUIRE(sliders.size() == 4);
+  CHECK(sliders.front()->value() == 48);
+  CHECK(sliders.front()->label() == "Max time gap");
+
+  h.tree.focus().set_focus(*sliders.front());
+  h.press_key(basalt::key::right);
+  CHECK(sliders.front()->value() == 49);
+  h.button("Re-cluster")->press();
+  h.refresh();
+  CHECK(h.client->last_trips_request->max_gap_hours() == 49);
+  CHECK(h.controller.tunables().trip_gap_hours == 49);
+  REQUIRE(std::holds_alternative<wizard_trips_review>(h.controller.phase()));
+}
+
+TEST_CASE("the folders toggle is saved with the edits", "[app][trips]") {
+  harness h;
+  reach_trips(h);
+  h.button("Clustering settings")->press();
+  h.refresh();
+  auto toggles = h.find_all<basalt::toggle>();
+  REQUIRE(toggles.size() == 1);
+  CHECK(toggles.front()->on());
+  h.click(*toggles.front());
+  CHECK_FALSE(h.controller.organize_into_folders());
+}
+
+TEST_CASE("selected photos move to a trip from the menu", "[app][trips]") {
+  harness h;
+  reach_trips(h);
+  CHECK(h.button("Move to trip ▸") == nullptr);
+  h.button("Select photos")->press();
+  h.refresh();
+  CHECK(h.button("Cancel selection") != nullptr);
+
+  auto grids = h.find_all<basalt::grid_view>();
+  REQUIRE(grids.size() == 1);
+  // The photos are in the order of the sections: Paris (c), Rome (a, b), then the unassigned d.
+  auto const last = grids.front()->item_count() - 1;
+  REQUIRE(grids.front()->cell(last) != nullptr);
+  h.click(*grids.front()->cell(last));
+  CHECK(h.has_text("1 selected"));
+  auto *const move = h.button("Move to trip ▸");
+  REQUIRE(move != nullptr);
+  h.click(*move);
+
+  auto items = h.find_all<basalt::menu_item>();
+  REQUIRE_FALSE(items.empty());
+  CHECK(items.front()->label() == "New trip");
+  auto const rome = std::ranges::find_if(items, [](auto *item) {
+    return item->item_id() == "trip:1";
+  });
+  REQUIRE(rome != items.end());
+  CHECK((*rome)->activate());
+  h.refresh();
+
+  auto const &review = std::get<wizard_trips_review>(h.controller.phase());
+  CHECK(review.unassigned_ids.empty());
+  CHECK(h.button("Select photos") != nullptr);
+  CHECK_FALSE(h.has_text_containing("selected"));
+}
+
+TEST_CASE("cancelling the selection clears it", "[app][trips]") {
+  harness h;
+  reach_trips(h);
+  h.button("Select photos")->press();
+  h.refresh();
+  auto grids = h.find_all<basalt::grid_view>();
+  h.click(*grids.front()->cell(0));
+  CHECK(h.has_text("1 selected"));
+  h.button("Cancel selection")->press();
+  h.refresh();
+  CHECK_FALSE(h.has_text_containing("selected"));
+  CHECK(h.button("Select photos") != nullptr);
+}
+
+TEST_CASE("a folder is renamed in place", "[app][trips]") {
+  harness h;
+  reach_trips(h);
+  REQUIRE(h.button("Rename") != nullptr);
+  h.button("Rename")->press();
+  h.refresh();
+  auto fields = h.find_all<basalt::text_field>();
+  REQUIRE(fields.size() == 1);
+  CHECK(fields.front()->text() == "Paris");
+  fields.front()->set_text("France");
+  h.tree.focus().set_focus(*fields.front());
+  h.press_key(basalt::key::enter);
+  h.refresh();
+  auto const &review = std::get<wizard_trips_review>(h.controller.phase());
+  CHECK(std::ranges::any_of(review.folders, [](auto const &f) { return f.name == "France"; }));
+  CHECK(h.find_all<basalt::text_field>().empty());
+}
+
+TEST_CASE("the summary counts folders, trips, marks and loose photos", "[app][trips]") {
+  wizard_trips_review review;
+  CHECK(trips_screen::summary_text(review) == "0 folders · 0 trips · 0 marked");
+  review.trips.resize(1);
+  review.folders.resize(1);
+  review.marked_count = 3;
+  review.unassigned_ids = {"a", "b"};
+  CHECK(trips_screen::summary_text(review) == "1 folder · 1 trip · 3 marked · 2 unassigned");
 }
