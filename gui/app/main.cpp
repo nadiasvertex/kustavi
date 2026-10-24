@@ -135,8 +135,13 @@ auto run(int, char **argv, bool raster) -> int {
     shell.mark_dirty();
     scheduler.request_frame();
   };
-  controller.on_change(dirty);
-  model.on_change([&dirty](model_prep_state const &) { dirty(); });
+  controller.on_change([&] { shell.phase_changed(); scheduler.request_frame(); });
+  model.on_change([&](model_prep_state const &state) {
+    // The junk pass starts when the model is ready.
+    controller.set_model_ready(std::holds_alternative<model_prep_ready>(state));
+    dirty();
+  });
+  controller.set_cancel_model_download([&model] { model.cancel_download(); });
 
   auto const retry_backend = [&] {
     backend.restart();

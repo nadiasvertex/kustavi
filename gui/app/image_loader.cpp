@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <cstring>
+#include <iterator>
+#include <ranges>
 #include <utility>
 #include <vector>
 
@@ -50,12 +52,19 @@ image_loader::~image_loader() {
   wake_.notify_all();
 }
 
-auto image_loader::request(std::vector<image_request> wanted) -> void {
+auto image_loader::request(void const *owner, std::vector<image_request> wanted) -> void {
   {
     std::scoped_lock lock{mutex_};
-    queue_ = std::move(wanted);
-    // Take the first request from the front, so the order is the caller's.
-    std::ranges::reverse(queue_);
+    std::erase_if(queue_, [owner](queued const &entry) { return entry.owner == owner; });
+    // The next to decode is at the back, so the first of `wanted` goes in last. The new request
+    // goes in front of the others, which makes the grid that was touched last the first served.
+    std::vector<queued> fresh;
+    fresh.reserve(wanted.size());
+    for (auto &item : wanted | std::views::reverse) {
+      fresh.push_back({owner, std::move(item)});
+    }
+    queue_.insert(queue_.end(), std::make_move_iterator(fresh.begin()),
+                  std::make_move_iterator(fresh.end()));
   }
   wake_.notify_all();
 }
@@ -73,7 +82,7 @@ auto image_loader::work(std::stop_token stop) -> void {
       if (!wake_.wait(lock, stop, [this] { return !queue_.empty(); })) {
         return;
       }
-      next = std::move(queue_.back());
+      next = std::move(queue_.back().request);
       queue_.pop_back();
     }
     auto image = decode(next.path, edge_);

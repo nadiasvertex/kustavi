@@ -18,9 +18,11 @@ kustavi_opencv_includes(kustavi_gui_spike)
 
 # The application: screens built from the core's state, and the program that runs them.
 add_library(kustavi_gui_app STATIC
+  app/batch_menu_screen.cpp
   app/executable_path.cpp
   app/image_grid.cpp
   app/image_loader.cpp
+  app/review_screen.cpp
   app/screens.cpp
   app/trips_screen.cpp
   app/wizard_shell.cpp)

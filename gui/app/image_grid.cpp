@@ -87,7 +87,7 @@ auto image_grid::request_images() -> void {
   add(visible.first, visible.last);
   add(realized.first, visible.first);
   add(visible.last, realized.last);
-  loader_.request(std::move(wanted));
+  loader_.request(this, std::move(wanted));
 }
 
 auto image_grid::apply_ready_images() -> void {

@@ -2,8 +2,8 @@
 //
 //   kustavi_gui_preview --screen NAME --out FILE.png [--photos DIR] [--raster] [--scale S]
 //
-// NAME is one of start, downloading, scanning, restore, confirm, none, failed, crash, log, trips and
-// trips-running. A scripted fake back end puts the controller in the state of that screen.
+// NAME is one of start, downloading, scanning, restore, confirm, none, failed, crash, log, trips,
+// trips-running, menu, quality, similar, junk-prep and junk-running. A scripted fake back end puts the controller in the state of that screen.
 
 #include "app/wizard_shell.h"
 #include "testing/fake_kustavi_client.h"
@@ -116,7 +116,7 @@ auto main(int argc, char **argv) -> int {
   shell_services services;
   services.version = "0.0.0";
   wizard_shell shell{tree, controller, model, loader, services};
-  controller.on_change([&shell] { shell.mark_dirty(); });
+  controller.on_change([&shell] { shell.phase_changed(); });
   model.on_change([&shell](model_prep_state const &) { shell.mark_dirty(); });
 
   auto const settle = [&] {
@@ -213,6 +213,54 @@ auto main(int argc, char **argv) -> int {
     controller.select_folder("/Users/me/Pictures/Alps");
     settle();
     controller.continue_from_confirm();
+  } else if (screen == "menu" || screen == "quality" || screen == "similar" ||
+             screen == "junk-prep" || screen == "junk-running") {
+    trips_events();
+    controller.select_folder("/Users/me/Pictures/Alps");
+    settle();
+    controller.continue_from_confirm();
+    settle();
+    controller.continue_from_trips();
+    settle();
+    controller.select_batch("Alps · April 2026");
+    if (screen == "quality") {
+      for (int i = 20; i < 34; ++i) {
+        kustavi::QualityEvent event;
+        event.mutable_flag()->set_image_id(std::format("IMG_{:04}.jpg", i));
+        event.mutable_flag()->add_reasons(i % 3 == 0 ? kustavi::UNDER_EXPOSED : kustavi::BLURRY);
+        client->quality_events.push_back(event);
+      }
+      controller.start_batch_pass(wizard_step::quality);
+      settle();
+      controller.keep_image("IMG_0021.jpg");
+      controller.keep_image("IMG_0024.jpg");
+    } else if (screen == "similar") {
+      for (std::uint32_t group = 0; group < 3; ++group) {
+        kustavi::SimilarEvent event;
+        event.mutable_group()->set_id(group);
+        for (std::uint32_t i = 0; i < 3; ++i) {
+          event.mutable_group()->add_image_ids(std::format("IMG_{:04}.jpg", 20 + group * 3 + i));
+        }
+        event.mutable_group()->set_recommended_keep_id(
+            std::format("IMG_{:04}.jpg", 20 + group * 3));
+        client->similar_events.push_back(event);
+      }
+      controller.start_batch_pass(wizard_step::duplicates);
+      settle();
+      controller.set_group_keeper(1, "IMG_0024.jpg");
+    } else if (screen == "junk-prep") {
+      controller.start_batch_pass(wizard_step::junk);
+      kustavi::ModelEvent progress;
+      progress.mutable_progress()->set_done_bytes(1'200'000'000);
+      progress.mutable_progress()->set_total_bytes(2'900'000'000);
+      progress.mutable_progress()->set_speed_bps(18e6);
+      client->model_events = {progress};
+      model.start(client);
+    } else if (screen == "junk-running") {
+      controller.set_model_ready(true);
+      client->hold_streams = true;
+      controller.start_batch_pass(wizard_step::junk);
+    }
   } else if (screen == "trips-running") {
     trips_events();
     controller.select_folder("/Users/me/Pictures/Alps");

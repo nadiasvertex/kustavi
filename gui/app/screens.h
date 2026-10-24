@@ -41,8 +41,14 @@ struct shell_services {
     -> std::unique_ptr<basalt::widget>;
 
 // A pass that runs: a title, a bar that fills as `done` approaches `total`, and the counts.
+// A caption under the counts is optional.
 [[nodiscard]] auto build_progress_screen(std::string title, std::uint32_t done, std::uint32_t total,
-                                         basalt::progress_bar *&busy)
+                                         basalt::progress_bar *&busy, std::string caption = {})
+    -> std::unique_ptr<basalt::widget>;
+
+// S5: the vision model download that the junk pass waits for, or why it failed.
+[[nodiscard]] auto build_junk_prep_screen(model_prep_state const &model,
+                                          shell_services const &services)
     -> std::unique_ptr<basalt::widget>;
 
 // S0-B.

@@ -89,7 +89,8 @@ auto build_scanning_screen(wizard_scanning const &phase, basalt::progress_bar *&
 }
 
 auto build_progress_screen(std::string title, std::uint32_t done, std::uint32_t total,
-                           basalt::progress_bar *&busy) -> std::unique_ptr<basalt::widget> {
+                           basalt::progress_bar *&busy, std::string caption)
+    -> std::unique_ptr<basalt::widget> {
   auto screen = ui::centered(12);
   screen->add_child(ui::text(std::move(title), text_role::heading_small));
   if (total > 0) {
@@ -101,6 +102,45 @@ auto build_progress_screen(std::string title, std::uint32_t done, std::uint32_t 
     // Without a total the bar moves along its track, and the shell ticks it every frame.
     busy = &screen->add_child(std::make_unique<basalt::progress_bar>());
   }
+  if (!caption.empty()) {
+    screen->add_child(ui::text(std::move(caption), text_role::small, text_tone::subdued));
+  }
+  return screen;
+}
+
+auto build_junk_prep_screen(model_prep_state const &model, shell_services const &services)
+    -> std::unique_ptr<basalt::widget> {
+  if (std::holds_alternative<model_prep_ready>(model)) {
+    // The pass starts at once, so there is nothing to show.
+    return std::make_unique<basalt::box>();
+  }
+  auto screen = ui::centered(12);
+  if (auto const *failed = std::get_if<model_prep_failed>(&model)) {
+    screen->add_child(ui::text("The vision model download failed", text_role::heading_small,
+                               text_tone::danger));
+    screen->add_child(ui::text(failed->message));
+    auto buttons = ui::row(12);
+    buttons->add_child(ui::make_button("Retry download", services.retry_download));
+    buttons->add_child(ui::make_button("Exit app", services.exit_app, button_variant::tertiary));
+    screen->add_child(std::move(buttons));
+    return screen;
+  }
+  model_prep_downloading downloading;
+  if (auto const *current = std::get_if<model_prep_downloading>(&model)) {
+    downloading = *current;
+  }
+  auto const fraction = downloading.fraction();
+  screen->add_child(ui::text("Downloading vision model", text_role::heading_small));
+  screen->add_child(std::make_unique<basalt::progress_bar>(
+      fraction ? std::optional<float>{static_cast<float>(*fraction)} : std::nullopt));
+  screen->add_child(ui::text(
+      fraction ? std::format("{} / {} · {:.1f} MB/s", format_gb(downloading.done_bytes),
+                             format_gb(downloading.total_bytes),
+                             downloading.speed_bytes_per_second / 1e6)
+               : format_bytes(downloading.done_bytes)));
+  screen->add_child(ui::text("The Qwen2.5-VL vision model powers the junk pass and is required; "
+                             "the download runs in the background.",
+                             text_role::small, text_tone::subdued));
   return screen;
 }
 
@@ -200,7 +240,35 @@ auto build_action_bar(wizard_phase const &phase, wizard_controller &controller,
           add.add("Cancel", [&controller] { controller.cancel_trips(); });
         } else if constexpr (std::is_same_v<phase_type, wizard_trips_review>) {
           add.add("Back", [&controller] { controller.back_from_trips(); });
-          // Continue opens the batch menu, which is not built yet.
+          add.add("Continue", [&controller] { controller.continue_from_trips(); },
+                  button_variant::primary);
+        } else if constexpr (std::is_same_v<phase_type, wizard_quality_running> ||
+                             std::is_same_v<phase_type, wizard_junk_running> ||
+                             std::is_same_v<phase_type, wizard_similar_running> ||
+                             std::is_same_v<phase_type, wizard_video_running>) {
+          add.add("Cancel", [&controller] { controller.cancel_pass(); });
+        } else if constexpr (std::is_same_v<phase_type, wizard_junk_prep>) {
+          add.add("Cancel", [&controller] { controller.cancel_junk_prep(); });
+        } else if constexpr (std::is_same_v<phase_type, wizard_quality_review> ||
+                             std::is_same_v<phase_type, wizard_junk_review> ||
+                             std::is_same_v<phase_type, wizard_video_review>) {
+          constexpr auto step = std::is_same_v<phase_type, wizard_quality_review>
+                                    ? deletion_step::quality
+                                : std::is_same_v<phase_type, wizard_junk_review>
+                                    ? deletion_step::junk
+                                    : deletion_step::video;
+          if (current.flagged_count > 0) {
+            add.add("Keep all", [&controller] { controller.keep_all_flagged(step); });
+            add.add("Mark all", [&controller] { controller.mark_all_flagged(step); });
+          }
+          add.add("Done", [&controller] { controller.close_batch_review(); },
+                  button_variant::primary);
+        } else if constexpr (std::is_same_v<phase_type, wizard_similar_review>) {
+          add.add("Done", [&controller] { controller.close_batch_review(); },
+                  button_variant::primary);
+        } else if constexpr (std::is_same_v<phase_type, wizard_batch_menu>) {
+          add.add("Edit trips", [&controller] { controller.reopen_organize(); });
+          // Continue opens the final review of everything marked, which is not built yet.
           add.add("Continue", [] {}, button_variant::primary, false);
         } else if constexpr (std::is_same_v<phase_type, wizard_failed>) {
           add.add("Exit app", services.exit_app, button_variant::tertiary);

@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/batch_menu_screen.h"
 #include "app/trips_screen.h"
 #include "app/wizard_shell.h"
 #include "testing/fake_kustavi_client.h"
@@ -43,7 +44,7 @@ struct harness {
     services.show_backend_log = [this] { ++log_requests; };
     services.pick_folder = [this] { ++picks; };
     shell = std::make_unique<wizard_shell>(tree, controller, model, loader, services);
-    controller.on_change([this] { shell->mark_dirty(); });
+    controller.on_change([this] { shell->phase_changed(); });
     model.on_change([this](model_prep_state const &) { shell->mark_dirty(); });
     router = std::make_unique<basalt::event_router>(tree);
     refresh();
@@ -379,7 +380,7 @@ TEST_CASE("continue on the confirm screen leads to the trips review", "[app][tri
   CHECK(h.has_text("Unassigned · 1 photos"));
   CHECK(h.find_all<basalt::grid_view>().size() == 1);
   CHECK(h.button("Back") != nullptr);
-  CHECK_FALSE(h.button("Continue")->enabled());
+  CHECK(h.button("Continue")->enabled());
 }
 
 TEST_CASE("the trips pass shows a progress screen that can be cancelled", "[app][trips]") {
@@ -517,4 +518,254 @@ TEST_CASE("the summary counts folders, trips, marks and loose photos", "[app][tr
   review.marked_count = 3;
   review.unassigned_ids = {"a", "b"};
   CHECK(trips_screen::summary_text(review) == "1 folder · 1 trip · 3 marked · 2 unassigned");
+}
+
+namespace {
+
+auto quality_flag(std::string const &id) -> kustavi::QualityEvent {
+  kustavi::QualityEvent event;
+  event.mutable_flag()->set_image_id(id);
+  event.mutable_flag()->add_reasons(kustavi::BLURRY);
+  return event;
+}
+
+auto reach_menu_screen(harness &h) -> void {
+  reach_trips(h);
+  h.button("Continue")->press();
+  h.refresh();
+  REQUIRE(std::holds_alternative<wizard_batch_menu>(h.controller.phase()));
+}
+
+// The text of the labels in the cells of every grid.
+auto cell_captions(harness &h) -> std::vector<std::string> {
+  std::vector<std::string> captions;
+  for (auto *const tile : h.find_all<basalt::image_tile>()) {
+    captions.push_back(tile->caption());
+  }
+  std::ranges::sort(captions);
+  return captions;
+}
+
+} // namespace
+
+TEST_CASE("the batch menu lists the batches and the passes of the selected one", "[app][batches]") {
+  harness h;
+  reach_menu_screen(h);
+  CHECK(h.has_text("3 batches · 0 of 4 photos marked for deletion"));
+  CHECK(h.button("Paris  ·  1 photos") != nullptr);
+  CHECK(h.has_text("Quality"));
+  CHECK(h.has_text("Duplicates"));
+  CHECK(h.has_text("Junk"));
+  // None of the photos is a video.
+  CHECK_FALSE(h.has_text("Video"));
+  CHECK(h.has_text("Not run"));
+  CHECK(h.button("Edit trips") != nullptr);
+  CHECK_FALSE(h.button("Continue")->enabled());
+
+  h.button("Rome  ·  2 photos")->press();
+  h.refresh();
+  CHECK(h.has_text("Rome"));
+  CHECK(std::get<wizard_batch_menu>(h.controller.phase()).selected_key == "Rome");
+}
+
+TEST_CASE("the pass summaries", "[app][batches]") {
+  CHECK(pass_summary(wizard_step::quality, {}) == "Not run");
+  CHECK(pass_summary(wizard_step::quality, {false, 2}) == "Partly run · 2 flagged");
+  CHECK(pass_summary(wizard_step::quality, {true, 3}) == "Done · 3 flagged");
+  CHECK(pass_summary(wizard_step::duplicates, {true, 3}) == "Done · 3 groups");
+}
+
+TEST_CASE("running a pass shows its progress and then its review", "[app][batches]") {
+  harness h;
+  reach_menu_screen(h);
+  h.client->quality_events = {quality_flag("c.jpg")};
+  h.client->hold_streams = true;
+  h.find_all<basalt::button>();
+  // Paris is the first batch, so "Run" on the first card is the quality pass.
+  auto runs = std::vector<basalt::button *>{};
+  for (auto *const button : h.find_all<basalt::button>()) {
+    if (button->label() == "Run") {
+      runs.push_back(button);
+    }
+  }
+  REQUIRE(runs.size() == 3);
+  runs.front()->press();
+  h.refresh();
+  CHECK(h.has_text("Checking image quality"));
+  CHECK(h.button("Cancel") != nullptr);
+
+  h.client->release_streams();
+  h.refresh();
+  REQUIRE(std::holds_alternative<wizard_quality_review>(h.controller.phase()));
+  CHECK(h.has_text("1 of 1 images flagged"));
+  CHECK(h.has_text("Keeping 0"));
+  CHECK(h.has_text("Click a photo below to keep it"));
+  CHECK(h.button("▾ Deleting 1") != nullptr);
+  CHECK(h.button("Keep all") != nullptr);
+  CHECK(h.button("Mark all") != nullptr);
+}
+
+TEST_CASE("a click moves a photo between the keep and delete sections", "[app][batches]") {
+  harness h;
+  reach_menu_screen(h);
+  h.client->quality_events = {quality_flag("c.jpg")};
+  h.controller.start_batch_pass(wizard_step::quality);
+  h.refresh();
+  auto grids = h.find_all<basalt::grid_view>();
+  REQUIRE(grids.size() == 1);
+  h.click(*grids.front()->cell(0));
+  CHECK(h.has_text("Keeping 1"));
+  CHECK(h.controller.intent().explicit_kept.contains("c.jpg"));
+  CHECK(h.button("▾ Deleting 0") != nullptr);
+
+  grids = h.find_all<basalt::grid_view>();
+  REQUIRE(grids.size() == 1);
+  h.click(*grids.front()->cell(0));
+  CHECK(h.has_text("Keeping 0"));
+  CHECK(h.controller.is_marked("c.jpg", deletion_step::quality));
+}
+
+TEST_CASE("keep all, mark all and done on a review", "[app][batches]") {
+  harness h;
+  reach_menu_screen(h);
+  h.client->quality_events = {quality_flag("c.jpg")};
+  h.controller.start_batch_pass(wizard_step::quality);
+  h.refresh();
+  h.button("Keep all")->press();
+  h.refresh();
+  CHECK(h.has_text("Keeping 1"));
+  h.button("Mark all")->press();
+  h.refresh();
+  CHECK(h.has_text("Keeping 0"));
+  h.button("Done")->press();
+  h.refresh();
+  CHECK(std::holds_alternative<wizard_batch_menu>(h.controller.phase()));
+  CHECK(h.has_text_containing("1 of 4 photos marked for deletion"));
+}
+
+TEST_CASE("the review of a pass with no flags says so", "[app][batches]") {
+  harness h;
+  reach_menu_screen(h);
+  h.controller.start_batch_pass(wizard_step::quality);
+  h.refresh();
+  CHECK(h.has_text("No blurry or poorly exposed images found"));
+  CHECK(h.button("Keep all") == nullptr);
+}
+
+TEST_CASE("the thresholds open without the sliders being rebuilt by a change",
+          "[app][batches]") {
+  harness h;
+  reach_menu_screen(h);
+  h.client->quality_events = {quality_flag("c.jpg")};
+  h.controller.start_batch_pass(wizard_step::quality);
+  h.refresh();
+  CHECK(h.find_all<basalt::slider>().empty());
+  CHECK(h.has_text("Blur 100 · Under 0.30 · Over 0.30"));
+  h.button("▸ Quality thresholds")->press();
+  h.refresh();
+  auto sliders = h.find_all<basalt::slider>();
+  REQUIRE(sliders.size() == 3);
+  CHECK(sliders.front()->label() == "Blur threshold");
+  CHECK(h.has_text("1 flagged at the last run"));
+  CHECK(h.button("Rerun pass") != nullptr);
+  CHECK_FALSE(h.button("Rerun pass")->visible());
+
+  auto *const blur = sliders.front();
+  h.client->preview_response.set_flagged(5);
+  h.tree.focus().set_focus(*blur);
+  h.press_key(basalt::key::right);
+  // The same slider is still in the tree, and the panel shows the answer.
+  auto const after = h.find_all<basalt::slider>();
+  REQUIRE(after.size() == 3);
+  CHECK(after.front() == blur);
+  CHECK(blur->value() == 110);
+  CHECK(h.controller.tunables().blur_threshold == 110);
+  CHECK(h.has_text("These settings flag 5 of 1 images (1 at the last run)"));
+  CHECK(h.button("Rerun pass")->visible());
+
+  h.button("Reset to defaults")->press();
+  h.refresh();
+  CHECK(h.controller.tunables().blur_threshold == 100);
+}
+
+TEST_CASE("a duplicate review marks the keeper and a click chooses another", "[app][batches]") {
+  harness h;
+  reach_menu_screen(h);
+  h.controller.select_batch("Rome");
+  kustavi::SimilarEvent group;
+  group.mutable_group()->set_id(0);
+  group.mutable_group()->add_image_ids("a.jpg");
+  group.mutable_group()->add_image_ids("b.jpg");
+  group.mutable_group()->set_recommended_keep_id("a.jpg");
+  h.client->similar_events = {group};
+  h.controller.start_batch_pass(wizard_step::duplicates);
+  h.refresh();
+  CHECK(h.has_text("1 groups · 2 images"));
+  auto grids = h.find_all<basalt::grid_view>();
+  REQUIRE(grids.size() == 1);
+  CHECK(h.has_text("Group 1 · 2 photos"));
+  // The first cell is the suggested keeper and the second is marked.
+  auto *const first = dynamic_cast<basalt::image_tile *>(grids.front()->cell(0));
+  auto *const second = dynamic_cast<basalt::image_tile *>(grids.front()->cell(1));
+  REQUIRE(first != nullptr);
+  REQUIRE(second != nullptr);
+  CHECK(first->selected());
+  CHECK_FALSE(second->selected());
+  h.click(*second);
+  CHECK(h.controller.intent().user_keeper_of(0) == "b.jpg");
+  CHECK(h.controller.is_marked("a.jpg", deletion_step::similar));
+  h.button("Done")->press();
+  h.refresh();
+  CHECK(std::holds_alternative<wizard_batch_menu>(h.controller.phase()));
+}
+
+TEST_CASE("the junk pass waits on a download screen", "[app][batches]") {
+  harness h;
+  reach_menu_screen(h);
+  auto runs = std::vector<basalt::button *>{};
+  for (auto *const button : h.find_all<basalt::button>()) {
+    if (button->label() == "Run") {
+      runs.push_back(button);
+    }
+  }
+  REQUIRE(runs.size() == 3);
+  runs.back()->press();
+  h.refresh();
+  REQUIRE(std::holds_alternative<wizard_junk_prep>(h.controller.phase()));
+  CHECK(h.has_text("Downloading vision model"));
+  CHECK(h.button("Cancel") != nullptr);
+
+  kustavi::ModelEvent progress;
+  progress.mutable_progress()->set_done_bytes(1'200'000'000);
+  progress.mutable_progress()->set_total_bytes(2'900'000'000);
+  progress.mutable_progress()->set_speed_bps(12e6);
+  h.client->model_events = {progress};
+  h.model.start(h.client);
+  h.refresh();
+  CHECK(h.has_text_containing("12.0 MB/s"));
+
+  h.button("Cancel")->press();
+  h.refresh();
+  CHECK(std::holds_alternative<wizard_batch_menu>(h.controller.phase()));
+}
+
+TEST_CASE("a failed model download offers a retry", "[app][batches]") {
+  harness h;
+  reach_menu_screen(h);
+  h.services.retry_download = [&h] { h.model.retry_download(); };
+  h.client->stream_error = backend_rpc{grpc::StatusCode::UNAVAILABLE, "offline"};
+  h.model.start(h.client);
+  h.controller.start_batch_pass(wizard_step::junk);
+  h.refresh();
+  CHECK(h.has_text("The vision model download failed"));
+  CHECK(h.has_text("offline"));
+  CHECK(h.button("Retry download") != nullptr);
+}
+
+TEST_CASE("the edit trips button returns to the trips review", "[app][batches]") {
+  harness h;
+  reach_menu_screen(h);
+  h.button("Edit trips")->press();
+  h.refresh();
+  CHECK(std::holds_alternative<wizard_trips_review>(h.controller.phase()));
 }

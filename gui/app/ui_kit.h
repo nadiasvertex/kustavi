@@ -39,10 +39,17 @@ inline auto centered(float gap = 8) -> std::unique_ptr<basalt::box> {
   return box;
 }
 
-// Adds `child` so that it takes the space left over.
+// Adds `child` so that it takes the space left over. It starts from nothing, so a tall child such
+// as a grid does not push the other children out of the box.
 template <std::derived_from<basalt::widget> T>
-auto fill(basalt::box &parent, std::unique_ptr<T> child) -> T & {
-  return parent.add(std::move(child), basalt::box_item{.grow = 1});
+auto fill(basalt::box &parent, std::unique_ptr<T> child, float grow = 1) -> T & {
+  return parent.add(std::move(child), basalt::box_item{.grow = grow, .basis = basalt::fixed(0)});
+}
+
+// Adds `child` at its own size, which does not shrink when the box is short of room.
+template <std::derived_from<basalt::widget> T>
+auto rigid(basalt::box &parent, std::unique_ptr<T> child) -> T & {
+  return parent.add(std::move(child), basalt::box_item{.shrink = 0});
 }
 
 inline auto make_button(std::string label, std::function<void()> on_press,

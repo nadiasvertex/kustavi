@@ -2,6 +2,7 @@
 
 #include "app/image_grid.h"
 #include "app/image_loader.h"
+#include "app/review_screen.h"
 #include "app/screens.h"
 #include "app/trips_screen.h"
 #include "core/model_status.h"
@@ -29,6 +30,9 @@ public:
 
   // The controller or the model status changed. The tree is rebuilt on the next `update`.
   auto mark_dirty() -> void;
+  // The controller changed. A change that only moves the quality thresholds updates the panel in
+  // place, so a slider that is being dragged stays. Any other change is built on the next `update`.
+  auto phase_changed() -> void;
   // Rebuilds the screens if something changed, gives finished images to the grid, and moves the
   // busy bar. Call it once per frame, before layout.
   auto update() -> void;
@@ -46,6 +50,7 @@ public:
 private:
   auto rebuild() -> void;
   auto build_body() -> std::unique_ptr<basalt::widget>;
+  auto flagged_review(deletion_step step, std::string header) -> std::unique_ptr<basalt::widget>;
 
   basalt::widget_tree &tree_;
   wizard_controller &controller_;
@@ -59,6 +64,12 @@ private:
   decoded_image_cache images_;
   trips_view_state trips_state_;
   std::unique_ptr<trips_screen> trips_;
+  review_view_state review_state_;
+  std::unique_ptr<flagged_review_screen> flagged_;
+  std::unique_ptr<similar_review_screen> similar_;
+  float similar_scroll_ = 0;
+  std::size_t built_phase_index_ = static_cast<std::size_t>(-1);
+  std::uint64_t built_revision_ = 0;
   std::unique_ptr<image_grid> grid_;
   bool was_trips_review_ = false;
   bool dirty_ = true;

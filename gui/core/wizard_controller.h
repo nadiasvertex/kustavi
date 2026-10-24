@@ -118,6 +118,9 @@ public:
   [[nodiscard]] auto batches() const -> std::vector<batch_info> const & { return batches_; }
   [[nodiscard]] auto flags() const -> review_flags const & { return flags_; }
   [[nodiscard]] auto intent() const -> deletion_intent const & { return intent_; }
+  // Counts up each time the flags or the choices change, so a screen can tell a change of data
+  // from a change of its own settings.
+  [[nodiscard]] auto revision() const -> std::uint64_t { return revision_; }
   // The photos of the batch that a pass runs on or a review shows; nothing outside a batch.
   [[nodiscard]] auto review_scope() const -> std::optional<std::unordered_set<std::string>>;
   // The duplicate groups with a member in the review scope.
@@ -279,6 +282,7 @@ private:
   int video_total_ = 0;
   deletion_intent intent_;
   flag_sets sets_;
+  std::uint64_t revision_ = 0;
   bool hydrating_decisions_ = false;
 
   // The batches, from the trip folders as they stand when the menu opens.

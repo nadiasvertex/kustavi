@@ -36,8 +36,9 @@ public:
   auto operator=(image_loader const &) -> image_loader & = delete;
   ~image_loader();
 
-  // Replaces the queue.
-  auto request(std::vector<image_request> wanted) -> void;
+  // Replaces what `owner` asked for before. Each grid on the screen is an owner, so one grid's
+  // request does not drop another's.
+  auto request(void const *owner, std::vector<image_request> wanted) -> void;
   // The images finished since the last call. An image that cannot be read is not reported.
   [[nodiscard]] auto take_ready() -> std::vector<loaded_image>;
 
@@ -48,7 +49,12 @@ private:
   std::function<void()> on_ready_;
   std::mutex mutex_;
   std::condition_variable_any wake_;
-  std::vector<image_request> queue_;
+  struct queued {
+    void const *owner = nullptr;
+    image_request request;
+  };
+  // The next request to decode is at the back.
+  std::vector<queued> queue_;
   std::vector<loaded_image> ready_;
   std::vector<std::jthread> workers_;
 };

@@ -670,6 +670,7 @@ auto wizard_controller::on_video_event(VideoEvent const &event) -> void {
 // ---- Deletion ----
 
 auto wizard_controller::recompute_deleted() -> void {
+  ++revision_;
   sets_ = flag_sets_of(intent_, flags_);
   auto const deleted = deleted_image_ids(intent_, ordered_ids_, flags_);
   deleted_ids_ = {deleted.begin(), deleted.end()};
