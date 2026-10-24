@@ -327,6 +327,10 @@ auto wizard_controller::republish_review() -> void {
     phase_ = video_review_phase();
   } else if (std::holds_alternative<wizard_batch_menu>(phase_)) {
     phase_ = batch_menu_phase();
+  } else if (std::holds_alternative<wizard_deletion_review>(phase_)) {
+    phase_ = wizard_deletion_review{static_cast<int>(deleted_ids_.size())};
+  } else if (std::holds_alternative<wizard_commit_summary>(phase_)) {
+    phase_ = commit_summary_phase();
   } else if (std::holds_alternative<wizard_trips_review>(phase_)) {
     publish_trips_review();
     return;

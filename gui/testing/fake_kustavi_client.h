@@ -47,6 +47,7 @@ public:
   std::optional<RunTripsPassRequest> last_trips_request;
   std::optional<RunVideoPassRequest> last_video_request;
   std::optional<CommitRequest> last_commit_request;
+  std::optional<CommitRequest> last_estimate_request;
   std::optional<PreviewQualityThresholdsRequest> last_preview_request;
   std::vector<SaveSessionStateRequest> saved_session_states;
   int shutdown_calls = 0;

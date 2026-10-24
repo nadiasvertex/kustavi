@@ -8,6 +8,7 @@
 #include "core/phases.h"
 #include "core/trips_plan.h"
 #include "core/ui_scope.h"
+#include "core/ui_timers.h"
 
 #include <functional>
 #include <memory>
@@ -171,6 +172,28 @@ public:
   auto keep_all_flagged(deletion_step step) -> void;
   auto mark_all_flagged(deletion_step step) -> void;
 
+  // ---- The final review and the commit ----
+
+  // The batch menu: open the review of everything that is marked.
+  auto continue_from_batches() -> void;
+  auto back_from_deletion_review() -> void;
+  auto continue_from_deletion_review() -> void;
+  // The deleted photos by batch, in batch order, for the final review.
+  [[nodiscard]] auto marked_by_batch() const -> std::vector<marked_group>;
+
+  // The destination field. A change asks for a new estimate once the typing pauses.
+  auto set_commit_destination(std::string value) -> void;
+  // Asks the back end how much the commit would write and whether it fits. A stale answer, one for
+  // a destination that has since changed, is dropped.
+  auto refresh_commit_estimate() -> void;
+  // The folder the commit uses when the field is empty: `<source>-kept` beside the source.
+  [[nodiscard]] auto suggested_destination() const -> std::string;
+  auto back_from_commit_summary() -> void;
+  auto start_commit() -> void;
+  auto cancel_commit() -> void;
+  // Timers for the estimate's pause. Without them the estimate is asked for at once.
+  auto set_timers(ui_timers *timers) -> void { timers_ = timers; }
+
   // Return to the start with nothing kept. The next folder begins a new back-end session.
   auto reset_to_start() -> void;
 
@@ -228,6 +251,13 @@ private:
   auto deletion_changed() -> void;
   auto persist_decisions() -> void;
   [[nodiscard]] auto now() const -> time_ms;
+  [[nodiscard]] auto effective_destination() const -> std::string;
+  [[nodiscard]] auto commit_summary_phase() const -> wizard_commit_summary;
+  [[nodiscard]] auto commit_request(std::string const &destination,
+                                    std::vector<std::string> const &keep) const -> CommitRequest;
+  auto request_estimate_now() -> void;
+  auto on_commit_event(CommitEvent const &event) -> void;
+  auto on_commit_done() -> void;
   [[nodiscard]] auto flagged_in_scope(deletion_step step) const -> std::vector<std::string>;
 
   // Handlers for a stream that run on the UI thread and belong to the current operation.
@@ -308,6 +338,20 @@ private:
   std::optional<time_ms> junk_last_event_;
   std::uint32_t junk_last_done_ = 0;
   bool model_ready_ = false;
+
+  // The commit. `commit_destination_` is the field's text, and empty means the suggestion.
+  std::string commit_destination_;
+  std::optional<EstimateCommitResponse> commit_estimate_;
+  std::string commit_estimate_for_;
+  ui_timers *timers_ = nullptr;
+  std::optional<ui_timers::timer_id> estimate_timer_;
+  std::vector<std::string> commit_keep_ids_;
+  std::uint64_t commit_total_bytes_ = 0;
+  std::string committed_destination_;
+  std::uint32_t commit_copied_ = 0;
+  std::uint32_t commit_skipped_ = 0;
+  std::uint32_t commit_already_present_ = 0;
+  std::vector<std::string> commit_errors_;
   std::function<void()> cancel_model_download_;
   std::function<time_ms()> clock_;
   stream_subscription pass_;

@@ -16,8 +16,10 @@ add_library(kustavi_gui_core STATIC
   trip_edits.cpp
   trips_plan.cpp
   ui_queue.cpp
+  ui_timers.cpp
   wizard_controller.cpp
   wizard_controller_batches.cpp
+  wizard_controller_commit.cpp
   wizard_controller_trips.cpp)
 add_library(kustavi::gui_core ALIAS kustavi_gui_core)
 # Sources include each other as "core/<name>.h".

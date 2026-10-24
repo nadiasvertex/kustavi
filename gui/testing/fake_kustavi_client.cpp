@@ -81,7 +81,7 @@ auto fake_kustavi_client::preview_quality_thresholds(PreviewQualityThresholdsReq
 
 auto fake_kustavi_client::estimate_commit(CommitRequest request)
     -> call_result<EstimateCommitResponse> {
-  last_commit_request = std::move(request);
+  last_estimate_request = std::move(request);
   return unary_result(estimate_response);
 }
 

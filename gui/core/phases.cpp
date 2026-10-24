@@ -28,6 +28,13 @@ struct step_visitor {
   }
   auto operator()(wizard_video_review const &) const -> int { return index_of(wizard_step::video); }
   auto operator()(wizard_batch_menu const &) const -> int { return index_of(wizard_step::quality); }
+  auto operator()(wizard_deletion_review const &) const -> int {
+    return index_of(wizard_step::quality);
+  }
+  auto operator()(wizard_commit_summary const &) const -> int { return index_of(wizard_step::copy); }
+  auto operator()(wizard_committing const &) const -> int { return index_of(wizard_step::copy); }
+  // One past the last step, which the indicator shows as every stage finished.
+  auto operator()(wizard_done const &) const -> int { return index_of(wizard_step::copy) + 1; }
   // Every phase of the select stage reports the first step.
   template <class Phase> auto operator()(Phase const &) const -> int {
     return index_of(wizard_step::select);

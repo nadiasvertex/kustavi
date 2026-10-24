@@ -4,6 +4,8 @@
 #include "core/domain.h"
 #include "core/wizard_step.h"
 
+#include "proto/service.pb.h"
+
 #include <array>
 #include <cstdint>
 #include <optional>
@@ -136,6 +138,45 @@ struct wizard_batch_menu {
   int total_images = 0;
 };
 
+// The final review of everything that is marked for deletion, before the commit.
+struct wizard_deletion_review {
+  int marked_count = 0;
+};
+
+// The commit summary: what is kept, where it goes, and whether it fits.
+struct wizard_commit_summary {
+  int keep_count = 0;
+  std::uint64_t keep_bytes = 0;
+  // Photos marked for deletion by any step. They stay in the source folder.
+  int left_behind_count = 0;
+  std::string destination;
+  // Size and free space for `destination`; nothing until the back end has answered for it.
+  std::optional<EstimateCommitResponse> estimate;
+
+  // True once the estimate is in and the destination has room.
+  [[nodiscard]] auto space_confirmed() const -> bool { return estimate && estimate->fits(); }
+};
+
+// The copy is running.
+struct wizard_committing {
+  std::uint32_t done = 0;
+  std::uint32_t total = 0;
+  std::string current_name;
+  std::uint64_t done_bytes = 0;
+  std::uint64_t total_bytes = 0;
+};
+
+// The copy ended.
+struct wizard_done {
+  std::uint32_t copied_count = 0;
+  // Names that collided with a file of different content.
+  std::uint32_t skipped_count = 0;
+  // Items that the destination already held.
+  std::uint32_t already_present_count = 0;
+  std::string destination;
+  std::vector<std::string> errors;
+};
+
 // A call ended in an error. `step_index` is where the user was, for the step indicator.
 struct wizard_failed {
   backend_error error;
@@ -148,7 +189,9 @@ using wizard_phase = std::variant<wizard_start, wizard_scanning, wizard_session_
                                   wizard_quality_review, wizard_junk_prep, wizard_junk_running,
                                   wizard_junk_review, wizard_similar_running,
                                   wizard_similar_review, wizard_video_running,
-                                  wizard_video_review, wizard_batch_menu, wizard_failed>;
+                                  wizard_video_review, wizard_batch_menu, wizard_deletion_review,
+                                  wizard_commit_summary, wizard_committing, wizard_done,
+                                  wizard_failed>;
 
 // The step that the back end saves for a resume.
 [[nodiscard]] auto step_index_of(wizard_phase const &phase) -> int;

@@ -48,7 +48,9 @@ auto wizard_controller::set_phase(wizard_phase next) -> void {
                        std::holds_alternative<wizard_similar_review>(phase_) ||
                        std::holds_alternative<wizard_junk_review>(phase_) ||
                        std::holds_alternative<wizard_video_review>(phase_) ||
-                       std::holds_alternative<wizard_batch_menu>(phase_);
+                       std::holds_alternative<wizard_batch_menu>(phase_) ||
+                       std::holds_alternative<wizard_deletion_review>(phase_) ||
+                       std::holds_alternative<wizard_commit_summary>(phase_);
   if (resting && !resuming_ && !resume_target_step_) {
     persist_progress();
   }
@@ -81,6 +83,15 @@ auto wizard_controller::clear_results() -> void {
   run_all_step_.reset();
   has_last_run_thresholds_ = false;
   preview_flagged_.reset();
+  commit_destination_.clear();
+  commit_estimate_.reset();
+  commit_estimate_for_.clear();
+  commit_keep_ids_.clear();
+  commit_errors_.clear();
+  if (timers_ && estimate_timer_) {
+    timers_->cancel(*estimate_timer_);
+  }
+  estimate_timer_.reset();
   pending_trip_edits_.reset();
   resume_target_step_.reset();
   resuming_ = false;

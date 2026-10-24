@@ -4,6 +4,8 @@ add_executable(gui_core_tests
   backend_launch_test.cpp
   batches_test.cpp
   wizard_batches_test.cpp
+  wizard_commit_test.cpp
+  ui_timers_test.cpp
   deletion_test.cpp
   domain_test.cpp
   fake_client_test.cpp
