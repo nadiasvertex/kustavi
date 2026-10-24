@@ -1,6 +1,3 @@
-frontend/lib/src/generated/
-frontend/.dart_tool/
-frontend/.idea/
 test/local/
 dist/
 __pycache__/

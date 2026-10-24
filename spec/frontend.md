@@ -2,8 +2,9 @@
 
 ## 1. Overview
 
-The Kustavi GUI is a Flutter desktop application that drives a wizard over a
-folder of images. The first stages are linear; the review stage is a la carte:
+The Kustavi GUI is a C++ desktop application, built with the Basalt widget
+library and the Magma windowing and rendering library, that drives a wizard
+over a folder of images. The first stages are linear; the review stage is a la carte:
 
 1. Select folder (with visual confirmation grid and automatic session recovery)
 2. Organize — trips pass: spatiotemporal grouping with user thresholds and
@@ -28,18 +29,24 @@ restores their exact phase progress, pre-calculated image metrics, and explicit 
 
 ## 2. Platforms & Build
 
-- Targets: macOS, Windows, Linux desktops (see `os_name`/`flutter_target`
-  in the root `.justfile`).
-- Built with `flutter build <target>`; the `just run` recipe builds and
-  launches it.
-- `pubspec.yaml` dependencies (in addition to the existing riverpod/grpc
-  stack): `file_picker` (directory pickers), `path` (path display/manip).
-- Generated gRPC stubs live in `lib/src/generated/` (checked in, see §13).
-- Riverpod providers use code generation (`@riverpod`); generated `.g.dart`
-  files are checked in.
-- `analysis_options.yaml` must adopt the strict analyzer + lint block from
-  `spec/CONVENTIONS/FLUTTER.md` §7. `flutter analyze` must be clean.
-- Window: default 1280×800, minimum 960×640. English-only UI.
+- Targets: macOS, Windows, Linux desktops. macOS is the platform that the code
+  has been run on so far.
+- Built with CMake, as part of the repository's single build (`CMakeLists.txt`).
+  `KUSTAVI_BUILD_GUI=ON` adds the GUI, whose Basalt and Magma sources come from
+  checkouts (`KUSTAVI_BASALT_SOURCE_DIR`, `KUSTAVI_MAGMA_SOURCE_DIR`) until
+  releases of both are pinned in `cmake/dependency_pins.cmake`. `just build-gui`
+  builds it, `just run-gui` runs it from the build tree, and `just package`
+  builds the redistributable (`tools/package.py`).
+- Rendering uses the graphics API that `magma::preferred_graphics_api` picks:
+  Metal on macOS, Vulkan on Linux, Direct3D 12 on Windows. The raster backend is
+  the fallback on a machine without a usable GPU and renders the images in
+  tests.
+- Video playback uses libmdk, a pinned release archive that the build fetches
+  (`KUSTAVI_ENABLE_VIDEO`, `KUSTAVI_MDK_DIR`). A build without it shows the
+  still image of a video.
+- The code follows `spec/CONVENTIONS/C++.md`. The warning set of the build is
+  strict, and a change must compile without warnings.
+- Window: default 1280×800. English-only UI.
 
 ## 3. Process Model
 
@@ -91,70 +98,82 @@ the app menu.
 - Backstop against orphans: the back end is launched with `--parent-pid
   <gui_pid>` and runs a background watchdog that force-exits
   (`std::_Exit`) as soon as the GUI process is gone — covering exits that
-  never reach the clean-shutdown path (GUI crash, `SIGKILL`, `flutter run`
-  interrupted). The watchdog polls every 500 ms.
+  never reach the clean-shutdown path (GUI crash, `SIGKILL`, a debugger session
+  that is stopped). The watchdog polls every 500 ms.
 - The GUI never runs more than one back-end at a time. "Retry" after a
   crash starts a fresh process and repeats the ready handshake.
 
 ### 3.3 Transport
 
 - gRPC over HTTP/2, insecure credentials with loopback TCP only + GUI generated Auth Token validation.
-- The `ClientChannel` is owned by a Riverpod provider and shut down in
-  `ref.onDispose`, per `spec/CONVENTIONS/FLUTTER.md` §6.
+- The channel and the child process are owned by `backend_host`
+  (`gui/core/backend_host.h`). It starts the back end off the UI thread, reports
+  when it is ready, has died or could not start, restarts it, and stops it at
+  exit. The auth token goes in the metadata of every call.
 
 ## 4. API Integration
 
 The GUI consumes `spec/proto.md` through a single wrapper interface so
-screens and the wizard controller never touch generated stubs directly:
+screens and the wizard controller never touch generated stubs directly
+(`gui/core/kustavi_client.h`):
 
-```dart
-abstract interface class KustaviClient {
-  Future<GetInfoResponse> getInfo();
-  Future<void> shutdown();
-  Stream<ScanEvent> scanFolder(ScanFolderRequest request);
-  Future<FetchSavedDecisionsResponse> fetchSavedDecisions(FetchSavedDecisionsRequest request);
-  Stream<QualityEvent> runQualityPass();
-  Stream<ModelEvent> ensureModel();
-  Stream<JunkEvent> runJunkPass();
-  Stream<SimilarEvent> runSimilarPass();
-  Stream<TripsEvent> runTripsPass(TripsPassRequest request);
-  Stream<CommitEvent> commit(CommitRequest request);
-}
+```cpp
+class kustavi_client {
+public:
+  virtual auto get_info() -> call_result<GetInfoResponse> = 0;
+  virtual auto shutdown() -> call_result<void> = 0;
+  virtual auto inspect_session(std::string folder) -> call_result<InspectSessionResponse> = 0;
+  virtual auto get_session_results() -> call_result<GetSessionResultsResponse> = 0;
+  virtual auto save_session_state(SaveSessionStateRequest) -> call_result<void> = 0;
+  virtual auto preview_quality_thresholds(PreviewQualityThresholdsRequest) -> ... = 0;
+  virtual auto estimate_commit(CommitRequest) -> call_result<EstimateCommitResponse> = 0;
+
+  virtual auto scan_folder(ScanFolderRequest, stream_handlers<ScanEvent>) -> stream_subscription = 0;
+  virtual auto run_quality_pass(...) / run_junk_pass(...) / run_similar_pass(...)
+      / run_video_pass(...) / run_trips_pass(...) / ensure_model(...) / commit(...);
+};
 ```
 
-- The production implementation wraps the generated gRPC client and maps
-  stream errors to `BackendError` (§10.5). Returned streams wrap
-  cancellable gRPC calls; cancelling a stream in the GUI cancels the
-  back-end pass (proto spec §2).
-- A `FakeKustaviClient` (in-memory) exists for tests.
-- At most one analytical pass RPC is in flight at a time. The GUI must not start a 
+- A unary call returns `std::expected<T, backend_error>` and blocks, so the
+  controller runs it on a worker. A streaming call starts its own worker, which
+  reads the stream and calls the handlers, and the handlers only post to the UI
+  queue (§9). Destroying or cancelling the `stream_subscription` cancels the
+  call, which stops the back-end pass (proto spec §2); after a cancel no handler
+  runs again.
+- The production implementation is `grpc_kustavi_client`. It maps status codes
+  to `backend_error` (§10.5).
+- A `fake_kustavi_client` (`gui/testing/`) plays back scripted events and
+  records the requests, for tests.
+- At most one analytical pass RPC is in flight at a time. The GUI must not start a
   new pass stream until the previous one has completed. `EnsureModel` is an explicit exemption to this rule, allowing it to run concurrently as a background process during folder scanning or quality review.
 
-## 5. Domain Model (Dart)
+## 5. Domain Model (C++)
 
-Plain immutable Dart types, built from proto events:
+Plain value types in `gui/core/domain.h`, built from proto events:
 
-- `ImageInfo`: id, path, name, size, width, height, `DateTime? taken`,
-  `(double, double)? gps`, `String workingImagePath`.
-- `QualityFlagInfo`: image id, reasons (`Blurry`, `UnderExposed`,
-  `OverExposed`), sharpness, exposure score.
-- `JunkFlagInfo`: image id, reason text, confidence.
-- `SimilarGroupInfo`: id, member ids, recommended keep id, per-member
-  scores.
-- `TripInfo`: id, start/end `DateTime`, member ids, centroid `(double,
-  double)?`, folder name, folder slug, place name, `List<TripLegInfo>`
-  legs, `isHome` flag.
-- `TripLegInfo`: place name, slug, member ids, centroid — one contiguous
-  stay within a trip.
-- `DeletionPlan`: split into `Set<String> explicitKept` and `Set<String> explicitDeleted` to preserve user intent across automated pass defaults.
-- `WizardPhase`: sealed class hierarchy (§6).
+- `image_info`: id, path, name, size, width, height, `optional<time_ms> taken`,
+  `optional<geo_point> gps`, `working_image_path`, `is_video`, video duration.
+- `quality_flag_info`: image id, reasons (`blurry`, `under_exposed`,
+  `over_exposed`), sharpness, exposure score.
+- `junk_flag_info`: image id, reason text, confidence. `video_flag_info`: the
+  same for a video, with a reason such as `too_short`.
+- `similar_group_info`: id, member ids, recommended keep id, per-member scores.
+- `trip_info`: id, start/end time, member ids, centroid, folder name, folder
+  slug, place name, `vector<trip_leg_info>` legs, `is_home` flag.
+- `trip_leg_info`: place name, slug, member ids, centroid — one contiguous stay
+  within a trip.
+- `deletion_intent` (`gui/core/deletion.h`): `explicit_kept`, `explicit_deleted`
+  and the keeper that the user chose for each duplicate group, to preserve user
+  intent across automated pass defaults.
+- `wizard_phase`: a `std::variant` of the phases (§6), in `gui/core/phases.h`.
 
-Errors are values: `sealed class BackendError` with subtypes
-`Crashed`, `Rpc(GrpcError)`, `StartupFailed(String)`, `NotFound(String)`.
+Errors are values: `backend_error` is a `std::variant` of `backend_crashed`,
+`backend_rpc` (status code and message), `backend_startup_failed` and
+`backend_not_found`. Operational failures are returned and not thrown.
 
-The image index (`Map<String, ImageInfo>`) is built incrementally from
-`ScanFolder` events and kept in the wizard controller. It is the
-single source of truth for image metadata in the GUI.
+The image index (`unordered_map<string, image_info>` plus the ids in scan
+order) is built incrementally from `ScanFolder` events and kept in the wizard
+controller. It is the single source of truth for image metadata in the GUI.
 
 ## 6. The Wizard
 
@@ -200,8 +219,8 @@ UI: progress while running ([Back] cancels to S2), then the trips review:
   (1–168 h), "Max trip drift" (10–1000 km), "Away-from-home distance"
   (1–100 km), "New-leg distance" (1–200 km) — a "Re-cluster" button, and
   an "Organize output into trip folders" switch (default on). Re-cluster
-  re-runs the pass and **discards manual trip edits** (a snackbar says
-  so), since edits are defined against the previous clustering.
+  re-runs the pass and **discards manual trip edits** (a message at the bottom of
+  the window says so), since edits are defined against the previous clustering.
 - **Folders** group trips by their display name ("Rome, Italy · April
   2026", or "April 2026" without geo). Folder headers are inline-editable
   (renames every trip in the folder). At-home photos appear in
@@ -309,10 +328,10 @@ quits the app).
 ### 6.3 Vision model preparation
 
 - On app start (S0), the GUI begins `EnsureModel` as a background
-  provider. Model states: `unknown → downloading(progress) → ready` or
+  call, followed by `model_status`. Model states: `unknown → downloading(progress) → ready` or
   `failed(message)`.
 - `ready` is cached for the session. Moondream-3.1 INT4 weights take ~1.1 GB memory.
-- S5 awaits the same provider and renders its state.
+- S5 waits for the same `model_status` and renders its state.
 - The model name/size come from the `GetInfo`/`ModelReady` events.
 
 ### 6.4 Transition table
@@ -374,24 +393,34 @@ the trips pass with new settings discards the edits, on disk as well.
 
 ### 7.1 Image grid
 
-- `GridView.builder` (lazy), adaptive column count targeting ~176 px cells.
-- Cell: Uses the pre-generated 768px cached working image path (`working_image_path`) directly. Displays one-line ellipsized
-  file name and badges: red "delete" tag, step reason chips, or "keeper" badges.
+- Basalt's `grid_view`: virtualized, with a fixed 160 px cell, a gap, and
+  sections with a header row. It creates widgets only for the rows in view and a
+  margin, and reuses the cells that scroll away. `image_grid`
+  (`gui/app/image_grid.h`) fills it from groups of photos and keeps the decoded
+  images in a cache that the screens share.
+- Cell: a Basalt `image_tile` with the cached 768px working image
+  (`working_image_path`) and a one-line caption. A worker pool decodes the
+  images of the cells in view first. Badges are small chips in the corners of the
+  tile: step reason chips, "keeper", "suggested" and "delete".
 - Badges reflect evaluating user hierarchy live.
-- Cell click → detail view.
+- Cell click → the action of the screen: open the detail view, move the photo
+  between the keep and delete lists, or make it the keeper. A button in the top
+  right corner of a cell opens the detail view where a click means something
+  else.
 
 ### 7.2 Detail view
 
-Modal over the current grid:
-- Progressive loading pattern: Instantly loads and displays the cached 768px `working_image_path` JPEG image. Concurrently loads the full-resolution master asset (`ImageInfo.path`) on an isolated background thread. Once completed, swaps the elements smoothly within the zoomable viewport (`InteractiveViewer`, 1×–8×, double-click resets). 
-- To avoid memory leaks, `PaintingBinding.instance.imageCache.evict()` is invoked explicitly on the master image provider asset instance during the modal detail view's `dispose()` lifecycle context hook.
-- Metadata panel: name, path, dimensions, file size, date taken, GPS coordinates, sharpness/exposure scores, Moondream junk reason, and group/trip metadata mappings.
-- "Marked for deletion" switch: enabled in S3 (trips review) and S6; disabled (read-only) in S2.
-- Close: [Close] button, Esc key, or click outside.
+An overlay dialog over the current screen (`gui/app/detail_view.h`):
+- Progressive loading pattern: Instantly loads and displays the cached 768px `working_image_path` JPEG image. Concurrently decodes the full-resolution master asset (`image_info::path`) on a worker thread of its own loader. Once completed, it replaces the picture in the zoomable viewport (`zoom_view`, 1×–8×, wheel and buttons zoom, drag pans, double-click resets) without moving the view.
+- The decoded master belongs to the loader's results and to the viewport only, so it is freed with the view when the dialog closes.
+- A video plays through libmdk (`gui/app/video_player.h`). The player decodes on its own threads, converts each frame to RGBA at no more than 1600 px on the longer side, and keeps only the newest, which the UI thread copies into an image. A Play/Pause button controls it. Without libmdk, or if the file cannot be played, the still image stays.
+- Metadata panel: name, path, dimensions, file size, date taken, GPS coordinates, sharpness/exposure scores, junk and video reasons, trip, leg and place, and the nearby shots of a flagged photo.
+- "Marked for deletion" switch: enabled everywhere except the folder confirmation (S2), where it is read-only.
+- Close: [Close] button or Esc key.
 
 ## 8. Deletion Model
 
-`DeletionPlan` is driven by two isolated user tracking configurations: `Set<String> explicitKept` and `Set<String> explicitDeleted`. 
+`deletion_intent` is driven by two isolated user tracking configurations: `explicit_kept` and `explicit_deleted`. 
 
 When evaluating whether an asset displays a deletion marker badge, the interface evaluates this deterministic order:
 1. **Is the ID found in `explicitDeleted`?** → Display Red Deletion Tag badge.
@@ -403,20 +432,32 @@ When evaluating whether an asset displays a deletion marker badge, the interface
 
 Final resolution parameter computation at S11/S12 happens downstream via the C++ SQLite aggregation layer. The GUI never passes delete instructions directly.
 
-## 9. State Management (Riverpod)
+## 9. State Management
 
-Per `spec/CONVENTIONS/FLUTTER.md`: `@riverpod` code generation, sealed
-state classes, functional providers, `AsyncNotifier` for async state, no
-`setState` for app state.
+The UI thread owns every Basalt object and all application state. Worker
+threads do blocking work and decoding, and hand their results back through
+`ui_queue` (`gui/core/ui_queue.h`), whose `post` is safe on any thread and whose
+`drain` runs the tasks on the UI thread. Posting wakes the event loop. Basalt's
+`text_shaper` is not thread-safe, so only the UI thread builds or measures
+widgets.
 
-Providers:
-- `backendProcessProvider` — launches process, executes random token argument exchange, ready handshake, exposes loopback interface details.
-- `grpcChannelProvider` — ClientChannel wrapper injecting Token authorization metadata inside transmission headers.
-- `kustaviClientProvider` — `KustaviClient` gRPC interface.
-- `modelStatusProvider` (`AsyncNotifier`) — tracks `EnsureModel` background pipeline streams.
-- `wizardProvider` (`AsyncNotifier`) — tracks folder initialization lifecycle variants, step metrics caches, thresholds, and commit tracking progress data structures.
-- `deletionPlanProvider` (`Notifier`) — owns `explicitKept` and `explicitDeleted` collections.
-- `backendLogProvider` — ring buffer logging trace stack.
+- `wizard_controller` (`gui/core/wizard_controller.h`) holds the current phase
+  and the image index, the passes' flags, the user's choices, the trips plan,
+  the batches and the commit state. It applies the results that arrive through
+  the queue and the user's actions, and calls its change handler. The
+  implementation is split by responsibility: the session and scan, the trips,
+  the batches and passes with the deletion choices, and the commit.
+- `ui_scope` drops the result of an operation that a newer one replaced, and a
+  result for an object that no longer exists. A controller or a model status
+  starts a new generation for each stream or call.
+- `ui_timers` holds one-shot timers on the UI thread, such as the pause before
+  an estimate request.
+- `model_status` follows the `EnsureModel` background pipeline.
+- `backend_host` owns the back-end process and its client (§3).
+- Screens build their widget subtree from the controller's state and are built
+  again when it changes (`wizard_shell`). A change that must not rebuild what
+  the user is using, such as a slider being dragged or a destination being
+  typed, updates the existing widgets in place.
 
 ## 10. Error Handling
 
@@ -452,60 +493,46 @@ gRPC status → `BackendError`: `NOT_FOUND` → `NotFound`; `UNAVAILABLE` during
 
 ## 12. Testing
 
-Required unit and widget test cases coverage (via `just test-gui`) to encompass:
+Tests run under CTest with Catch2 (`just test-gui`; `just test-gui-core` runs the
+tests that need no window library). Labels: `gui`, `process`, `grpc`. The sanitize
+test preset leaves out `grpc`, because a gRPC server in the test mixes sanitized
+and unsanitized code. They cover:
 - Folder initialization workflows including scanning, resume prompts, and force-fresh wipe behaviors.
 - Deletion model fallback hierarchy rules.
-- Progressive view swap mechanics.
+- Every phase transition of the controller, driven by `fake_kustavi_client`, with the posted results drained by hand.
+- Screens: the widget tree for each phase, pressed and clicked through Basalt's event router.
+- Progressive view swap mechanics and the zoom rules.
+- The gRPC client against an in-process server, and the process library.
+- `kustavi_gui_preview --screen <name> --out <file.png>` draws a screen to a PNG against a scripted back end, for a look at the layout.
 
 ## 13. Dependencies & Code Generation
 
-- `pubspec.yaml`: `file_picker` and `path`.
-- Dart gRPC stubs generated utilizing `just proto` recipe block mappings.
+- Basalt and Magma (checkouts for now), OpenCV `imgcodecs` for decoding, libmdk
+  for video, nlohmann/json for the saved trip edits, Catch2 for tests.
+- The C++ gRPC stubs are generated from `proto/service.proto` by the build.
 
 ## 14. Directory Layout
 
 ```
-frontend/lib/
-  main.dart                 # entrypoint, ProviderScope, window setup
-  app.dart                  # MaterialApp, theming
-  src/
-    backend/
-      process.dart          # launch, ready handshake, supervision, log ring buffer
-      channel.dart          # grpcChannelProvider
-      client.dart           # KustaviClient interface + gRPC implementation
-      fake_client.dart      # in-memory client for tests (dev dependency path)
-    generated/              # protoc output (checked in)
-    state/
-      phases.dart           # sealed WizardPhase
-      domain.dart           # ImageInfo, flags, groups, trips, BackendError
-      decisions.dart        # DeletionPlan
-      model_status.dart     # modelStatusProvider
-      wizard.dart           # Wizard (AsyncNotifier): fields, build, plumbing
-      wizard_*.dart         # part files: session, trips, batches, passes,
-                            #   deletion, commit (extensions on Wizard)
-    ui/
-      wizard_shell.dart     # step indicator, action bar, screen routing
-      start.dart
-      scanning.dart
-      confirm_folder.dart
-      quality_review.dart
-      junk_prep.dart
-      junk_review.dart
-      similar_review.dart
-      trips.dart
-      commit_summary.dart
-      committing.dart
-      done.dart
-      errors.dart           # crash dialog, step error screen, no-images screen
-      widgets/
-        image_grid.dart
-        image_cell.dart
-        detail_view.dart
-        badges.dart
-        progress.dart
-frontend/test/
-  unit/
-  widget/
+common/process/             # child process launch, ready handshake, log ring buffer
+gui/
+  core/                     # the logic, with no window or widget
+    domain.*  deletion.*  batches.*  neighbors.*  trip_edits.*  trips_plan.*
+    format.*  model_prep.*  phases.h  wizard_step.h
+    kustavi_client.*  grpc_kustavi_client.*   # the client and its gRPC implementation
+    backend_launch.*  backend_host.*          # finding, starting and stopping the back end
+    ui_queue.*  ui_scope.h  ui_timers.*  background.*
+    model_status.*  wizard_controller*.cpp
+  app/                      # screens and the program
+    wizard_shell.*          # step indicator, action bar, screen routing, dialogs
+    screens.*  trips_screen.*  review_screen.*  batch_menu_screen.*  commit_screens.*
+    detail_view.*  zoom_view.*  video_player.*
+    image_grid.*  image_loader.*  ui_kit.h  executable_path.*
+    main.cpp                # kustavi_gui
+    preview.cpp             # kustavi_gui_preview
+  testing/                  # fake_kustavi_client
+  tests/                    # Catch2 tests
+  main.cpp  thumbnail_loader.*   # the scrolling spike (kustavi_gui_spike)
 ```
 
 ## 15. Decisions Recorded

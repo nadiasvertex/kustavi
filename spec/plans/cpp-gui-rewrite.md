@@ -300,3 +300,42 @@ Tests run under CTest.
   screenshots and tests.
 - Linux uses the Vulkan backend by default, with the raster backend as the automatic fallback.
 - The repo moves from Bazel to CMake as the first phase.
+
+## Outcome
+
+All eight phases are done on macOS, and `frontend/` is gone. The GUI is `kustavi_gui`, built by
+the same CMake project as the back end, and `just package` produces `Kustavi.app` and a zip from
+it. Windows and Linux are not tested, and Basalt and Magma are not released or pinned.
+
+What was built:
+
+- The back end builds with CMake, and the Bazel files are gone.
+- Basalt got `slider`, `grid_view` and `image_tile`, and Magma got a folder chooser and a bounded
+  image cache. Both changes are committed locally in the two repositories and not tagged.
+- `gui/core` holds the logic without any window: domain types, the deletion model, the trips
+  plan, the gRPC client, the back-end host, `wizard_controller`, and their Catch2 tests, which
+  port the Dart unit tests.
+- `gui/app` holds the screens for every step S0 to S13, the detail view with zoom and video, the
+  crash and log dialogs, and `kustavi_gui_preview`, which draws a screen to a PNG.
+- Video uses libmdk through frame copies. The spike showed that this is fast enough: the player
+  asks mdk for frames scaled to at most 1600 px, so a 4K clip costs no more than a window-sized
+  one.
+- Packaging assembles the macOS bundle with an icon, `Info.plist`, libmdk in `Frameworks` and an
+  ad hoc signature, or the Windows folder for the WiX installer. OpenCV and curl are configured
+  so that the bundle needs only system libraries.
+
+Differences from the Flutter app and gaps:
+
+- The UI uses system fonts, and the bundled UI and icon fonts that this plan describes are not
+  done. Buttons carry words, not icons.
+- Screen readers are out of scope. Widgets describe themselves, so a bridge can be added later.
+- The app is light-themed only.
+- A video has Play and Pause, with no seek bar and no sound controls.
+- The duplicate review makes a clicked photo the keeper, and it has no per-photo toggles beyond
+  that.
+- The GUI keeps the bundle identifier of the Flutter app, `com.example.frontend`, so that the
+  folder access that macOS granted to it carries over. The identifier should change before a
+  public release.
+- Basalt and Magma must be pinned to tagged releases before a build can be reproduced without
+  local checkouts. The Windows and Linux packaging, the Vulkan and Direct3D 12 changes in Magma
+  and the Windows child-process code have not been compiled.

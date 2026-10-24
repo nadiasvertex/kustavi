@@ -669,32 +669,12 @@ Preconditions: active session; no pass running.
 
 ## 6. Code Generation
 
-- **C++ (back end):** `protoc` with the gRPC C++ plugin, run by a CMake
+- **C++ (back end and GUI):** `protoc` with the gRPC C++ plugin, run by a CMake
   custom command (one invocation generates both the protobuf message code
-  and the gRPC service code), wired in `proto/CMakeLists.txt`.
-- **Dart (front end):** `protoc` with `protoc_plugin`
-  (`dart pub global activate protoc_plugin`; `~/.pub-cache/bin` on `PATH`),
-  output under `frontend/lib/src/generated/kustavi/` (gitignored; regenerate
-  with `just proto`). A single `--dart_out="grpc:..."` invocation generates
-  both the message and the gRPC client code. The proto file is compiled from
-  a `kustavi/` root so the generated paths carry the package name:
-
-  ```sh
-  mkdir -p frontend/lib/src/generated && \
-  tmp="$(mktemp -d)" && \
-  mkdir "$tmp/kustavi" && \
-  cp proto/service.proto "$tmp/kustavi/" && \
-  protoc -I "$tmp" --dart_out="grpc:frontend/lib/src/generated" \
-    kustavi/service.proto && \
-  rm -rf "$tmp"
-  ```
-
-  Imported in Dart as
-  `package:kustavi/src/generated/kustavi/service.pb.dart` /
-  `service.pbgrpc.dart`. A `just proto` recipe runs this.
+  and the gRPC service code), wired in `proto/CMakeLists.txt`. The back end
+  and the GUI link the same generated library, `kustavi::proto`.
 - The proto file is the contract: any change must be accompanied by
-  updates to `spec/proto.md` and regeneration of the generated code on
-  both sides (CMake for C++, `just proto` for Dart).
+  updates to `spec/proto.md`. The build regenerates the code for both sides.
 - Field numbers are stable for the lifetime of the project; if a field
   is ever removed, its number must be `reserved`.
 
