@@ -961,9 +961,9 @@ TEST_CASE("a click on a photo of the confirm screen opens its detail", "[app][de
   CHECK(h.shell->detail()->info().image.id == "a.jpg");
   CHECK_FALSE(h.shell->detail()->info().can_toggle);
   CHECK(h.shell->overlays().overlay_count() == 1);
-  CHECK(h.button("Close") != nullptr);
+  CHECK(h.button("\ue5cd Close") != nullptr);
 
-  h.button("Close")->press();
+  h.button("\ue5cd Close")->press();
   h.refresh();
   CHECK(h.shell->overlays().overlay_count() == 0);
   CHECK(h.shell->detail() == nullptr);

@@ -223,7 +223,7 @@ TEST_CASE("close and the nearby shots call back", "[detail]") {
   h.make(std::move(info));
   h.button("b.jpg")->press();
   CHECK(h.opened == "b.jpg");
-  h.button("Close")->press();
+  h.button("\ue5cd Close")->press();
   CHECK(h.closed == 1);
 }
 
@@ -236,7 +236,7 @@ TEST_CASE("a video plays in place of the picture", "[detail][video]") {
   info.image.height = 1080;
   h.make(std::move(info));
   REQUIRE(h.player_ != nullptr);
-  auto *const play = h.button("Play");
+  auto *const play = h.button("\ue037 Play");
   REQUIRE(play != nullptr);
   CHECK_FALSE(play->visible());
 
@@ -248,11 +248,11 @@ TEST_CASE("a video plays in place of the picture", "[detail][video]") {
   // The first frame starts the playback and shows the button.
   CHECK(play->visible());
   CHECK(h.player_->plays == 1);
-  CHECK(play->label() == "Pause");
+  CHECK(play->label() == "\ue034 Pause");
 
   play->press();
   CHECK(h.player_->pauses == 1);
-  CHECK(play->label() == "Play");
+  CHECK(play->label() == "\ue037 Play");
   play->press();
   CHECK(h.player_->plays == 2);
 
@@ -273,7 +273,7 @@ TEST_CASE("a player that fails leaves the still image", "[detail][video]") {
   h.player_->failed_ = true;
   h.view->update();
   CHECK(h.view->video() == nullptr);
-  CHECK_FALSE(h.button("Play")->visible());
+  CHECK_FALSE(h.button("\ue037 Play")->visible());
 }
 
 TEST_CASE("a video with no player in the build shows the still image", "[detail][video]") {

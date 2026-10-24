@@ -532,7 +532,6 @@ gui/
     preview.cpp             # kustavi_gui_preview
   testing/                  # fake_kustavi_client
   tests/                    # Catch2 tests
-  main.cpp  thumbnail_loader.*   # the scrolling spike (kustavi_gui_spike)
 ```
 
 ## 15. Decisions Recorded

@@ -9,19 +9,13 @@ if(NOT KUSTAVI_BUILD_GUI)
   return()
 endif()
 
-add_executable(kustavi_gui_spike main.cpp thumbnail_loader.cpp)
-target_link_libraries(kustavi_gui_spike PRIVATE kustavi_options basalt::basalt magma::magma
-  opencv_core opencv_imgproc opencv_imgcodecs)
-target_compile_definitions(kustavi_gui_spike PRIVATE
-  KUSTAVI_PHOTO_DIR="${PROJECT_SOURCE_DIR}/test/photos")
-kustavi_opencv_includes(kustavi_gui_spike)
-
 # The application: screens built from the core's state, and the program that runs them.
 add_library(kustavi_gui_app STATIC
   app/batch_menu_screen.cpp
   app/commit_screens.cpp
   app/detail_view.cpp
   app/executable_path.cpp
+  app/fonts.cpp
   app/image_grid.cpp
   app/image_loader.cpp
   app/review_screen.cpp
@@ -34,6 +28,9 @@ target_include_directories(kustavi_gui_app PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(kustavi_gui_app PUBLIC kustavi::gui_core basalt::basalt magma::magma
   PRIVATE kustavi_options opencv_core opencv_imgproc opencv_imgcodecs)
 kustavi_opencv_includes(kustavi_gui_app)
+# A build that runs from the tree reads the fonts from the source.
+target_compile_definitions(kustavi_gui_app PUBLIC
+  KUSTAVI_FONT_DIR="${PROJECT_SOURCE_DIR}/resources/fonts")
 
 # Video playback uses libmdk, which cmake/gui_dependencies.cmake fetches. Without it the detail view
 # shows the still image of a video.

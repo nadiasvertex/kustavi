@@ -1,5 +1,6 @@
 #include "app/detail_view.h"
 
+#include "app/fonts.h"
 #include "app/ui_kit.h"
 #include "core/format.h"
 
@@ -12,6 +13,11 @@ namespace {
 using basalt::button_variant;
 using basalt::text_role;
 using basalt::text_tone;
+
+// The buttons carry a glyph of the icon font before their words.
+auto const play_label = std::string{icon::play} + " Play";
+auto const pause_label = std::string{icon::pause} + " Pause";
+auto const close_label = std::string{icon::close} + " Close";
 
 constexpr auto panel_width = 320.0F;
 // The longest side of the frames of a video, which is about what a window shows.
@@ -87,7 +93,7 @@ auto detail_view::toggle_playback() -> void {
     video_->play();
   }
   if (play_button_ != nullptr) {
-    play_button_->set_label(video_->playing() ? "Pause" : "Play");
+    play_button_->set_label(video_->playing() ? pause_label : play_label);
   }
 }
 
@@ -132,7 +138,7 @@ auto detail_view::build() -> std::unique_ptr<basalt::widget> {
   panel->add_child(std::move(controls));
 
   if (image.is_video) {
-    play_button_ = &panel->add_child(ui::make_button("Play", [this] { toggle_playback(); }));
+    play_button_ = &panel->add_child(ui::make_button(play_label, [this] { toggle_playback(); }));
     play_button_->set_visible(false);
   }
 
@@ -146,7 +152,7 @@ auto detail_view::build() -> std::unique_ptr<basalt::widget> {
       controller_.keep_image(info_.image.id);
     }
   });
-  panel->add_child(ui::make_button("Close", [this] {
+  panel->add_child(ui::make_button(close_label, [this] {
     if (handlers_.close) {
       handlers_.close();
     }

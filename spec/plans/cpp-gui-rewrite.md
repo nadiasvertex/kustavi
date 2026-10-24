@@ -326,16 +326,15 @@ What was built:
 
 Differences from the Flutter app and gaps:
 
-- The UI uses system fonts, and the bundled UI and icon fonts that this plan describes are not
-  done. Buttons carry words, not icons.
+- The UI bundles Noto Sans for text and Material Icons for glyphs (`resources/fonts`), and the
+  system fonts cover other scripts. Only a few buttons carry an icon (Play, Pause, Close).
 - Screen readers are out of scope. Widgets describe themselves, so a bridge can be added later.
 - The app is light-themed only.
 - A video has Play and Pause, with no seek bar and no sound controls.
 - The duplicate review makes a clicked photo the keeper, and it has no per-photo toggles beyond
   that.
-- The GUI keeps the bundle identifier of the Flutter app, `com.example.frontend`, so that the
-  folder access that macOS granted to it carries over. The identifier should change before a
-  public release.
+- The bundle identifier is `io.github.nadiasvertex.kustavi`. The Flutter app used
+  `com.example.frontend`, so macOS asks again for folder access.
 - Basalt and Magma must be pinned to tagged releases before a build can be reproduced without
   local checkouts. The Windows and Linux packaging, the Vulkan and Direct3D 12 changes in Magma
   and the Windows child-process code have not been compiled.

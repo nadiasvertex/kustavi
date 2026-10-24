@@ -5,6 +5,8 @@
 // NAME is one of start, downloading, scanning, restore, confirm, none, failed, crash, log, trips,
 // trips-running, menu, quality, similar, junk-prep, junk-running, review, summary, copying, done and detail. A scripted fake back end puts the controller in the state of that screen.
 
+#include "app/executable_path.h"
+#include "app/fonts.h"
 #include "app/wizard_shell.h"
 #include "testing/fake_kustavi_client.h"
 
@@ -99,7 +101,7 @@ auto main(int argc, char **argv) -> int {
   ui_queue queue;
   auto client = std::make_shared<testing::fake_kustavi_client>();
   basalt::text::font_manager fonts;
-  fonts.add_system_fonts();
+  add_application_fonts(fonts, current_executable(argv[0]));
   basalt::text::text_shaper shaper{fonts};
   basalt::widget_tree tree{basalt::make_theme(basalt::color_scheme::light)};
   tree.set_text_shaper(&shaper);

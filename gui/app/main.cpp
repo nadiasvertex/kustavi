@@ -7,6 +7,7 @@
 // thread through a `ui_queue`.
 
 #include "app/executable_path.h"
+#include "app/fonts.h"
 #include "app/image_loader.h"
 #include "app/wizard_shell.h"
 #include "core/backend_host.h"
@@ -83,7 +84,7 @@ auto run(int, char **argv, bool raster) -> int {
   worker_pool pool{2};
 
   basalt::text::font_manager fonts;
-  fonts.add_system_fonts();
+  add_application_fonts(fonts, current_executable(argv[0]));
   basalt::text::text_shaper shaper{fonts};
   basalt::widget_tree tree{basalt::make_theme(basalt::color_scheme::light)};
   tree.set_text_shaper(&shaper);

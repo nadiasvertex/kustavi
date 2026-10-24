@@ -28,7 +28,6 @@ in `spec/frontend.md` §14; the history of the rewrite is in `spec/plans/cpp-gui
 - `gui/app` holds the screens, the shell and `kustavi_gui`, the program.
   `kustavi_gui_preview --screen NAME --out FILE.png` draws a screen with a scripted back end
   (the names are in the header of `gui/app/preview.cpp`).
-- `gui/main.cpp` is the scrolling spike (`kustavi_gui_spike`) and documents its options.
 - Videos play through libmdk, a pinned release archive that the build fetches. Configure with
   `-DKUSTAVI_ENABLE_VIDEO=OFF` to build without it, or `-DKUSTAVI_MDK_DIR=<mdk-sdk>` to use
   another copy. Without libmdk a video shows its still image.

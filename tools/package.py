@@ -176,9 +176,9 @@ def make_macos_zip(staging: Path, archive: Path) -> None:
 # --------------------------------------------------------------------------- #
 # macOS
 # --------------------------------------------------------------------------- #
-# The bundle id of the Flutter app, which the C++ GUI keeps: macOS ties the folder access that the
-# user granted to it.
-BUNDLE_ID = "com.example.frontend"
+# The Flutter app used com.example.frontend. macOS ties the folder access that a user granted to the
+# bundle id, so a user of that app is asked for access again.
+BUNDLE_ID = "io.github.nadiasvertex.kustavi"
 COPYRIGHT = "Copyright \u00a9 2026 Kustavi. All rights reserved."
 
 
@@ -254,6 +254,14 @@ def bundle_mdk(app_dir: Path, executable: Path) -> None:
     run(["install_name_tool", "-add_rpath", "@executable_path/../Frameworks", str(executable)])
 
 
+def copy_fonts(destination: Path) -> None:
+    """Copies the bundled UI and icon fonts, with their licenses."""
+    source = REPO_ROOT / "resources" / "fonts"
+    for path in sorted(source.iterdir()):
+        if path.suffix in (".ttf", ".txt"):
+            copy_file(path, destination / path.name)
+
+
 def package_macos(args: argparse.Namespace) -> Path:
     dist = REPO_ROOT / "dist"
 
@@ -273,6 +281,7 @@ def package_macos(args: argparse.Namespace) -> Path:
     copy_file(gui, macos_dir / APP_NAME, executable=True)
     make_icns(REPO_ROOT / "resources" / "icon-square.png",
               contents / "Resources" / f"{APP_NAME}.icns")
+    copy_fonts(contents / "Resources" / "fonts")
     write_info_plist(contents, version, minimum_macos_version(gui))
     bundle_mdk(app_dir, macos_dir / APP_NAME)
 
@@ -342,6 +351,7 @@ def package_windows(args: argparse.Namespace) -> Path:
     if app_dir.exists():
         shutil.rmtree(app_dir)
     copy_file(gui, app_dir / f"{APP_NAME}.exe", executable=True)
+    copy_fonts(app_dir / "fonts")
     # libmdk and the libraries that it loads sit beside the program.
     mdk_bin = mdk_dir() / "bin" / "x64"
     if mdk_bin.is_dir():
