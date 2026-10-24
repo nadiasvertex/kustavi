@@ -8,6 +8,7 @@
 #include "app/screens.h"
 #include "app/trips_screen.h"
 #include "core/model_status.h"
+#include "core/ui_timers.h"
 #include "core/wizard_controller.h"
 
 #include "basalt/basalt.h"
@@ -41,6 +42,12 @@ public:
   // Rebuilds the screens if something changed, gives finished images to the grid, and moves the
   // busy bar. Call it once per frame, before layout.
   auto update() -> void;
+
+  // Timers for the messages that go away by themselves. Without them a message stays up until
+  // the next one replaces it.
+  auto set_timers(ui_timers *timers) -> void { timers_ = timers; }
+  // A short message at the bottom of the window that goes away after a few seconds.
+  auto show_toast(std::string const &text) -> void;
 
   // Opens the detail view of a photo over the screen. Another one that is open is closed first.
   auto open_detail(image_info const &image) -> void;
@@ -87,6 +94,9 @@ private:
   std::size_t built_phase_index_ = static_cast<std::size_t>(-1);
   std::uint64_t built_revision_ = 0;
   std::unique_ptr<image_grid> grid_;
+  ui_timers *timers_ = nullptr;
+  std::optional<basalt::widget_id> toast_;
+  std::optional<ui_timers::timer_id> toast_timer_;
   std::unique_ptr<detail_view> detail_;
   std::unique_ptr<detail_view> retired_detail_;
   std::optional<basalt::widget_id> detail_overlay_;

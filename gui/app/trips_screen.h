@@ -44,6 +44,10 @@ public:
   auto set_open_detail(std::function<void(image_info const &)> open) -> void {
     open_detail_ = std::move(open);
   }
+  // Called with a short message for the user, such as that an action cleared their edits.
+  auto set_notify(std::function<void(std::string const &)> notify) -> void {
+    notify_ = std::move(notify);
+  }
   [[nodiscard]] auto build(wizard_trips_review const &review) -> std::unique_ptr<basalt::widget>;
   // Rebuilds the toolbar and the settings after the state changed, and gives finished images to
   // the cells. Call it every frame, before layout.
@@ -87,6 +91,7 @@ private:
   // was running when they were removed has returned.
   std::vector<std::unique_ptr<basalt::widget>> retired_;
   std::function<void(image_info const &)> open_detail_;
+  std::function<void(std::string const &)> notify_;
   bool controls_dirty_ = false;
   bool headers_dirty_ = false;
 };

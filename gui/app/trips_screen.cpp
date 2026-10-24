@@ -254,6 +254,9 @@ auto trips_screen::build_settings() -> void {
         state_.selected.clear();
         state_.selecting = false;
         controller_.rerun_trips_pass(params);
+        if (notify_) {
+          notify_("Re-clustering — manual trip edits were cleared");
+        }
       },
       button_variant::primary));
   settings_->add_child(std::move(actions));

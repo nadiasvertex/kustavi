@@ -169,6 +169,7 @@ auto wizard_shell::build_body() -> std::unique_ptr<basalt::widget> {
                                                     shell.loader_, shell.images_);
       shell.trips_->set_open_detail(
           [&shell = shell](image_info const &image) { shell.open_detail(image); });
+      shell.trips_->set_notify([&shell = shell](std::string const &text) { shell.show_toast(text); });
       return shell.trips_->build(review);
     }
     auto operator()(wizard_quality_running const &running) const
@@ -349,6 +350,34 @@ auto wizard_shell::open_detail(image_info const &image) -> void {
     detail_overlay_.reset();
     retired_detail_ = std::move(detail_);
   });
+}
+
+auto wizard_shell::show_toast(std::string const &text) -> void {
+  if (toast_) {
+    host_->dismiss(*toast_);
+    toast_.reset();
+  }
+  if (timers_ && toast_timer_) {
+    timers_->cancel(*toast_timer_);
+    toast_timer_.reset();
+  }
+  auto message = ui::row(0);
+  message->set_padding(basalt::length_insets::symmetric(basalt::fixed(16), basalt::fixed(10)));
+  message->set_surface(basalt::box_surface{});
+  message->add_child(ui::text(text));
+  auto const view = tree_.viewport();
+  // The popup goes below the anchor, or above when it does not fit, so the anchor sits at the
+  // bottom edge, in the middle.
+  basalt::rect const anchor{{view.width / 2, view.height - 72}, {1, 1}};
+  toast_ = host_->show_hover_popup(std::move(message), anchor, [this] { toast_.reset(); });
+  if (timers_) {
+    toast_timer_ = timers_->after(std::chrono::seconds{4}, [this] {
+      toast_timer_.reset();
+      if (toast_) {
+        host_->dismiss(*toast_);
+      }
+    });
+  }
 }
 
 auto wizard_shell::close_detail() -> void {

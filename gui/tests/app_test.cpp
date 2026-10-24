@@ -1010,3 +1010,37 @@ TEST_CASE("opening another photo replaces the open detail", "[app][detail]") {
   CHECK(h.shell->overlays().overlay_count() == 1);
   CHECK(h.shell->detail()->info().image.id == "b.jpg");
 }
+
+TEST_CASE("re-clustering says that the edits were cleared, and the message goes away",
+          "[app][trips]") {
+  harness h;
+  std::chrono::steady_clock::time_point now{};
+  ui_timers timers{[&now] { return now; }};
+  h.shell->set_timers(&timers);
+  reach_trips(h);
+  h.button("Clustering settings")->press();
+  h.refresh();
+  h.button("Re-cluster")->press();
+  h.refresh();
+  CHECK(h.has_text("Re-clustering — manual trip edits were cleared"));
+  using namespace std::chrono_literals;
+  now += 3s;
+  timers.run_due();
+  h.refresh();
+  CHECK(h.has_text("Re-clustering — manual trip edits were cleared"));
+  now += 2s;
+  timers.run_due();
+  h.refresh();
+  CHECK_FALSE(h.has_text("Re-clustering — manual trip edits were cleared"));
+}
+
+TEST_CASE("a new message replaces the one that is up", "[app]") {
+  harness h;
+  h.shell->show_toast("first");
+  h.refresh();
+  CHECK(h.has_text("first"));
+  h.shell->show_toast("second");
+  h.refresh();
+  CHECK_FALSE(h.has_text("first"));
+  CHECK(h.has_text("second"));
+}

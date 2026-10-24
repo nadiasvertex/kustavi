@@ -79,6 +79,7 @@ auto run(int, char **argv, bool raster) -> int {
 
   auto scheduler = magma::frame_scheduler{refresh_interval(platform, *window)};
   ui_queue queue{[&platform] { platform.wake(); }};
+  ui_timers timers;
   worker_pool pool{2};
 
   basalt::text::font_manager fonts;
@@ -93,6 +94,7 @@ auto run(int, char **argv, bool raster) -> int {
                         queue.post([&scheduler] { scheduler.request_frame(); });
                       }};
   wizard_controller controller{queue, pool.executor()};
+  controller.set_timers(&timers);
   model_status model{queue};
 
   process_connector_options connector;
@@ -143,6 +145,7 @@ auto run(int, char **argv, bool raster) -> int {
   };
   wizard_shell shell{tree, controller, model, loader, master_loader, services,
                      default_video_player_factory()};
+  shell.set_timers(&timers);
   shell.services().show_backend_log = [&] { shell.show_log_dialog(backend.log_text()); };
 
   auto const dirty = [&] {
@@ -195,9 +198,15 @@ auto run(int, char **argv, bool raster) -> int {
     if (scheduler.pending()) {
       (void)platform.request_display_tick(*window);
     }
-    auto const timeout = scheduler.wait_timeout(now_ns());
+    // The loop sleeps until the next frame is due or the next timer goes off, whichever is first.
+    auto timeout = scheduler.wait_timeout(now_ns());
+    if (auto const next = timers.next_due()) {
+      auto const wait = std::chrono::duration_cast<std::chrono::nanoseconds>(*next).count();
+      timeout = timeout ? std::min<std::int64_t>(*timeout, wait) : wait;
+    }
     platform.wait_for_events(timeout ? std::optional{std::chrono::nanoseconds{*timeout}}
                                      : std::nullopt);
+    timers.run_due();
     if (auto const tick = platform.take_display_tick(*window)) {
       scheduler.display_refreshed(tick->time.count(), tick->interval.count());
     }
