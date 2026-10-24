@@ -45,12 +45,12 @@ TEST_CASE("a stream delivers its events and then ends", "[fake_client]") {
 TEST_CASE("a stream with an error ends with it after its events", "[fake_client]") {
   fake_kustavi_client client;
   client.scan_events = {scan_progress(1)};
-  client.stream_error = backend_crashed{"gone"};
+  client.stream_error = backend_error{status_code::internal, "gone"};
   recorder rec;
   auto subscription = client.scan_folder({}, rec.handlers());
   CHECK(rec.seen.size() == 1);
   REQUIRE(rec.error.has_value());
-  CHECK(std::holds_alternative<backend_crashed>(*rec.error));
+  CHECK(message_of(*rec.error) == "gone");
 }
 
 TEST_CASE("the fake records the request that it was given", "[fake_client]") {
@@ -94,12 +94,10 @@ TEST_CASE("unary calls return what was scripted, or the error", "[fake_client]")
   fake_kustavi_client client;
   client.info.set_version("1.4.0");
   CHECK(client.get_info()->version() == "1.4.0");
-  client.unary_error = backend_not_found{"missing"};
+  client.unary_error = backend_error{status_code::not_found, "missing"};
   auto const failed = client.get_info();
   REQUIRE_FALSE(failed.has_value());
-  CHECK(std::holds_alternative<backend_not_found>(failed.error()));
-  CHECK_FALSE(client.shutdown().has_value());
-  CHECK(client.shutdown_calls == 1);
+  CHECK(failed.error().not_found());
 }
 
 TEST_CASE("saved session states are kept in order", "[fake_client]") {

@@ -2,19 +2,10 @@
 
 namespace kustavi::gui {
 
-auto message_of(backend_error const &error) -> std::string const & {
-  return std::visit([](auto const &value) -> std::string const & { return value.message; }, error);
-}
+auto message_of(backend_error const &error) -> std::string const & { return error.message; }
 
-auto map_grpc_status(grpc::Status const &status) -> backend_error {
-  switch (status.error_code()) {
-  case grpc::StatusCode::NOT_FOUND:
-    return backend_not_found{status.error_message()};
-  case grpc::StatusCode::UNAVAILABLE:
-    return backend_crashed{status.error_message()};
-  default:
-    return backend_rpc{status.error_code(), status.error_message()};
-  }
+auto to_backend_error(status const &failed) -> backend_error {
+  return {failed.error_code(), failed.error_message()};
 }
 
 } // namespace kustavi::gui

@@ -124,7 +124,7 @@ inline auto models_path() -> std::filesystem::path {
  * reverse-geocode trip centroids into folder names ("Rome, Italy").
  *
  * Search order: `$KUSTAVI_GEO_DATA`, then next to the executable (packaged
- * app, and the build tree where `data/` is copied beside the server), then a
+ * app, and the build tree where `data/` is copied beside the program), then a
  * workspace-relative path (developer shell), then the app-data directory.
  * Returns an empty path when no table is found; the trips pass then falls
  * back to month-year folder names.

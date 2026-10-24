@@ -11,14 +11,9 @@ set(FETCHCONTENT_QUIET OFF)
 # are treated as system headers.
 set(CMAKE_POLICY_DEFAULT_CMP0169 OLD)
 
-option(KUSTAVI_USE_SYSTEM_GRPC
-       "Use an installed gRPC (and its protobuf) instead of building it" OFF)
-
 # --- TLS ---------------------------------------------------------------------
-# One TLS library per process. gRPC and libcurl both use the system OpenSSL on
-# macOS and Linux, so two copies of the same symbols are never linked together.
-# On Windows curl uses Schannel and gRPC uses its bundled BoringSSL.
-# gRPC 1.84 does not build against OpenSSL 4, so prefer 3.x when Homebrew has it.
+# libcurl uses the system OpenSSL on macOS and Linux, and Schannel on Windows. Prefer OpenSSL 3.x
+# when Homebrew has it.
 if(NOT WIN32)
   if(APPLE AND NOT OPENSSL_ROOT_DIR)
     foreach(prefix /opt/homebrew/opt/openssl@3 /usr/local/opt/openssl@3)
@@ -33,7 +28,7 @@ if(NOT WIN32)
 endif()
 
 # pipe2() is declared by the newest macOS SDK but is not available on the
-# deployment target; make c-ares and curl use their pipe() fallback.
+# deployment target; make curl use its pipe() fallback.
 if(APPLE)
   set(HAVE_PIPE2 OFF CACHE INTERNAL "")
 endif()
@@ -48,53 +43,26 @@ if(NOT MSVC)
   string(APPEND CMAKE_OBJCXX_FLAGS " ${_dep_flags}")
 endif()
 
-# --- gRPC and protobuf -------------------------------------------------------
-if(KUSTAVI_USE_SYSTEM_GRPC)
-  find_package(gRPC CONFIG REQUIRED)
-  find_package(Protobuf CONFIG REQUIRED)
-else()
-  set(gRPC_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-  set(gRPC_BUILD_CODEGEN ON CACHE BOOL "" FORCE)
-  set(gRPC_BUILD_GRPC_CPP_PLUGIN ON CACHE BOOL "" FORCE)
-  foreach(lang CSHARP NODE OBJECTIVE_C PHP PYTHON RUBY)
-    set(gRPC_BUILD_GRPC_${lang}_PLUGIN OFF CACHE BOOL "" FORCE)
-  endforeach()
-  set(gRPC_BUILD_CSHARP_EXT OFF CACHE BOOL "" FORCE)
-  set(gRPC_INSTALL OFF CACHE BOOL "" FORCE)
-  set(gRPC_ABSL_PROVIDER module CACHE STRING "" FORCE)
-  set(gRPC_PROTOBUF_PROVIDER module CACHE STRING "" FORCE)
-  set(gRPC_CARES_PROVIDER module CACHE STRING "" FORCE)
-  set(gRPC_RE2_PROVIDER module CACHE STRING "" FORCE)
-  # zlib: the system library on macOS and Linux, shared with OpenCV below.
-  if(WIN32)
-    set(gRPC_ZLIB_PROVIDER module CACHE STRING "" FORCE)
-  else()
-    set(gRPC_ZLIB_PROVIDER package CACHE STRING "" FORCE)
-  endif()
-  if(WIN32)
-    set(gRPC_SSL_PROVIDER module CACHE STRING "" FORCE)
-  else()
-    set(gRPC_SSL_PROVIDER package CACHE STRING "" FORCE)
-  endif()
-  set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-  set(protobuf_INSTALL OFF CACHE BOOL "" FORCE)
-  set(ABSL_PROPAGATE_CXX_STD ON CACHE BOOL "" FORCE)
-  set(ABSL_BUILD_TESTING OFF CACHE BOOL "" FORCE)
-  set(ABSL_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
-  FetchContent_Declare(grpc
-    GIT_REPOSITORY ${KUSTAVI_GRPC_GIT_URL}
-    GIT_TAG ${KUSTAVI_GRPC_GIT_TAG}
-    GIT_SHALLOW OFF
-    GIT_SUBMODULES_RECURSE ON
-    GIT_PROGRESS ON
-    SYSTEM
-    FIND_PACKAGE_ARGS NAMES gRPC)
-  FetchContent_MakeAvailable(grpc)
-  # Subproject targets are unqualified; give them the installed names.
-  add_library(gRPC::grpc++ ALIAS grpc++)
-  set(KUSTAVI_PROTOBUF_SOURCE_DIR ${grpc_SOURCE_DIR}/third_party/protobuf
-      CACHE INTERNAL "")
-endif()
+# --- protobuf ----------------------------------------------------------------
+# abseil comes first, so that protobuf finds its targets and does not fetch a second copy.
+set(ABSL_PROPAGATE_CXX_STD ON CACHE BOOL "" FORCE)
+set(ABSL_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(ABSL_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(abseil
+  URL ${KUSTAVI_ABSEIL_URL} URL_HASH SHA256=${KUSTAVI_ABSEIL_SHA256}
+  DOWNLOAD_EXTRACT_TIMESTAMP ON SYSTEM)
+FetchContent_MakeAvailable(abseil)
+
+set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(protobuf_INSTALL OFF CACHE BOOL "" FORCE)
+set(protobuf_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(protobuf_WITH_ZLIB OFF CACHE BOOL "" FORCE)
+set(protobuf_LOCAL_DEPENDENCIES_ONLY ON CACHE BOOL "" FORCE)
+FetchContent_Declare(protobuf
+  URL ${KUSTAVI_PROTOBUF_URL} URL_HASH SHA256=${KUSTAVI_PROTOBUF_SHA256}
+  DOWNLOAD_EXTRACT_TIMESTAMP ON SYSTEM)
+FetchContent_MakeAvailable(protobuf)
+set(KUSTAVI_PROTOBUF_SOURCE_DIR ${protobuf_SOURCE_DIR} CACHE INTERNAL "")
 
 # --- Header-only and single-file libraries -----------------------------------
 set(CLI11_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -215,8 +183,8 @@ set(WITH_AVIF OFF CACHE BOOL "" FORCE)
 set(WITH_OPENCL OFF CACHE BOOL "" FORCE)
 set(WITH_FFMPEG OFF CACHE BOOL "" FORCE)
 set(WITH_GSTREAMER OFF CACHE BOOL "" FORCE)
-# dnn parses ONNX (the YuNet face model) with protobuf. Share the one gRPC
-# builds: a second copy of the runtime in the same process would collide.
+# dnn parses ONNX (the YuNet face model) with protobuf. Share the one built above: a second copy
+# of the runtime in the same process would collide.
 set(WITH_PROTOBUF ON CACHE BOOL "" FORCE)
 set(BUILD_PROTOBUF OFF CACHE BOOL "" FORCE)
 set(PROTOBUF_UPDATE_FILES ON CACHE BOOL "" FORCE)

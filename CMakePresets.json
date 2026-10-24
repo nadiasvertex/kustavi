@@ -49,8 +49,7 @@
     {
       "name": "sanitize",
       "configurePreset": "sanitize",
-      "output": { "outputOnFailure": true },
-      "filter": { "exclude": { "label": "grpc" } }
+      "output": { "outputOnFailure": true }
     }
   ]
 }

@@ -9,8 +9,9 @@
 #include "store/database.h"
 #include "store/store.h"
 
-#include <grpcpp/grpcpp.h>
-#include <proto/service.grpc.pb.h>
+#include "status.h"
+
+#include <proto/service.pb.h>
 
 #include <atomic>
 #include <chrono>
@@ -27,14 +28,12 @@
 
 namespace kustavi {
 
-/// gRPC metadata key carrying the GUI-generated auth token.
-inline constexpr std::string_view k_auth_token_header = "x-kustavi-auth-token";
-
 /// Vision model reported by `GetInfo` (junk pass).
 inline constexpr std::string_view k_model_name = "qwen2.5-vl-3b";
 
 // --- per-pass streaming events --------------------------------------------
-// Carried by event_queue between the pass worker and the gRPC writer thread.
+// Carried by event_queue between the pass worker and the thread that writes
+// events out.
 
 struct scan_progress_evt {
   std::size_t files_seen = 0;
@@ -217,133 +216,128 @@ auto run_producer(event_queue<QueueEvent> &queue, std::stop_source &stop_source,
   });
 }
 
-/** Drains the pass event queue onto the gRPC stream.
+/** Drains the pass event queue into the event writer.
  *
- * Checks for client cancellation on a 200 ms cadence; on cancellation or a
- * failed write it stops the producer and closes the queue.
- * @return OK when the stream completed, CANCELLED when the client went away.
+ * Checks for cancellation on a 200 ms cadence; on cancellation or when the
+ * writer refuses an event it stops the producer and closes the queue.
+ * @return ok when the stream completed, cancelled when the caller went away.
  */
 template <class ProtoEvent, class QueueEvent, class WriteFn>
-auto stream_pass(grpc::ServerContext *ctx,
-                 grpc::ServerWriter<ProtoEvent> *writer,
+auto stream_pass(request_context *ctx, event_writer<ProtoEvent> *writer,
                  event_queue<QueueEvent> &queue,
-                 std::stop_source &producer_stop, WriteFn write_one)
-    -> grpc::Status {
+                 std::stop_source &producer_stop, WriteFn write_one) -> status {
+  (void)writer;
   while (true) {
     const auto ev = queue.wait(std::chrono::milliseconds{200});
-    if (ctx->IsCancelled()) {
+    if (ctx->is_cancelled()) {
       producer_stop.request_stop();
       queue.close();
-      return grpc::Status(grpc::StatusCode::CANCELLED, "");
+      return status(status_code::cancelled, "");
     }
     if (ev.has_value()) {
       if (!write_one(*ev)) {
         producer_stop.request_stop();
         queue.close();
-        return grpc::Status(grpc::StatusCode::CANCELLED, "client disconnected");
+        return status(status_code::cancelled, "client disconnected");
       }
       continue;
     }
     if (queue.is_closed()) {
-      return grpc::Status::OK;
+      return ok_status();
     }
   }
 }
 
-/** Converts a producer failure (if any) into a gRPC INTERNAL status. */
+/** Converts a producer failure (if any) into an internal status. */
 inline auto producer_error_status(const std::exception_ptr &error)
-    -> std::optional<grpc::Status> {
+    -> std::optional<status> {
   if (error == nullptr) {
     return std::nullopt;
   }
   try {
     std::rethrow_exception(error);
   } catch (const std::exception &e) {
-    return grpc::Status(grpc::StatusCode::INTERNAL, e.what());
+    return status(status_code::internal, e.what());
   } catch (...) {
-    return grpc::Status(grpc::StatusCode::INTERNAL, "unknown internal error");
+    return status(status_code::internal, "unknown internal error");
   }
 }
 
-// --- the service -------------------------------------------------------------
+// --- the engine --------------------------------------------------------------
 
-class kustavi_service : public ::kustavi::Kustavi::Service {
+/** The back end: one session over one folder of photos, and the passes that
+ * analyze it.
+ *
+ * Calls block the thread that makes them. A streaming call runs its pass and
+ * hands each event to the writer on the calling thread, so a caller starts it
+ * on a thread of its own. Another thread ends it by cancelling the request
+ * context. One pass runs at a time; `ensure_model` is exempt, and may run
+ * beside the scan. The unary calls may run beside a pass.
+ */
+class engine {
 public:
-  explicit kustavi_service(std::string auth_token);
+  engine() = default;
+  engine(const engine &) = delete;
+  engine &operator=(const engine &) = delete;
 
-  /** True once `Shutdown` was requested via gRPC. serve() polls this and
-   * invokes `grpc::Server::Shutdown` from a dedicated thread — calling it
-   * from a sync handler thread would deadlock (shutdown waits for the
-   * in-flight handler). */
-  auto is_shutdown_requested() const -> bool {
-    return shutdown_requested_.load();
-  }
+  auto get_info(const GetInfoRequest *request, GetInfoResponse *response)
+      -> status;
 
-  grpc::Status GetInfo(grpc::ServerContext *context,
-                       const GetInfoRequest *request,
-                       GetInfoResponse *response) override;
-  grpc::Status Shutdown(grpc::ServerContext *context,
-                        const ShutdownRequest *request,
-                        ShutdownResponse *response) override;
+  /** Reads whether a folder holds a session that can resume. Changes nothing.
+   */
+  auto inspect_session(const InspectSessionRequest *request,
+                       InspectSessionResponse *response) -> status;
+  /** Counts what the stored quality metrics flag at the given thresholds. */
+  auto
+  preview_quality_thresholds(const PreviewQualityThresholdsRequest *request,
+                             PreviewQualityThresholdsResponse *response)
+      -> status;
 
-  grpc::Status InspectSession(grpc::ServerContext *context,
-                              const InspectSessionRequest *request,
-                              InspectSessionResponse *response) override;
-  grpc::Status
-  PreviewQualityThresholds(grpc::ServerContext *context,
-                           const PreviewQualityThresholdsRequest *request,
-                           PreviewQualityThresholdsResponse *response) override;
+  /** Every stored pass result and the user's decisions, after a resume scan. */
+  auto get_session_results(const GetSessionResultsRequest *request,
+                           GetSessionResultsResponse *response) -> status;
+  /** Writes the wizard's step, tunables and decisions so a later launch can
+   * resume. */
+  auto save_session_state(const SaveSessionStateRequest *request,
+                          SaveSessionStateResponse *response) -> status;
+  /** Sizes a commit without writing anything. */
+  auto estimate_commit(const CommitRequest *request,
+                       EstimateCommitResponse *response) -> status;
 
-  grpc::Status GetSessionResults(grpc::ServerContext *context,
-                                 const GetSessionResultsRequest *request,
-                                 GetSessionResultsResponse *response) override;
-  grpc::Status SaveSessionState(grpc::ServerContext *context,
-                                const SaveSessionStateRequest *request,
-                                SaveSessionStateResponse *response) override;
-
-  grpc::Status ScanFolder(grpc::ServerContext *context,
-                          const ScanFolderRequest *request,
-                          grpc::ServerWriter<ScanEvent> *writer) override;
-  grpc::Status
-  RunQualityPass(grpc::ServerContext *context,
-                 const RunQualityPassRequest *request,
-                 grpc::ServerWriter<QualityEvent> *writer) override;
-  grpc::Status EnsureModel(grpc::ServerContext *context,
-                           const EnsureModelRequest *request,
-                           grpc::ServerWriter<ModelEvent> *writer) override;
-  grpc::Status RunJunkPass(grpc::ServerContext *context,
-                           const RunJunkPassRequest *request,
-                           grpc::ServerWriter<JunkEvent> *writer) override;
-  grpc::Status
-  RunSimilarPass(grpc::ServerContext *context,
-                 const RunSimilarPassRequest *request,
-                 grpc::ServerWriter<SimilarEvent> *writer) override;
-  grpc::Status RunTripsPass(grpc::ServerContext *context,
-                            const RunTripsPassRequest *request,
-                            grpc::ServerWriter<TripsEvent> *writer) override;
-  grpc::Status RunRepairPass(grpc::ServerContext *context,
-                             const RunRepairPassRequest *request,
-                             grpc::ServerWriter<RepairEvent> *writer) override;
-  grpc::Status RunVideoPass(grpc::ServerContext *context,
-                            const RunVideoPassRequest *request,
-                            grpc::ServerWriter<VideoEvent> *writer) override;
-  grpc::Status Commit(grpc::ServerContext *context,
-                      const CommitRequest *request,
-                      grpc::ServerWriter<CommitEvent> *writer) override;
-  grpc::Status EstimateCommit(grpc::ServerContext *context,
-                              const CommitRequest *request,
-                              EstimateCommitResponse *response) override;
+  auto scan_folder(request_context *context, const ScanFolderRequest *request,
+                   event_writer<ScanEvent> *writer) -> status;
+  auto run_quality_pass(request_context *context,
+                        const RunQualityPassRequest *request,
+                        event_writer<QualityEvent> *writer) -> status;
+  auto ensure_model(request_context *context, const EnsureModelRequest *request,
+                    event_writer<ModelEvent> *writer) -> status;
+  auto run_junk_pass(request_context *context,
+                     const RunJunkPassRequest *request,
+                     event_writer<JunkEvent> *writer) -> status;
+  auto run_similar_pass(request_context *context,
+                        const RunSimilarPassRequest *request,
+                        event_writer<SimilarEvent> *writer) -> status;
+  auto run_trips_pass(request_context *context,
+                      const RunTripsPassRequest *request,
+                      event_writer<TripsEvent> *writer) -> status;
+  auto run_repair_pass(request_context *context,
+                       const RunRepairPassRequest *request,
+                       event_writer<RepairEvent> *writer) -> status;
+  auto run_video_pass(request_context *context,
+                      const RunVideoPassRequest *request,
+                      event_writer<VideoEvent> *writer) -> status;
+  auto commit(request_context *context, const CommitRequest *request,
+              event_writer<CommitEvent> *writer) -> status;
 
 private:
-  auto check_auth(const grpc::ServerContext *context) const -> bool;
-  auto require_session() -> std::optional<grpc::Status>;
-  auto try_begin_pass() -> std::optional<grpc::Status>;
+  auto require_session() -> std::optional<status>;
+  auto try_begin_pass() -> std::optional<status>;
   /** Resolves a commit request's keep ids to sources; unknown ids go to
    * `errors`. Returns a status when the session cannot be read. */
   auto collect_commit_sources(const CommitRequest &request,
                               std::vector<commit_source> &sources,
                               std::vector<std::string> &errors)
-      -> std::optional<grpc::Status>;
+      -> std::optional<status>;
 
   /// Best-effort: record the wizard's current step in the session DB so a
   /// later launch can offer to resume here. Logs and swallows DB errors —
@@ -362,17 +356,10 @@ private:
   /// session-wide otherwise.
   void record_run_complete(int step, const std::string &batch_key) noexcept;
 
-  static auto unauthenticated() -> grpc::Status {
-    return grpc::Status(grpc::StatusCode::UNAUTHENTICATED,
-                        "invalid or missing auth token");
-  }
-
-  std::string auth_token_;
   bool has_active_session_ = false;
   std::filesystem::path session_folder_;
   database session_db_;
   std::atomic<bool> pass_active_{false};
-  std::atomic<bool> shutdown_requested_{false};
 
   // Serializes EnsureModel (which is exempt from the single-pass lock and may
   // run alongside ingestion). `model_ready_` caches a verified on-disk model

@@ -47,12 +47,4 @@ auto current_executable(char const *argv0) -> std::filesystem::path {
   return std::filesystem::absolute(argv0, error);
 }
 
-auto current_process_id() -> long long {
-#if defined(_WIN32)
-  return static_cast<long long>(GetCurrentProcessId());
-#else
-  return static_cast<long long>(getpid());
-#endif
-}
-
 } // namespace kustavi::gui

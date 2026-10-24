@@ -47,14 +47,6 @@ auto fake_kustavi_client::get_info() -> call_result<GetInfoResponse> {
   return unary_result(info);
 }
 
-auto fake_kustavi_client::shutdown() -> call_result<void> {
-  ++shutdown_calls;
-  if (unary_error) {
-    return std::unexpected(*unary_error);
-  }
-  return {};
-}
-
 auto fake_kustavi_client::inspect_session(std::string folder)
     -> call_result<InspectSessionResponse> {
   last_inspected_folder = std::move(folder);

@@ -1,39 +1,37 @@
-# Back-End RPC Specification (gRPC)
+# Back-End Interface Specification
 
 ## 1. Overview
 
-Kustavi's front end and back end communicate over gRPC on a loopback TCP
-port. This document is the normative API the front end expects (see
-`spec/frontend.md`); the C++ back end is specified in `spec/backend.md`
-and must implement exactly this contract.
+The GUI and the back end run in one process. The back end is a C++ library, the engine
+(`backend/include/engine.h`), and the GUI calls its methods directly. This document is the
+normative description of those calls and of the messages that they take and give. The engine's
+structure is in `spec/backend.md`, and the GUI's use of it is in `spec/frontend.md`.
 
-- Single source of truth: `proto/service.proto`, package `kustavi`.
-- One service: `Kustavi`. All long-running operations are
-  server-streaming methods that emit `oneof`-based event messages.
-- The back end serves exactly one folder at a time ("the session").
-  `ScanFolder` starts the session; every other method requires an active
-  session and operates on it. Calling a non-`ScanFolder` method before a
-  `ScanFolder` (or calling `ScanFolder` while a pass is running) is
-  rejected with `FAILED_PRECONDITION`.
+- The messages are defined in `proto/service.proto`, package `kustavi`, and generated as C++
+  classes. They are plain values: nothing is serialized or sent between processes. The file keeps
+  protobuf for its `oneof` events and for the saved session state.
+- The engine's methods are named after the operations below in `snake_case`, such as
+  `scan_folder` for `ScanFolder`. A unary call takes its request and fills its response. A
+  streaming call takes a request context and an event writer, and runs its pass on the calling
+  thread, handing each event to the writer. Every call returns a `status`.
+- The engine serves exactly one folder at a time ("the session"). `scan_folder` starts the
+  session; every other call requires an active session and operates on it. Calling one before a
+  scan, or starting a pass while a pass is running, fails with `failed_precondition`.
 
-## 2. Transport & Lifecycle
+## 2. Calling Convention & Lifecycle
 
-- The GUI launches the back end with `--listen 127.0.0.1:0`.
-- After binding, the back end prints one flushed line to stdout:
-  `KUSTAVI-READY <port>\n`, where `<port>` is the port it actually bound.
-  The GUI waits for this line (30 s timeout) before opening a channel to
-  `127.0.0.1:<port>`.
-- HTTP/2, insecure credentials, loopback only. No TLS, no auth: the
-  listener is bound to 127.0.0.1 and exists only while the GUI runs.
-- At most one pass (quality/junk/similar/trips/commit) runs at a time.
-  The GUI enforces this with its linear wizard; the back end rejects a
-  second concurrent pass with `FAILED_PRECONDITION`.
-- Cancellation: the GUI cancels the gRPC call to stop a pass. The back
-  end must stop producing new work within 2 s of observing the cancel —
-  including aborting in-flight LLM inference — and release its resources.
-  A client-cancelled stream is not an error condition for the GUI.
-- `Shutdown` must be idempotent and must cause the process to exit
-  shortly after the response is sent.
+- A streaming call blocks the thread that makes it until the pass ends. The caller runs it on a
+  thread of its own. The GUI's `engine_client` does this for each call.
+- At most one pass (scan, quality, junk, similar, trips, repair, video, commit) runs at a time.
+  The GUI enforces this with its linear wizard; the engine rejects a second concurrent pass with
+  `failed_precondition`. `ensure_model` is exempt and may run beside the scan. The unary calls may
+  run beside a pass.
+- Cancellation: another thread calls `cancel` on the request context, or the event writer returns
+  false. The pass must stop producing new work within 2 s, including aborting in-flight LLM
+  inference, and the call returns `cancelled`. A cancelled call is not an error for the GUI, and
+  its stream ends without a complete event.
+- The engine has no shutdown call. Destroying it after its calls have returned releases the
+  session database. The session's working-image cache stays on disk with the session.
 
 ## 3. Conventions
 
@@ -46,21 +44,24 @@ and must implement exactly this contract.
   proto3 `optional` so presence is meaningful; unset when the data is
   unavailable.
 - **Event streams** — every pass stream ends with a `*Complete` event on
-  success. Failure is signaled by a non-OK gRPC status (with a
+  success. Failure is signaled by a status other than `ok` (with a
   human-readable message); the GUI does not parse error events.
   Cancellation ends the stream without a complete event.
 - **Thumbnails** — JPEG, ≤ 256 px on the long edge. The file at
   `ImageMeta.thumbnail_path` must be fully written before the
   `ImageMeta` event is emitted. Thumbnail paths are valid for the
   lifetime of the session.
-- **Status codes** — `INVALID_ARGUMENT` (bad paths/values),
-  `NOT_FOUND` (folder missing), `FAILED_PRECONDITION` (no session, pass
-  already running, model missing), `INTERNAL` (processing failure),
-  `CANCELLED` (client cancel).
+- **Status codes** — `invalid_argument` (bad paths/values),
+  `not_found` (folder missing), `failed_precondition` (no session, pass
+  already running, model missing), `internal` (processing failure),
+  `cancelled` (caller cancel).
 - The back end never modifies, moves, or deletes source files. `Commit`
   only copies.
 
-## 4. The Service
+## 4. The Messages
+
+The `service` block lists the engine's calls and is documentation: `proto/service.proto` holds the
+messages only.
 
 ```proto
 syntax = "proto3";
@@ -70,7 +71,6 @@ package kustavi;
 service Kustavi {
   // --- lifecycle -------------------------------------------------------
   rpc GetInfo(GetInfoRequest) returns (GetInfoResponse);
-  rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
 
   // --- pass 1: scan & thumbnails ---------------------------------------
   rpc ScanFolder(ScanFolderRequest) returns (stream ScanEvent);
@@ -108,8 +108,6 @@ message GetInfoResponse {
   string model_name = 3;           // vision model used by the junk pass
 }
 
-message ShutdownRequest {}
-message ShutdownResponse {}
 
 // --- shared -------------------------------------------------------------
 
@@ -429,12 +427,7 @@ message CommitComplete {
 
 No preconditions. Returns the back-end version, the list of supported
 image formats, and the configured vision model name. The GUI calls this
-as the readiness probe after the ready handshake.
-
-### Shutdown
-
-Idempotent. Flushes and deletes the session's thumbnail cache, then the
-process exits shortly after the response.
+as a check that the engine answers.
 
 ### ScanFolder
 
@@ -669,18 +662,15 @@ Preconditions: active session; no pass running.
 
 ## 6. Code Generation
 
-- **C++ (back end and GUI):** `protoc` with the gRPC C++ plugin, run by a CMake
-  custom command (one invocation generates both the protobuf message code
-  and the gRPC service code), wired in `proto/CMakeLists.txt`. The back end
-  and the GUI link the same generated library, `kustavi::proto`.
+- **C++ (back end and GUI):** `protoc` generates the message classes, run by a CMake custom
+  command wired in `proto/CMakeLists.txt`. The engine and the GUI link the same generated library,
+  `kustavi::proto`.
 - The proto file is the contract: any change must be accompanied by
-  updates to `spec/proto.md`. The build regenerates the code for both sides.
+  updates to `spec/proto.md`. The build regenerates the code.
 - Field numbers are stable for the lifetime of the project; if a field
   is ever removed, its number must be `reserved`.
 
 ## 7. Versioning
 
-The GUI and back end are released as a single versioned pair and run
-together; there is no cross-version compatibility requirement.
-`GetInfoResponse.version` exists for diagnostics (shown in the GUI's
-back-end log dialog) and for asserting version skew in tests.
+The GUI and back end are one program; there is no cross-version compatibility requirement.
+`GetInfoResponse.version` exists for diagnostics.

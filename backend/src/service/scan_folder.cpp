@@ -1,4 +1,4 @@
-#include "kustavi_service.h"
+#include "engine.h"
 
 #include "algorithm/append_range.h"
 #include "paths.h"
@@ -19,13 +19,9 @@ using algorithm::append_range;
 // Pass 1: scan & thumbnails
 // ---------------------------------------------------------------------------
 
-auto kustavi_service::ScanFolder(grpc::ServerContext *context,
-                                 const ScanFolderRequest *request,
-                                 grpc::ServerWriter<ScanEvent> *writer)
-    -> grpc::Status {
-  if (!check_auth(context)) {
-    return unauthenticated();
-  }
+auto engine::scan_folder(request_context *context,
+                         const ScanFolderRequest *request,
+                         event_writer<ScanEvent> *writer) -> status {
   if (const auto err = try_begin_pass()) {
     return *err;
   }
@@ -33,13 +29,12 @@ auto kustavi_service::ScanFolder(grpc::ServerContext *context,
 
   const auto &folder_str = request->folder();
   if (folder_str.empty()) {
-    return {grpc::StatusCode::INVALID_ARGUMENT, "folder is required"};
+    return {status_code::invalid_argument, "folder is required"};
   }
   const fs::path folder{folder_str};
   std::error_code ec;
   if (!fs::is_directory(folder, ec) || ec) {
-    return {grpc::StatusCode::NOT_FOUND,
-            "folder does not exist: " + folder_str};
+    return {status_code::not_found, "folder does not exist: " + folder_str};
   }
 
   const bool resume = request->resume();
@@ -52,7 +47,7 @@ auto kustavi_service::ScanFolder(grpc::ServerContext *context,
       store::set_wizard_step(session_db_, 0);
     }
   } catch (const std::exception &e) {
-    return {grpc::StatusCode::INTERNAL,
+    return {status_code::internal,
             std::string("failed to start session: ") + e.what()};
   }
 
@@ -114,7 +109,7 @@ auto kustavi_service::ScanFolder(grpc::ServerContext *context,
                                      .errors = summary.errors});
       });
 
-  grpc::Status status = stream_pass(
+  status status = stream_pass(
       context, writer, queue, stop_source, [&](const scan_event &ev) -> bool {
         ScanEvent proto;
         std::visit(
@@ -188,7 +183,7 @@ auto kustavi_service::ScanFolder(grpc::ServerContext *context,
               }
             },
             ev);
-        return writer->Write(proto);
+        return writer->write(proto);
       });
 
   producer.join();

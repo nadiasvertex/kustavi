@@ -27,8 +27,7 @@ auto model_status::start(std::shared_ptr<kustavi_client> client) -> void {
     }
   };
   handlers.on_done = [this, generation](std::optional<backend_error> error) {
-    // A crash is handled where the back end is restarted, which starts this call again.
-    if (!error || std::holds_alternative<backend_crashed>(*error)) {
+    if (!error) {
       return;
     }
     scope_.post(generation, [this, message = message_of(*error)] {

@@ -1,8 +1,8 @@
 # Overview
 
   - Front end GUI: spec/frontend.md
-  - Back end server: spec/backend.md
-  - Protobuf RPC: spec/proto.md
+  - Back end library: spec/backend.md
+  - Back-end interface (calls and messages): spec/proto.md
 
 Code conventions in `spec/CONVENTIONS` must be honored.
   - C++: spec/CONVENTIONS/C++.md
@@ -21,21 +21,19 @@ The GUI (`gui/`) is C++ on Basalt widgets and Magma windows. It builds with
 recipes and `tools/package.py` read the same two names from the environment). Its layout is
 in `spec/frontend.md` §14; the history of the rewrite is in `spec/plans/cpp-gui-rewrite.md`.
 
+- The back end is the `kustavi_engine` library in `backend/`, and the GUI calls it in its own
+  process. `engine_test` runs every call against a copy of `test/photos`.
 - `gui/core` holds the GUI's logic without any window or widget: domain types, the deletion
-  model, the trips plan, the gRPC client, the back-end launcher and host, and the wizard
-  controller. `common/process` holds the process launching that the GUI and the smoke client
-  share. `just test-gui-core` runs their tests.
+  model, the trips plan, the engine client, and the wizard controller. `just test-gui-core`
+  runs their tests.
 - `gui/app` holds the screens, the shell and `kustavi_gui`, the program.
   `kustavi_gui_preview --screen NAME --out FILE.png` draws a screen with a scripted back end
   (the names are in the header of `gui/app/preview.cpp`).
 - Videos play through libmdk, a pinned release archive that the build fetches. Configure with
   `-DKUSTAVI_ENABLE_VIDEO=OFF` to build without it, or `-DKUSTAVI_MDK_DIR=<mdk-sdk>` to use
   another copy. Without libmdk a video shows its still image.
-- Set `KUSTAVI_BACKEND_PATH` to run `kustavi_gui` against a back end that is not beside it
-  (the build's is `backend/server`).
-- The `sanitize` test preset leaves out the `grpc` label: those tests run a gRPC server, and
-  the unsanitized gRPC and the sanitized test share inline library code, which the sanitizers
-  report at server shutdown.
+- The UI font (Noto Sans) and the icon font (Material Icons) are in `resources/fonts` and ship
+  in the package. A program run from the build tree reads them from the source.
 
 <!-- graft:start -->
 ## Graft — repo context graph

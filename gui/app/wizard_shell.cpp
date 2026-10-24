@@ -246,7 +246,7 @@ auto wizard_shell::build_body() -> std::unique_ptr<basalt::widget> {
       return build_done_screen(done);
     }
     auto operator()(wizard_failed const &failed) const -> std::unique_ptr<basalt::widget> {
-      return build_failed_screen(failed, shell.services_);
+      return build_failed_screen(failed);
     }
   };
   return std::visit(visitor{*this}, phase);
@@ -385,49 +385,6 @@ auto wizard_shell::close_detail() -> void {
     // The close handler above retires the view.
     host_->dismiss(*detail_overlay_);
   }
-}
-
-auto wizard_shell::show_crash_dialog(std::string message, std::function<void()> on_retry)
-    -> void {
-  auto crash = std::make_unique<basalt::dialog>(
-      "Processing error", std::move(message),
-      std::vector<basalt::dialog_button>{{"Exit app", basalt::button_variant::secondary},
-                                         {"Retry", basalt::button_variant::primary}});
-  auto *const raw = crash.get();
-  auto const id = host_->show_dialog(std::move(crash));
-  raw->set_on_choice([this, id, on_retry = std::move(on_retry)](std::size_t choice) {
-    host_->dismiss(id);
-    if (choice == 1) {
-      on_retry();
-    } else {
-      services_.exit_app();
-    }
-  });
-}
-
-auto wizard_shell::show_log_dialog(std::string const &log) -> void {
-  // The dialog wraps a message, so a long log shows its last lines.
-  constexpr std::size_t shown_lines = 30;
-  std::vector<std::string_view> lines;
-  for (std::size_t start = 0; start < log.size();) {
-    auto const end = std::min(log.find('\n', start), log.size());
-    lines.emplace_back(log.data() + start, end - start);
-    start = end + 1;
-  }
-  std::string text;
-  for (auto line = lines.size() > shown_lines ? lines.end() - shown_lines : lines.begin();
-       line != lines.end(); ++line) {
-    text.append(*line).push_back('\n');
-  }
-  if (text.empty()) {
-    text = "The back end has not written anything yet.";
-  }
-  auto dialog = std::make_unique<basalt::dialog>(
-      "Back-end log", std::move(text),
-      std::vector<basalt::dialog_button>{{"Close", basalt::button_variant::primary}}, 0);
-  auto *const raw = dialog.get();
-  auto const id = host_->show_dialog(std::move(dialog));
-  raw->set_on_choice([this, id](std::size_t) { host_->dismiss(id); });
 }
 
 } // namespace kustavi::gui

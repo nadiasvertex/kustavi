@@ -42,7 +42,6 @@ struct harness {
     controller.set_client(client);
     services.version = "1.2.3";
     services.exit_app = [this] { ++exits; };
-    services.show_backend_log = [this] { ++log_requests; };
     services.pick_folder = [this] { ++picks; };
     shell = std::make_unique<wizard_shell>(tree, controller, model, loader, master_loader, services,
                                            video_factory);
@@ -138,7 +137,6 @@ struct harness {
   std::unique_ptr<wizard_shell> shell;
   std::unique_ptr<basalt::event_router> router;
   int exits = 0;
-  int log_requests = 0;
   int picks = 0;
 };
 
@@ -298,49 +296,14 @@ TEST_CASE("the restore prompt buttons resume or start fresh", "[app]") {
 
 TEST_CASE("the error screen shows the message and goes back", "[app]") {
   harness h;
-  h.client->stream_error = backend_rpc{grpc::StatusCode::INTERNAL, "disk failure"};
+  h.client->stream_error = backend_error{status_code::internal, "disk failure"};
   h.controller.select_folder("/photos");
   h.refresh();
   CHECK(h.has_text("Processing error"));
   CHECK(h.has_text("disk failure"));
-  h.button("Show back-end log")->press();
-  CHECK(h.log_requests == 1);
   h.button("Back")->press();
   h.refresh();
   CHECK(std::holds_alternative<wizard_start>(h.controller.phase()));
-}
-
-TEST_CASE("the crash dialog retries or exits", "[app]") {
-  harness h;
-  int retries = 0;
-  h.shell->show_crash_dialog("The back end stopped unexpectedly.", [&] { ++retries; });
-  h.refresh();
-  CHECK(h.shell->overlays().overlay_count() == 1);
-  auto dialogs = h.find_all<basalt::dialog>();
-  REQUIRE(dialogs.size() == 1);
-  CHECK(dialogs.front()->choose(1));
-  CHECK(retries == 1);
-  CHECK(h.shell->overlays().overlay_count() == 0);
-
-  h.shell->show_crash_dialog("again", [&] { ++retries; });
-  h.refresh();
-  REQUIRE(h.find_all<basalt::dialog>().size() == 1);
-  h.find_all<basalt::dialog>().front()->choose(0);
-  CHECK(h.exits == 1);
-  CHECK(retries == 1);
-}
-
-TEST_CASE("the log dialog shows the last lines and closes", "[app]") {
-  harness h;
-  std::string log;
-  for (int i = 0; i < 100; ++i) {
-    log += "line " + std::to_string(i) + "\n";
-  }
-  h.shell->show_log_dialog(log);
-  h.refresh();
-  REQUIRE(h.shell->overlays().overlay_count() == 1);
-  h.find_all<basalt::dialog>().front()->choose(0);
-  CHECK(h.shell->overlays().overlay_count() == 0);
 }
 
 namespace {
@@ -747,7 +710,7 @@ TEST_CASE("a failed model download offers a retry", "[app][batches]") {
   harness h;
   reach_menu_screen(h);
   h.services.retry_download = [&h] { h.model.retry_download(); };
-  h.client->stream_error = backend_rpc{grpc::StatusCode::UNAVAILABLE, "offline"};
+  h.client->stream_error = backend_error{status_code::internal, "offline"};
   h.model.start(h.client);
   h.controller.start_batch_pass(wizard_step::junk);
   h.refresh();

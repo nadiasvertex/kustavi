@@ -1,5 +1,5 @@
 # Lets find_package(Protobuf CONFIG) succeed for OpenCV using the protobuf that
-# gRPC builds in this same configure. OpenCV's dnn module regenerates its
+# the build fetches in this same configure. OpenCV's dnn module regenerates its
 # ONNX/TensorFlow/Caffe sources against it, so the process holds one protobuf
 # runtime instead of two. KUSTAVI_PROTOBUF_SOURCE_DIR is set in
 # dependencies.cmake.

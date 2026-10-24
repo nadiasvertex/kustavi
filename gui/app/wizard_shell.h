@@ -54,10 +54,6 @@ public:
   auto close_detail() -> void;
   [[nodiscard]] auto detail() -> detail_view * { return detail_.get(); }
 
-  // The back end died or could not start. The dialog offers a retry or leaving.
-  auto show_crash_dialog(std::string message, std::function<void()> on_retry) -> void;
-  // The output of the back end, in a dialog.
-  auto show_log_dialog(std::string const &log) -> void;
 
   [[nodiscard]] auto overlays() -> basalt::overlay_host & { return *host_; }
   [[nodiscard]] auto services() -> shell_services & { return services_; }

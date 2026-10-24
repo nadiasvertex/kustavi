@@ -1,4 +1,4 @@
-#include "kustavi_service.h"
+#include "engine.h"
 
 #include "paths.h"
 #include "store/store.h"
@@ -128,7 +128,7 @@ auto batch_pass_key(int step, const std::string &batch_key) -> std::string {
 
 } // namespace
 
-void kustavi_service::record_step(int step) noexcept {
+void engine::record_step(int step) noexcept {
   try {
     store::set_wizard_step(session_db_, step);
   } catch (const std::exception &e) {
@@ -136,7 +136,7 @@ void kustavi_service::record_step(int step) noexcept {
   }
 }
 
-void kustavi_service::record_pass_complete(int step) noexcept {
+void engine::record_pass_complete(int step) noexcept {
   try {
     store::set_session_value(session_db_, pass_complete_key(step), "1");
   } catch (const std::exception &e) {
@@ -144,8 +144,8 @@ void kustavi_service::record_pass_complete(int step) noexcept {
   }
 }
 
-void kustavi_service::record_batch_pass_complete(
-    int step, const std::string &batch_key) noexcept {
+void engine::record_batch_pass_complete(int step,
+                                        const std::string &batch_key) noexcept {
   try {
     store::set_session_value(session_db_, batch_pass_key(step, batch_key), "1");
   } catch (const std::exception &e) {
@@ -154,8 +154,8 @@ void kustavi_service::record_batch_pass_complete(
   }
 }
 
-void kustavi_service::record_run_complete(
-    int step, const std::string &batch_key) noexcept {
+void engine::record_run_complete(int step,
+                                 const std::string &batch_key) noexcept {
   if (batch_key.empty()) {
     record_pass_complete(step);
   } else {
@@ -163,17 +163,12 @@ void kustavi_service::record_run_complete(
   }
 }
 
-auto kustavi_service::InspectSession(grpc::ServerContext *context,
-                                     const InspectSessionRequest *request,
-                                     InspectSessionResponse *response)
-    -> grpc::Status {
-  if (!check_auth(context)) {
-    return unauthenticated();
-  }
+auto engine::inspect_session(const InspectSessionRequest *request,
+                             InspectSessionResponse *response) -> status {
 
   const auto &folder_str = request->folder();
   if (folder_str.empty()) {
-    return {grpc::StatusCode::INVALID_ARGUMENT, "folder is required"};
+    return {status_code::invalid_argument, "folder is required"};
   }
   const fs::path folder{folder_str};
 
@@ -182,14 +177,14 @@ auto kustavi_service::InspectSession(grpc::ServerContext *context,
   const auto db_path = config::session_db_path(config::cache_path(folder));
   std::error_code ec;
   if (!fs::exists(db_path, ec) || ec) {
-    return grpc::Status::OK; // has_session stays false
+    return ok_status(); // has_session stays false
   }
 
   try {
     database probe;
     probe.open(folder);
     if (!store::session_has_index(probe)) {
-      return grpc::Status::OK;
+      return ok_status();
     }
     response->set_has_session(true);
 
@@ -204,20 +199,16 @@ auto kustavi_service::InspectSession(grpc::ServerContext *context,
         parse_int(store::get_session_value(probe, "wizard_step_updated_at")) *
         1000LL);
   } catch (const std::exception &e) {
-    return {grpc::StatusCode::INTERNAL,
+    return {status_code::internal,
             std::string("failed to inspect session: ") + e.what()};
   }
-  return grpc::Status::OK;
+  return ok_status();
 }
 
-auto kustavi_service::GetSessionResults(grpc::ServerContext *context,
-                                        const GetSessionResultsRequest *request,
-                                        GetSessionResultsResponse *response)
-    -> grpc::Status {
+auto engine::get_session_results(const GetSessionResultsRequest *request,
+                                 GetSessionResultsResponse *response)
+    -> status {
   (void)request;
-  if (!check_auth(context)) {
-    return unauthenticated();
-  }
   if (const auto err = require_session()) {
     return *err;
   }
@@ -373,20 +364,15 @@ auto kustavi_service::GetSessionResults(grpc::ServerContext *context,
       response->set_trip_edits(std::move(*edits));
     }
   } catch (const std::exception &e) {
-    return {grpc::StatusCode::INTERNAL,
+    return {status_code::internal,
             std::string("failed to read session results: ") + e.what()};
   }
-  return grpc::Status::OK;
+  return ok_status();
 }
 
-auto kustavi_service::SaveSessionState(grpc::ServerContext *context,
-                                       const SaveSessionStateRequest *request,
-                                       SaveSessionStateResponse *response)
-    -> grpc::Status {
+auto engine::save_session_state(const SaveSessionStateRequest *request,
+                                SaveSessionStateResponse *response) -> status {
   (void)response;
-  if (!check_auth(context)) {
-    return unauthenticated();
-  }
   if (const auto err = require_session()) {
     return *err;
   }
@@ -436,10 +422,10 @@ auto kustavi_service::SaveSessionState(grpc::ServerContext *context,
                                request->trip_edits());
     }
   } catch (const std::exception &e) {
-    return {grpc::StatusCode::INTERNAL,
+    return {status_code::internal,
             std::string("failed to save session state: ") + e.what()};
   }
-  return grpc::Status::OK;
+  return ok_status();
 }
 
 } // namespace kustavi

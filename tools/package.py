@@ -2,7 +2,7 @@
 """Build a redistributable Kustavi desktop package.
 
 This is the implementation behind `just package`. It builds the release
-back-end server and the C++ GUI with CMake, assembles them into a single
+C++ GUI, which holds the back end as a library, with CMake, assembles it into a
 self-contained application directory under `dist/`, and zips that directory into
 a redistributable archive.
 
@@ -14,13 +14,13 @@ Layout produced under `dist/`:
 
     macOS      dist/Kustavi.app/                  (unpacked, used by `just run`)
                dist/Kustavi.app/Contents/MacOS/Kustavi
-               dist/Kustavi.app/Contents/MacOS/kustavi-backend
+               dist/Kustavi.app/Contents/Resources/fonts
                dist/Kustavi.app/Contents/Frameworks/mdk.framework
                dist/kustavi-macos-<version>.zip   (Kustavi.app/...)
 
     Windows    dist/Kustavi/                      (unpacked)
                dist/Kustavi/Kustavi.exe
-               dist/Kustavi/kustavi-backend.exe
+               dist/Kustavi/fonts
                dist/Kustavi/mdk.dll and the libraries that it loads
                dist/Kustavi/VERSION               (payload version marker)
                dist/kustavi-windows-<version>.zip (Kustavi/...)
@@ -28,12 +28,10 @@ Layout produced under `dist/`:
 
 The version is the repo-root VERSION.txt file, maintained by tools/version.py.
 
-The back-end binary is placed next to the GUI executable so the GUI finds it
-(see gui/core/backend_launch.h::find_backend_binary), and the GeoNames place
-table and the YuNet face model are bundled alongside it (see
-backend/include/paths.h). llama.cpp is linked statically into the server. The
-GUI links Basalt and Magma statically; only libmdk, which plays videos, ships as
-a separate library.
+The GeoNames place table and the YuNet face model sit beside the GUI executable (see
+backend/include/paths.h), and the bundled fonts in `fonts` (see gui/app/fonts.h). llama.cpp is
+linked statically into the GUI, and so are Basalt and Magma; only libmdk, which plays videos,
+ships as a separate library.
 
 Basalt and Magma are not pinned yet (cmake/dependency_pins.cmake), so the build
 needs checkouts of them: pass --basalt-dir and --magma-dir, or set
@@ -64,7 +62,6 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 APP_NAME = "Kustavi"
-BACKEND_STEM = "kustavi-backend"
 
 # WiX v5 installer sources (Windows only). See tools/installer/README.md.
 WXS_FILE = REPO_ROOT / "tools" / "installer" / "kustavi.wxs"
@@ -83,7 +80,7 @@ def read_version() -> str:
         raise SystemExit("VERSION.txt file is empty")
     return text
 
-# Small data files bundled next to the back-end binary. paths.h looks for these
+# Small data files bundled next to the program. paths.h looks for these
 # beside the executable first in a packaged build.
 DATA_FILES = ("cities.tsv", "face_detection_yunet.onnx")
 
@@ -102,22 +99,18 @@ def run(cmd: list[str]) -> None:
 
 
 def build_release(args: argparse.Namespace) -> None:
-    """Build the release server and the GUI with CMake."""
+    """Build the release GUI with CMake."""
     configure = ["cmake", "--preset", "release", "-DKUSTAVI_BUILD_GUI=ON"]
     for name, value in (("KUSTAVI_BASALT_SOURCE_DIR", args.basalt_dir),
                         ("KUSTAVI_MAGMA_SOURCE_DIR", args.magma_dir)):
         if value:
             configure.append(f"-D{name}={Path(value).expanduser().resolve()}")
     run(configure)
-    run(["cmake", "--build", "--preset", "release", "--target", "server", "kustavi_gui"])
+    run(["cmake", "--build", "--preset", "release", "--target", "kustavi_gui"])
 
 
 def build_dir() -> Path:
     return REPO_ROOT / ".build" / "release"
-
-
-def backend_dir() -> Path:
-    return build_dir() / "backend"
 
 
 def mdk_dir() -> Path:
@@ -285,9 +278,7 @@ def package_macos(args: argparse.Namespace) -> Path:
     write_info_plist(contents, version, minimum_macos_version(gui))
     bundle_mdk(app_dir, macos_dir / APP_NAME)
 
-    print("[3/4] Bundling the back-end and data files")
-    copy_file(backend_dir() / "server", macos_dir / BACKEND_STEM,
-              executable=True)
+    print("[3/4] Bundling the data files")
     for name in DATA_FILES:
         copy_file(REPO_ROOT / "backend" / "data" / name, macos_dir / name)
 
@@ -360,9 +351,7 @@ def package_windows(args: argparse.Namespace) -> Path:
     else:
         print("  (no libmdk in the build: videos show their still image)")
 
-    print("[3/4] Bundling the back-end and data files")
-    copy_file(backend_dir() / "server.exe",
-              app_dir / f"{BACKEND_STEM}.exe", executable=True)
+    print("[3/4] Bundling the data files")
     for name in DATA_FILES:
         copy_file(REPO_ROOT / "backend" / "data" / name, app_dir / name)
 

@@ -55,6 +55,7 @@ endif()
 add_executable(kustavi_gui app/main.cpp)
 target_link_libraries(kustavi_gui PRIVATE kustavi_gui_app kustavi_options)
 target_compile_definitions(kustavi_gui PRIVATE KUSTAVI_VERSION="${PROJECT_VERSION}")
+kustavi_copy_engine_data(kustavi_gui)
 
 # Draws a screen to a PNG with a scripted back end, for a look at the layout.
 add_executable(kustavi_gui_preview app/preview.cpp)
@@ -63,6 +64,7 @@ target_link_libraries(kustavi_gui_preview PRIVATE kustavi_gui_app kustavi::gui_t
 target_compile_definitions(kustavi_gui_preview PRIVATE
   KUSTAVI_PHOTO_DIR="${PROJECT_SOURCE_DIR}/test/photos")
 kustavi_opencv_includes(kustavi_gui_preview)
+kustavi_copy_engine_data(kustavi_gui_preview)
 
 if(KUSTAVI_BUILD_TESTS)
   add_executable(gui_app_tests tests/app_test.cpp tests/detail_test.cpp tests/zoom_test.cpp)

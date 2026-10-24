@@ -194,13 +194,11 @@ auto build_no_images_screen(wizard_no_images const &phase) -> std::unique_ptr<ba
   return screen;
 }
 
-auto build_failed_screen(wizard_failed const &phase, shell_services const &services)
+auto build_failed_screen(wizard_failed const &phase)
     -> std::unique_ptr<basalt::widget> {
   auto screen = ui::centered(8);
   screen->add_child(ui::text("Processing error", text_role::heading_small, text_tone::danger));
   screen->add_child(ui::text(message_of(phase.error)));
-  screen->add_child(ui::make_button("Show back-end log", services.show_backend_log,
-                                    button_variant::tertiary));
   return screen;
 }
 

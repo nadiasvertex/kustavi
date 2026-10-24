@@ -57,23 +57,13 @@ TEST_CASE("the model goes from unknown through downloading to ready", "[model_st
 TEST_CASE("a stream that fails reports the message", "[model_status]") {
   ui_queue queue;
   auto client = std::make_shared<fake_kustavi_client>();
-  client->stream_error = backend_rpc{grpc::StatusCode::INTERNAL, "download failed"};
+  client->stream_error = backend_error{status_code::internal, "download failed"};
   model_status status{queue};
   status.start(client);
   drain_all(queue);
   auto const *failed = std::get_if<model_prep_failed>(&status.state());
   REQUIRE(failed != nullptr);
   CHECK(failed->message == "download failed");
-}
-
-TEST_CASE("a crash does not mark the model as failed", "[model_status]") {
-  ui_queue queue;
-  auto client = std::make_shared<fake_kustavi_client>();
-  client->stream_error = backend_crashed{"gone"};
-  model_status status{queue};
-  status.start(client);
-  drain_all(queue);
-  CHECK(std::holds_alternative<model_prep_unknown>(status.state()));
 }
 
 TEST_CASE("cancelling the download returns to unknown and drops late events", "[model_status]") {
@@ -94,7 +84,7 @@ TEST_CASE("cancelling the download returns to unknown and drops late events", "[
 TEST_CASE("retry runs the call again", "[model_status]") {
   ui_queue queue;
   auto client = std::make_shared<fake_kustavi_client>();
-  client->stream_error = backend_rpc{grpc::StatusCode::INTERNAL, "offline"};
+  client->stream_error = backend_error{status_code::internal, "offline"};
   model_status status{queue};
   status.start(client);
   drain_all(queue);

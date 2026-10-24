@@ -10,7 +10,7 @@
 namespace kustavi {
 
 /** A single-producer, single-consumer queue for streaming events from a
- * worker thread to the gRPC handler thread.
+ * worker thread to the thread that writes the events out.
  *
  * The producer pushes events (from scheduler threads or a worker thread)
  * and calls `close()` exactly once when no further events will arrive.

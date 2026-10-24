@@ -13,8 +13,8 @@ TEST_CASE("every phase of the select stage reports the first step", "[phases]") 
 }
 
 TEST_CASE("a failure reports the step where it happened", "[phases]") {
-  CHECK(step_index_of(wizard_failed{backend_crashed{"x"}, 3}) == 3);
-  CHECK(stage_index_of(wizard_failed{backend_crashed{"x"}, 3}) ==
+  CHECK(step_index_of(wizard_failed{backend_error{status_code::internal, "x"}, 3}) == 3);
+  CHECK(stage_index_of(wizard_failed{backend_error{status_code::internal, "x"}, 3}) ==
         static_cast<int>(wizard_stage::review));
 }
 

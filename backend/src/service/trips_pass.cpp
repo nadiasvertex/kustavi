@@ -1,4 +1,4 @@
-#include "kustavi_service.h"
+#include "engine.h"
 
 #include "algorithm/append_range.h"
 #include "geo/place_index.h"
@@ -20,13 +20,9 @@ using algorithm::append_range;
 // Pass 6: trips
 // ---------------------------------------------------------------------------
 
-auto kustavi_service::RunTripsPass(grpc::ServerContext *context,
-                                   const RunTripsPassRequest *request,
-                                   grpc::ServerWriter<TripsEvent> *writer)
-    -> grpc::Status {
-  if (!check_auth(context)) {
-    return unauthenticated();
-  }
+auto engine::run_trips_pass(request_context *context,
+                            const RunTripsPassRequest *request,
+                            event_writer<TripsEvent> *writer) -> status {
   if (const auto err = require_session()) {
     return *err;
   }
@@ -49,7 +45,7 @@ auto kustavi_service::RunTripsPass(grpc::ServerContext *context,
       members.push_back(std::move(member));
     }
   } catch (const std::exception &e) {
-    return {grpc::StatusCode::INTERNAL,
+    return {status_code::internal,
             std::string("failed to read session: ") + e.what()};
   }
 
@@ -106,7 +102,7 @@ auto kustavi_service::RunTripsPass(grpc::ServerContext *context,
                                       .unassigned = result.unassigned});
       });
 
-  grpc::Status status = stream_pass(
+  status status = stream_pass(
       context, writer, queue, stop_source, [&](const trips_event &ev) -> bool {
         TripsEvent proto;
         std::visit(
@@ -154,7 +150,7 @@ auto kustavi_service::RunTripsPass(grpc::ServerContext *context,
               }
             },
             ev);
-        return writer->Write(proto);
+        return writer->write(proto);
       });
 
   producer.join();

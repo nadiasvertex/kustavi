@@ -1,7 +1,6 @@
 set(BACKEND_DIR ${CMAKE_CURRENT_SOURCE_DIR})
 
-# All back-end binaries share one output directory so the smoke client finds
-# the server beside itself and `data/` is found next to every executable.
+# The back-end tests share one output directory.
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
 
 set(OPENCV_LIBS opencv_core opencv_imgproc opencv_imgcodecs opencv_objdetect
@@ -10,11 +9,15 @@ set(OPENCV_LIBS opencv_core opencv_imgproc opencv_imgcodecs opencv_objdetect
 # Include directories OpenCV's own targets do not export when it is built as
 # a subproject.
 function(kustavi_opencv_includes target)
+  set(scope PRIVATE)
+  if(ARGC GREATER 1)
+    set(scope ${ARGV1})
+  endif()
   set(dirs ${opencv_SOURCE_DIR}/include ${CMAKE_BINARY_DIR})
   foreach(m core imgproc imgcodecs objdetect dnn videoio)
     list(APPEND dirs ${opencv_SOURCE_DIR}/modules/${m}/include)
   endforeach()
-  target_include_directories(${target} SYSTEM PRIVATE ${dirs})
+  target_include_directories(${target} SYSTEM ${scope} ${dirs})
 endfunction()
 
 function(kustavi_executable name)
@@ -30,37 +33,42 @@ function(kustavi_executable name)
   endif()
 endfunction()
 
-# --- Server ------------------------------------------------------------------
-file(GLOB_RECURSE SERVER_SOURCES CONFIGURE_DEPENDS src/*.cpp)
+# --- Engine ------------------------------------------------------------------
+# Everything that the back end does, as a library. The GUI links it and calls it directly.
+file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS src/*.cpp)
 
-kustavi_executable(server
-  SOURCES ${SERVER_SOURCES}
-  OPENCV ON
-  LIBS kustavi::proto gRPC::grpc++ CURL::libcurl ${OPENCV_LIBS}
-       llama mtmd sqlite3_kustavi stdexec_kustavi CLI11::CLI11
-       spdlog::spdlog)
+add_library(kustavi_engine STATIC ${ENGINE_SOURCES})
+target_include_directories(kustavi_engine PUBLIC ${BACKEND_DIR}/include)
+target_link_libraries(kustavi_engine
+  PUBLIC kustavi::proto
+  PRIVATE kustavi_options CURL::libcurl ${OPENCV_LIBS} llama mtmd sqlite3_kustavi
+          stdexec_kustavi spdlog::spdlog)
+# The engine's headers use OpenCV types.
+kustavi_opencv_includes(kustavi_engine PUBLIC)
+add_library(kustavi::engine ALIAS kustavi_engine)
 
-# Data files the server looks up beside the executable (backend/include/paths.h).
-add_custom_command(TARGET server POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:server>/data
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different
-          ${BACKEND_DIR}/data/cities.tsv
-          ${BACKEND_DIR}/data/face_detection_yunet.onnx
-          $<TARGET_FILE_DIR:server>/data
-  VERBATIM)
+# Data files that the engine looks up beside the executable (backend/include/paths.h).
+# A program that links the engine calls this to have them beside it in the build tree.
+function(kustavi_copy_engine_data target)
+  add_custom_command(TARGET ${target} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:${target}>/data
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${PROJECT_SOURCE_DIR}/backend/data/cities.tsv
+            ${PROJECT_SOURCE_DIR}/backend/data/face_detection_yunet.onnx
+            $<TARGET_FILE_DIR:${target}>/data
+    VERBATIM)
+endfunction()
 
 if(NOT KUSTAVI_BUILD_TESTS)
   return()
 endif()
 
 # --- Tests -------------------------------------------------------------------
-# Each test compiles only the sources it exercises. Data files are copied by
-# the server target, so every test depends on it having been built.
+# Each unit test compiles only the sources it exercises. The engine tests link the library.
 function(kustavi_test name)
   cmake_parse_arguments(ARG "" "" "SOURCES;LIBS;OPENCV;LABELS;ENV" ${ARGN})
   kustavi_executable(${name} SOURCES ${ARG_SOURCES} LIBS ${ARG_LIBS}
                      OPENCV ${ARG_OPENCV})
-  add_dependencies(${name} server)
   add_test(NAME ${name} COMMAND ${name})
   set_tests_properties(${name} PROPERTIES LABELS "${ARG_LABELS}")
   if(ARG_ENV)
@@ -117,31 +125,14 @@ kustavi_test(llama_smoke
   LIBS llama
   LABELS llama)
 
-# The smoke client spawns the server as a child process. It uses POSIX process
-# APIs and is not built on Windows.
-if(NOT WIN32)
-  kustavi_executable(smoke_client
-    SOURCES test/smoke_client.cpp
-    LIBS kustavi::proto kustavi::process gRPC::grpc++)
-  add_dependencies(smoke_client server)
-  # Runs against a scratch copy of test/photos (see cmake/run_smoke.cmake).
-  add_test(NAME smoke
-    COMMAND ${CMAKE_COMMAND}
-            -DSMOKE_CLIENT=$<TARGET_FILE:smoke_client>
-            -DSERVER=$<TARGET_FILE:server>
-            -DPHOTOS=${PROJECT_SOURCE_DIR}/test/photos
-            "-DSMOKE_ARGS=--concurrency-check;--cancel-check;--resume-check;--batch-check"
-            -P ${PROJECT_SOURCE_DIR}/cmake/run_smoke.cmake)
-  set_tests_properties(smoke PROPERTIES LABELS backend TIMEOUT 600)
 
-  add_test(NAME smoke_junk
-    COMMAND ${CMAKE_COMMAND}
-            -DSMOKE_CLIENT=$<TARGET_FILE:smoke_client>
-            -DSERVER=$<TARGET_FILE:server>
-            -DPHOTOS=${PROJECT_SOURCE_DIR}/test/photos
-            "-DSMOKE_ARGS=--junk-check"
-            -DNO_DESTINATION=ON
-            -P ${PROJECT_SOURCE_DIR}/cmake/run_smoke.cmake)
-  # Downloads ~3.3 GB of model weights on first run.
-  set_tests_properties(smoke_junk PROPERTIES LABELS junk TIMEOUT 3600)
-endif()
+# The engine against a copy of test/photos. Its junk test downloads the vision model, so that one
+# is hidden from the default run and has its own label.
+add_executable(engine_test test/engine_test.cpp)
+target_link_libraries(engine_test PRIVATE kustavi_options kustavi::engine Catch2::Catch2WithMain)
+target_compile_definitions(engine_test PRIVATE KUSTAVI_TEST_PHOTOS="${PROJECT_SOURCE_DIR}/test/photos")
+kustavi_copy_engine_data(engine_test)
+include(Catch)
+catch_discover_tests(engine_test TEST_SPEC "~[junk]" PROPERTIES LABELS backend TIMEOUT 600)
+add_test(NAME engine_junk COMMAND engine_test "[junk]")
+set_tests_properties(engine_junk PROPERTIES LABELS junk TIMEOUT 3600)

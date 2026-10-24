@@ -313,10 +313,10 @@ What was built:
 - Basalt got `slider`, `grid_view` and `image_tile`, and Magma got a folder chooser and a bounded
   image cache. Both changes are committed locally in the two repositories and not tagged.
 - `gui/core` holds the logic without any window: domain types, the deletion model, the trips
-  plan, the gRPC client, the back-end host, `wizard_controller`, and their Catch2 tests, which
+  plan, the engine client, `wizard_controller`, and their Catch2 tests, which
   port the Dart unit tests.
 - `gui/app` holds the screens for every step S0 to S13, the detail view with zoom and video, the
-  crash and log dialogs, and `kustavi_gui_preview`, which draws a screen to a PNG.
+  and `kustavi_gui_preview`, which draws a screen to a PNG.
 - Video uses libmdk through frame copies. The spike showed that this is fast enough: the player
   asks mdk for frames scaled to at most 1600 px, so a 4K clip costs no more than a window-sized
   one.
@@ -337,4 +337,14 @@ Differences from the Flutter app and gaps:
   `com.example.frontend`, so macOS asks again for folder access.
 - Basalt and Magma must be pinned to tagged releases before a build can be reproduced without
   local checkouts. The Windows and Linux packaging, the Vulkan and Direct3D 12 changes in Magma
-  and the Windows child-process code have not been compiled.
+  have not been compiled.
+
+## Later change: the back end as a library
+
+After the cut-over the back end became a library, `kustavi_engine`, which the GUI calls in its own
+process. The earlier design, a child process behind gRPC with a launch handshake, an auth token, a
+parent watchdog and a crash dialog, is gone, together with gRPC, `common/process` and the smoke
+client. The messages in `proto/service.proto` stay, because OpenCV's dnn module needs protobuf and
+the events are `oneof`s, but nothing is serialized. `engine_test` replaces the smoke client, and
+`engine_client_test` checks the GUI's client against a real engine. The cost is that a fault in
+the back end ends the program.

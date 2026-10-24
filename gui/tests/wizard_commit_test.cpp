@@ -127,7 +127,7 @@ TEST_CASE("an estimate that does not fit keeps the copy disabled", "[commit]") {
 
 TEST_CASE("an estimate that fails leaves the copy disabled", "[commit]") {
   harness h;
-  h.client->unary_error = backend_rpc{grpc::StatusCode::INTERNAL, "no space info"};
+  h.client->unary_error = backend_error{status_code::internal, "no space info"};
   reach_deletion_review(h);
   h.controller.continue_from_deletion_review();
   h.settle();
@@ -277,7 +277,7 @@ TEST_CASE("cancelling the copy returns to the summary", "[commit]") {
 TEST_CASE("a failing copy leads to the error screen", "[commit]") {
   harness h;
   reach_summary(h);
-  h.client->stream_error = backend_rpc{grpc::StatusCode::FAILED_PRECONDITION, "disk full"};
+  h.client->stream_error = backend_error{status_code::failed_precondition, "disk full"};
   h.controller.start_commit();
   h.settle();
   REQUIRE(h.in<wizard_failed>());

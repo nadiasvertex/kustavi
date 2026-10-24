@@ -101,20 +101,10 @@ TEST_CASE("selecting a folder only works from the start screen", "[wizard]") {
   CHECK(h.get<wizard_confirm_folder>().folder == "/photos");
 }
 
-TEST_CASE("selecting a folder before the back end is up fails with a message", "[wizard]") {
-  harness h;
-  h.controller.set_client(nullptr);
-  h.controller.select_folder("/photos");
-  REQUIRE(h.in<wizard_failed>());
-  CHECK(message_of(h.get<wizard_failed>().error).find("still starting") != std::string::npos);
-  h.controller.go_back_from_error();
-  CHECK(h.in<wizard_start>());
-}
-
 TEST_CASE("a failing scan leads to the error screen and back to the start", "[wizard]") {
   harness h;
   h.client->scan_events = {scan_image("a.jpg")};
-  h.client->stream_error = backend_rpc{grpc::StatusCode::INTERNAL, "disk failure"};
+  h.client->stream_error = backend_error{status_code::internal, "disk failure"};
   h.controller.select_folder("/photos");
   h.settle();
   REQUIRE(h.in<wizard_failed>());
@@ -201,7 +191,7 @@ TEST_CASE("a saved session with no images is scanned as a new one", "[wizard][re
 
 TEST_CASE("a failed probe counts as a folder without a session", "[wizard][resume]") {
   harness h;
-  h.client->unary_error = backend_rpc{grpc::StatusCode::INTERNAL, "boom"};
+  h.client->unary_error = backend_error{status_code::internal, "boom"};
   h.client->scan_events = {scan_image("a.jpg"), scan_complete(1)};
   reach_confirm(h);
 }
@@ -264,7 +254,7 @@ TEST_CASE("a resume that cannot read the results fails", "[wizard][resume]") {
   h.settle();
   REQUIRE(h.in<wizard_session_restore>());
 
-  h.client->unary_error = backend_rpc{grpc::StatusCode::INTERNAL, "corrupt"};
+  h.client->unary_error = backend_error{status_code::internal, "corrupt"};
   h.controller.resume_session();
   h.settle();
   REQUIRE(h.in<wizard_failed>());
@@ -370,7 +360,7 @@ TEST_CASE("a failing trips pass leads to the error screen and back", "[wizard][t
   harness h;
   h.client->scan_events = {scan_image("a.jpg"), scan_complete(1)};
   reach_confirm(h);
-  h.client->stream_error = backend_rpc{grpc::StatusCode::INTERNAL, "no geo table"};
+  h.client->stream_error = backend_error{status_code::internal, "no geo table"};
   h.controller.continue_from_confirm();
   h.settle();
   REQUIRE(h.in<wizard_failed>());

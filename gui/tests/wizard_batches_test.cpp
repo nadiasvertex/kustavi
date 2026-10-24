@@ -211,7 +211,7 @@ TEST_CASE("a failing pass keeps its results and the error screen leads back to t
   h.settle();
   h.controller.close_batch_review();
 
-  h.client->stream_error = backend_rpc{grpc::StatusCode::INTERNAL, "boom"};
+  h.client->stream_error = backend_error{status_code::internal, "boom"};
   h.controller.start_batch_pass(wizard_step::duplicates);
   h.settle();
   REQUIRE(h.in<wizard_failed>());

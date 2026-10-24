@@ -1,18 +1,10 @@
 #include "core/wizard_controller.h"
 
-#include <grpcpp/support/status.h>
-
 #include <stdexcept>
 
 namespace kustavi::gui {
 
 namespace {
-
-// What the user sees when a folder is chosen before the back end is up.
-auto still_starting() -> backend_error {
-  return backend_rpc{grpc::StatusCode::UNAVAILABLE,
-                     "Back end is still starting up. Please wait a moment."};
-}
 
 // Restores a tunable. The protocol zeroes a field that was never set, so zero keeps the default.
 template <class T> auto restore(T &target, T saved) -> void {
@@ -126,10 +118,6 @@ auto wizard_controller::select_folder(std::string folder) -> void {
   clear_results();
   return_phase_.reset();
   source_folder_ = std::move(folder);
-  if (!client_) {
-    set_phase(wizard_failed{still_starting(), 0});
-    return;
-  }
   probe_folder(scope_.generation());
 }
 
@@ -302,7 +290,7 @@ auto wizard_controller::apply_session_results(GetSessionResultsResponse results)
       flags_.quality.insert_or_assign(std::move(id), std::move(info));
     }
   } catch (std::invalid_argument const &error) {
-    fail(backend_rpc{grpc::StatusCode::INTERNAL, error.what()});
+    fail(backend_error{status_code::internal, error.what()});
     return;
   }
   for (auto const &group : results.similar_groups()) {

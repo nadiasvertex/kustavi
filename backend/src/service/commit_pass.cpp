@@ -1,4 +1,4 @@
-#include "kustavi_service.h"
+#include "engine.h"
 
 #include "algorithm/append_range.h"
 #include "pass/commit.h"
@@ -22,9 +22,10 @@ using algorithm::append_range;
 // Pass 6: commit
 // ---------------------------------------------------------------------------
 
-auto kustavi_service::collect_commit_sources(
-    const CommitRequest &request, std::vector<commit_source> &sources,
-    std::vector<std::string> &errors) -> std::optional<grpc::Status> {
+auto engine::collect_commit_sources(const CommitRequest &request,
+                                    std::vector<commit_source> &sources,
+                                    std::vector<std::string> &errors)
+    -> std::optional<status> {
   try {
     const auto records = store::get_image_records(session_db_);
     std::unordered_map<std::string, fs::path> id_to_path;
@@ -55,25 +56,20 @@ auto kustavi_service::collect_commit_sources(
           {.id = id, .path = it->second, .dest_subdir = std::move(subdir)});
     }
   } catch (const std::exception &e) {
-    return grpc::Status{grpc::StatusCode::INTERNAL,
-                        std::string("failed to read session: ") + e.what()};
+    return status{status_code::internal,
+                  std::string("failed to read session: ") + e.what()};
   }
   return std::nullopt;
 }
 
-auto kustavi_service::EstimateCommit(grpc::ServerContext *context,
-                                     const CommitRequest *request,
-                                     EstimateCommitResponse *response)
-    -> grpc::Status {
-  if (!check_auth(context)) {
-    return unauthenticated();
-  }
+auto engine::estimate_commit(const CommitRequest *request,
+                             EstimateCommitResponse *response) -> status {
   if (const auto err = require_session()) {
     return *err;
   }
   const fs::path destination{request->destination()};
   if (!destination.is_absolute()) {
-    return {grpc::StatusCode::INVALID_ARGUMENT,
+    return {status_code::invalid_argument,
             "destination must be an absolute path"};
   }
   std::vector<commit_source> sources;
@@ -82,8 +78,8 @@ auto kustavi_service::EstimateCommit(grpc::ServerContext *context,
     return *err;
   }
   const auto estimate =
-      estimate_commit(session_folder_, destination, sources,
-                      {.merge_existing = request->merge_existing()});
+      ::kustavi::estimate_commit(session_folder_, destination, sources,
+                                 {.merge_existing = request->merge_existing()});
   response->set_total_bytes(estimate.total_bytes);
   response->set_new_bytes(estimate.new_bytes);
   response->set_already_present(
@@ -92,16 +88,11 @@ auto kustavi_service::EstimateCommit(grpc::ServerContext *context,
   response->set_free_bytes(estimate.free_bytes.value_or(0));
   response->set_fits(!estimate.free_bytes ||
                      estimate.new_bytes <= *estimate.free_bytes);
-  return grpc::Status::OK;
+  return ok_status();
 }
 
-auto kustavi_service::Commit(grpc::ServerContext *context,
-                             const CommitRequest *request,
-                             grpc::ServerWriter<CommitEvent> *writer)
-    -> grpc::Status {
-  if (!check_auth(context)) {
-    return unauthenticated();
-  }
+auto engine::commit(request_context *context, const CommitRequest *request,
+                    event_writer<CommitEvent> *writer) -> status {
   if (const auto err = require_session()) {
     return *err;
   }
@@ -113,11 +104,11 @@ auto kustavi_service::Commit(grpc::ServerContext *context,
 
   const auto &destination_str = request->destination();
   if (destination_str.empty()) {
-    return {grpc::StatusCode::INVALID_ARGUMENT, "destination is required"};
+    return {status_code::invalid_argument, "destination is required"};
   }
   const fs::path destination{destination_str};
   if (!destination.is_absolute()) {
-    return {grpc::StatusCode::INVALID_ARGUMENT,
+    return {status_code::invalid_argument,
             "destination must be an absolute path"};
   }
 
@@ -128,10 +119,10 @@ auto kustavi_service::Commit(grpc::ServerContext *context,
   }
   const commit_options options{.merge_existing = request->merge_existing()};
 
-  const auto estimate =
-      estimate_commit(session_folder_, destination, sources, options);
+  const auto estimate = ::kustavi::estimate_commit(session_folder_, destination,
+                                                   sources, options);
   if (estimate.free_bytes && estimate.new_bytes > *estimate.free_bytes) {
-    return {grpc::StatusCode::FAILED_PRECONDITION,
+    return {status_code::failed_precondition,
             "not enough free space at the destination: " +
                 std::to_string(estimate.new_bytes) + " bytes needed, " +
                 std::to_string(*estimate.free_bytes) + " available"};
@@ -165,7 +156,7 @@ auto kustavi_service::Commit(grpc::ServerContext *context,
                          .errors = std::move(summary.errors)});
                    });
 
-  grpc::Status status = stream_pass(
+  status status = stream_pass(
       context, writer, queue, stop_source, [&](const commit_event &ev) -> bool {
         CommitEvent proto;
         std::visit(
@@ -187,7 +178,7 @@ auto kustavi_service::Commit(grpc::ServerContext *context,
               }
             },
             ev);
-        return writer->Write(proto);
+        return writer->write(proto);
       });
 
   producer.join();

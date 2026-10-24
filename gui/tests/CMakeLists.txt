@@ -1,7 +1,5 @@
 add_executable(gui_core_tests
   background_test.cpp
-  backend_host_test.cpp
-  backend_launch_test.cpp
   batches_test.cpp
   wizard_batches_test.cpp
   wizard_commit_test.cpp
@@ -24,10 +22,11 @@ target_link_libraries(gui_core_tests PRIVATE kustavi::gui_core kustavi::gui_test
 include(Catch)
 catch_discover_tests(gui_core_tests PROPERTIES LABELS gui)
 
-# These run a gRPC server in the test. The sanitized test code and the unsanitized gRPC share
-# inline library code, which the sanitizers report at server shutdown, so the sanitize test preset
-# leaves this label out.
-add_executable(gui_grpc_tests grpc_client_test.cpp)
-target_link_libraries(gui_grpc_tests PRIVATE kustavi::gui_core kustavi_options
+# The production client against a real engine, on a copy of test/photos.
+add_executable(gui_engine_tests engine_client_test.cpp)
+target_link_libraries(gui_engine_tests PRIVATE kustavi::gui_core kustavi_options
   Catch2::Catch2WithMain)
-catch_discover_tests(gui_grpc_tests PROPERTIES LABELS grpc)
+target_compile_definitions(gui_engine_tests PRIVATE
+  KUSTAVI_PHOTO_DIR="${PROJECT_SOURCE_DIR}/test/photos")
+kustavi_copy_engine_data(gui_engine_tests)
+catch_discover_tests(gui_engine_tests PROPERTIES LABELS gui TIMEOUT 300)

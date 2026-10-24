@@ -1,4 +1,4 @@
-#include "kustavi_service.h"
+#include "engine.h"
 
 #include "paths.h"
 #include "store/store.h"
@@ -72,13 +72,9 @@ auto reasons_bitmask(const std::vector<QualityReason> &reasons) -> int {
 
 } // namespace
 
-auto kustavi_service::RunQualityPass(grpc::ServerContext *context,
-                                     const RunQualityPassRequest *request,
-                                     grpc::ServerWriter<QualityEvent> *writer)
-    -> grpc::Status {
-  if (!check_auth(context)) {
-    return unauthenticated();
-  }
+auto engine::run_quality_pass(request_context *context,
+                              const RunQualityPassRequest *request,
+                              event_writer<QualityEvent> *writer) -> status {
   if (const auto err = require_session()) {
     return *err;
   }
@@ -92,15 +88,15 @@ auto kustavi_service::RunQualityPass(grpc::ServerContext *context,
   double under = request->underexposed_threshold();
   double over = request->overexposed_threshold();
   if (blur <= 0) {
-    return {grpc::StatusCode::INVALID_ARGUMENT,
+    return {status_code::invalid_argument,
             "blur_threshold must be a positive number"};
   }
   if (under < 0 || under >= 1) {
-    return {grpc::StatusCode::INVALID_ARGUMENT,
+    return {status_code::invalid_argument,
             "underexposed_threshold must be in [0, 1)"};
   }
   if (over < 0 || over >= 1) {
-    return {grpc::StatusCode::INVALID_ARGUMENT,
+    return {status_code::invalid_argument,
             "overexposed_threshold must be in [0, 1)"};
   }
 
@@ -128,7 +124,7 @@ auto kustavi_service::RunQualityPass(grpc::ServerContext *context,
       path_to_id.emplace(record.absolute_path.string(), record.id);
     }
   } catch (const std::exception &e) {
-    return {grpc::StatusCode::INTERNAL,
+    return {status_code::internal,
             std::string("failed to read session: ") + e.what()};
   }
 
@@ -197,7 +193,7 @@ auto kustavi_service::RunQualityPass(grpc::ServerContext *context,
             quality_complete_evt{.flagged = flagged, .total = metrics.size()});
       });
 
-  grpc::Status status = stream_pass(
+  status status = stream_pass(
       context, writer, queue, stop_source,
       [&](const quality_event &ev) -> bool {
         QualityEvent proto;
@@ -223,7 +219,7 @@ auto kustavi_service::RunQualityPass(grpc::ServerContext *context,
               }
             },
             ev);
-        return writer->Write(proto);
+        return writer->write(proto);
       });
 
   producer.join();
@@ -237,25 +233,21 @@ auto kustavi_service::RunQualityPass(grpc::ServerContext *context,
   return status;
 }
 
-auto kustavi_service::PreviewQualityThresholds(
-    grpc::ServerContext *context,
+auto engine::preview_quality_thresholds(
     const PreviewQualityThresholdsRequest *request,
-    PreviewQualityThresholdsResponse *response) -> grpc::Status {
-  if (!check_auth(context)) {
-    return unauthenticated();
-  }
+    PreviewQualityThresholdsResponse *response) -> status {
   if (const auto err = require_session()) {
     return *err;
   }
 
   const auto &in = request->thresholds();
   if (in.blur_threshold() <= 0) {
-    return {grpc::StatusCode::INVALID_ARGUMENT,
+    return {status_code::invalid_argument,
             "blur_threshold must be a positive number"};
   }
   if (in.underexposed_threshold() < 0 || in.underexposed_threshold() >= 1 ||
       in.overexposed_threshold() < 0 || in.overexposed_threshold() >= 1) {
-    return {grpc::StatusCode::INVALID_ARGUMENT,
+    return {status_code::invalid_argument,
             "exposure thresholds must be in [0, 1)"};
   }
 
@@ -304,9 +296,9 @@ auto kustavi_service::PreviewQualityThresholds(
     response->set_under_exposed(under);
     response->set_over_exposed(over);
   } catch (const std::exception &e) {
-    return {grpc::StatusCode::INTERNAL,
+    return {status_code::internal,
             std::string("failed to preview thresholds: ") + e.what()};
   }
-  return grpc::Status::OK;
+  return ok_status();
 }
 } // namespace kustavi

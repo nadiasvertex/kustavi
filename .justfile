@@ -15,14 +15,6 @@ build-release:
   cmake --preset release
   cmake --build --preset release
 
-build-server-release:
-  cmake --preset release
-  cmake --build --preset release --target server
-
-build-server:
-  cmake --preset {{ PRESET }}
-  cmake --build --preset {{ PRESET }} --target server
-
 # Builds the C++ GUI. Basalt and Magma are not pinned yet, so point
 # KUSTAVI_BASALT_SOURCE_DIR and KUSTAVI_MAGMA_SOURCE_DIR at checkouts of them.
 build-gui:
@@ -31,28 +23,27 @@ build-gui:
   cmake --preset {{ PRESET }} -DKUSTAVI_BUILD_GUI=ON \
     ${KUSTAVI_BASALT_SOURCE_DIR:+-DKUSTAVI_BASALT_SOURCE_DIR="$KUSTAVI_BASALT_SOURCE_DIR"} \
     ${KUSTAVI_MAGMA_SOURCE_DIR:+-DKUSTAVI_MAGMA_SOURCE_DIR="$KUSTAVI_MAGMA_SOURCE_DIR"}
-  cmake --build --preset {{ PRESET }} --target kustavi_gui server
+  cmake --build --preset {{ PRESET }} --target kustavi_gui
 
-# Runs the GUI from the build tree, with the back end that the build made.
+# Runs the GUI from the build tree.
 run-gui: build-gui
   #!/usr/bin/env sh
   set -e
-  KUSTAVI_BACKEND_PATH="$PWD/.build/{{ PRESET }}/backend/server" ".build/{{ PRESET }}/bin/kustavi_gui"
+  ".build/{{ PRESET }}/bin/kustavi_gui"
 
-# The GUI's tests: the logic, the screens, and the gRPC client against an in-process server.
+# The GUI's tests: the logic, the screens, and the client against a real engine.
 test-gui: build-gui
-  ctest --preset {{ PRESET }} -L "gui|process|grpc"
+  ctest --preset {{ PRESET }} -L gui
 
-# Back-end tests: unit tests plus the smoke test, where the smoke client spawns
-# the server itself (ephemeral loopback port), exercises every RPC pass against
-# a copy of test/photos, then shuts the server down.
+# Back-end tests: unit tests plus the engine test, which runs every pass against
+# a copy of test/photos.
 test-backend: build
   ctest --preset {{ PRESET }} -L backend
 
-# The GUI's core tests alone, which need no window library: the pure logic, the gRPC client
-# against an in-process server, and the process library.
+# The GUI's core tests alone, which need no window library: the pure logic and the client
+# against a real engine.
 test-gui-core: build
-  ctest --preset {{ PRESET }} -L "gui|process|grpc"
+  ctest --preset {{ PRESET }} -L gui
 
 # llama.cpp smoke test: links the vendored llama.cpp and prints the compute
 # devices the platform backend discovered (Metal GPU on macOS).
@@ -60,8 +51,8 @@ test-llama: build
   ctest --preset {{ PRESET }} -L llama -V
 
 # Vision (junk) pass end-to-end. Downloads the ~3.3 GB Qwen2.5-VL-3B weights on
-# the first run (cached in the OS app-data dir), then runs EnsureModel +
-# RunJunkPass against a copy of test/photos. Not part of `just test`.
+# the first run (cached in the OS app-data dir), then runs ensure_model +
+# run_junk_pass against a copy of test/photos. Not part of `just test`.
 test-junk: build
   ctest --preset {{ PRESET }} -L junk -V
 

@@ -1,4 +1,4 @@
-#include "kustavi_service.h"
+#include "engine.h"
 
 #include "pass/repair.h"
 #include "store/store.h"
@@ -56,13 +56,9 @@ auto synthetic(const repaired_metadata &now) -> bool {
 // Metadata repair: fill missing dates and GPS, propose camera clock offsets
 // ---------------------------------------------------------------------------
 
-auto kustavi_service::RunRepairPass(grpc::ServerContext *context,
-                                    const RunRepairPassRequest *request,
-                                    grpc::ServerWriter<RepairEvent> *writer)
-    -> grpc::Status {
-  if (!check_auth(context)) {
-    return unauthenticated();
-  }
+auto engine::run_repair_pass(request_context *context,
+                             const RunRepairPassRequest *request,
+                             event_writer<RepairEvent> *writer) -> status {
   if (const auto err = require_session()) {
     return *err;
   }
@@ -83,7 +79,7 @@ auto kustavi_service::RunRepairPass(grpc::ServerContext *context,
   try {
     records = store::get_image_records(session_db_);
   } catch (const std::exception &e) {
-    return {grpc::StatusCode::INTERNAL,
+    return {status_code::internal,
             std::string("failed to read session: ") + e.what()};
   }
 
@@ -160,7 +156,7 @@ auto kustavi_service::RunRepairPass(grpc::ServerContext *context,
         queue.push(complete);
       });
 
-  grpc::Status status = stream_pass(
+  status status = stream_pass(
       context, writer, queue, stop_source, [&](const repair_event &ev) -> bool {
         RepairEvent proto;
         std::visit(
@@ -204,7 +200,7 @@ auto kustavi_service::RunRepairPass(grpc::ServerContext *context,
               }
             },
             ev);
-        return writer->Write(proto);
+        return writer->write(proto);
       });
 
   producer.join();

@@ -10,10 +10,12 @@
 #include "app/fonts.h"
 #include "app/image_loader.h"
 #include "app/wizard_shell.h"
-#include "core/backend_host.h"
+#include "core/engine_client.h"
 
 #include "basalt/basalt.h"
 #include "magma/magma.h"
+
+#include <opencv2/core/utils/logger.hpp>
 
 #include <cstdlib>
 #include <filesystem>
@@ -54,6 +56,8 @@ auto render_frame(basalt::widget_tree &tree, magma::renderer &renderer,
 }
 
 auto run(int, char **argv, bool raster) -> int {
+  // OpenCV reports its setup on first use, which the window has no use for.
+  cv::utils::logging::setLogLevel(cv::utils::logging::LOG_LEVEL_SILENT);
   auto created = magma::platform::create();
   if (!created) {
     std::println(stderr, "{}", created.error().message);
@@ -98,24 +102,14 @@ auto run(int, char **argv, bool raster) -> int {
   controller.set_timers(&timers);
   model_status model{queue};
 
-  process_connector_options connector;
-  if (auto const *override_path = std::getenv("KUSTAVI_BACKEND_PATH")) {
-    connector.binary_override = override_path;
-  }
-  connector.executable = current_executable(argv[0]);
-  connector.temp_directory = std::filesystem::temp_directory_path();
-  connector.parent_pid = current_process_id();
-  backend_host backend{queue, pool.executor(), make_process_connector(std::move(connector))};
+  // The back end runs in this process. Its passes run on threads of their own.
+  auto const backend = std::make_shared<kustavi::engine>();
+  auto const client = std::make_shared<engine_client>(backend);
+  controller.set_client(client);
+  model.start(client);
 
   auto running = true;
-  auto quitting = false;
-  auto const begin_quit = [&] {
-    if (quitting) {
-      return;
-    }
-    quitting = true;
-    backend.quit([&running] { running = false; });
-  };
+  auto const begin_quit = [&running] { running = false; };
 
   shell_services services;
   services.version = KUSTAVI_VERSION;
@@ -147,7 +141,6 @@ auto run(int, char **argv, bool raster) -> int {
   wizard_shell shell{tree, controller, model, loader, master_loader, services,
                      default_video_player_factory()};
   shell.set_timers(&timers);
-  shell.services().show_backend_log = [&] { shell.show_log_dialog(backend.log_text()); };
 
   auto const dirty = [&] {
     shell.mark_dirty();
@@ -160,27 +153,6 @@ auto run(int, char **argv, bool raster) -> int {
     dirty();
   });
   controller.set_cancel_model_download([&model] { model.cancel_download(); });
-
-  auto const retry_backend = [&] {
-    backend.restart();
-    if (std::holds_alternative<wizard_failed>(controller.phase())) {
-      controller.go_back_from_error();
-    }
-  };
-  backend_host::handlers handlers;
-  handlers.on_ready = [&](std::shared_ptr<kustavi_client> client) {
-    controller.set_client(client);
-    model.start(std::move(client));
-  };
-  handlers.on_crashed = [&] {
-    controller.set_client(nullptr);
-    shell.show_crash_dialog("The back end stopped unexpectedly.", retry_backend);
-  };
-  handlers.on_failed = [&](std::string message) {
-    shell.show_crash_dialog("The back end could not be started. " + message, retry_backend);
-  };
-  backend.set_handlers(std::move(handlers));
-  backend.start();
 
   auto const apply_window = [&] {
     auto factors = tree.scale();

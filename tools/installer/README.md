@@ -20,10 +20,10 @@ just installer
 
 which runs `python tools/package.py --installer`. That:
 
-1. builds the release back end and the GUI (the `release` CMake preset, `server` and
-   `kustavi_gui` targets),
+1. builds the release GUI, which holds the back end (the `release` CMake preset, the
+   `kustavi_gui` target),
 2. stages the full application tree into `dist/Kustavi/` (`Kustavi.exe`, libmdk and its
-   libraries, `kustavi-backend.exe`, `cities.tsv`, `face_detection_yunet.onnx`, a `VERSION`
+   libraries, `fonts`, `cities.tsv`, `face_detection_yunet.onnx`, a `VERSION`
    marker),
 3. runs `wix build` to produce `dist/Kustavi-<version>-x64.msi`.
 

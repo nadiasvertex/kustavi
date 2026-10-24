@@ -36,13 +36,6 @@ if(MSVC)
   set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 endif()
 
-# gRPC's filter-fusion templates do not compile with the MSVC preview
-# toolchain. The macro turns RegisterFusedFilters() into a no-op; it appears in
-# no header, so setting it globally is ODR-safe.
-if(MSVC)
-  add_compile_definitions(GRPC_NO_FILTER_FUSION)
-endif()
-
 include(dependencies)
 
 # Warning and sanitizer flags apply only to Kustavi's own targets.
@@ -65,7 +58,6 @@ if(KUSTAVI_BUILD_TESTS)
   enable_testing()
 endif()
 
-add_subdirectory(common/process)
 add_subdirectory(proto)
 add_subdirectory(backend)
 

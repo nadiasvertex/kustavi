@@ -58,14 +58,13 @@ private:
   std::jthread worker_;
 };
 
-// The GUI's one way to the back end. Screens and the controller never use the generated stubs. The
+// The GUI's one way to the back end. Screens and the controller never call the engine directly. The
 // unary calls block, so call them from a worker. The streaming calls start a worker themselves.
 class kustavi_client {
 public:
   virtual ~kustavi_client() = default;
 
   [[nodiscard]] virtual auto get_info() -> call_result<GetInfoResponse> = 0;
-  [[nodiscard]] virtual auto shutdown() -> call_result<void> = 0;
 
   // Reads whether the folder holds a session that can resume. Changes nothing.
   [[nodiscard]] virtual auto inspect_session(std::string folder)

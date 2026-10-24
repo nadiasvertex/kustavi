@@ -1,345 +1,57 @@
-# Back-End RPC Specification (gRPC)
+# Back-End Specification
 
 ## 1. Overview
 
-Kustavi's front end and back end communicate over gRPC on a loopback TCP
-port. This document is the normative API the front end expects (see
-`spec/frontend.md`); the C++ back end is specified in `spec/backend.md`
-and must implement exactly this contract.
-
-- Single source of truth: `proto/service.proto`, package `kustavi`.
-- One service: `Kustavi`. All long-running operations are
-  server-streaming methods that emit `oneof`-based event messages.
-- Session Persistence: Persistent per folder. The back end creates and manages an embedded SQLite3 database engine stored within a hidden folder cache (`.kustavi-cache/session.db`) under the selected source path root. 
-- Calling a non-`ScanFolder` method before an active session is established is rejected with `FAILED_PRECONDITION`.
-
-## 2. Transport & Lifecycle
-
-- The GUI launches the back end with `--listen 127.0.0.1:0 --token <auth_token>`.
-- After binding, the back end prints one flushed line to stdout: `KUSTAVI-READY <port>\n`.
-- Security Mandate: The backend must read the incoming gRPC metadata call headers and enforce that every incoming connection passes the matching `<auth_token>` validation signature string. Requests failing auth validation are instantly terminated.
-- HTTP/2, loopback only. No TLS, no auth over public interfaces: bound tightly to 127.0.0.1.
-- Concurrency Rule: At most one analysis/processing pass runs at a time. The backend rejects a second concurrent processing pass with `FAILED_PRECONDITION`. `EnsureModel` is explicitly exempt from this restriction and can execute in parallel with folder ingestion.
-- Cancellation: The backend must observe client cancellation signals within 1–2 seconds, immediately terminating any active execution, file transfers, or Moondream LLM inference pipelines, safely committing atomic transactional database states before release.
-- `Shutdown` is idempotent, triggers memory cleanups, and terminates the process context.
-
-## 3. Conventions
-
-- **Image id** — the path of the image relative to the session folder, using `/` as separator. Stable across sessions.
-- **Timestamps** — milliseconds since the Unix epoch, `int64`.
-- **GPS** — decimal degrees, WGS84, `(latitude, longitude)`.
-- **Optional metadata** — proto3 `optional` definitions.
-- **Thumbnails/Previews** — Unified 768px downscaled JPEG working image asset tier. Generated once during ingestion and written to `.kustavi-cache/res768/` before its `ImageMeta` wire event fires.
-- **Status codes** — `INVALID_ARGUMENT`, `NOT_FOUND`, `FAILED_PRECONDITION`, `INTERNAL`, `CANCELLED`.
-- Source Protection: The backend never moves, modifies, or deletes files inside the source folder. `Commit` is strictly copy-only.
-
-## 4. The Service
-
-```proto
-syntax = "proto3";
-
-package kustavi;
-
-service Kustavi {
-  // --- lifecycle -------------------------------------------------------
-  rpc GetInfo(GetInfoRequest) returns (GetInfoResponse);
-  rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
-
-  // --- pass 1: scan & thumbnails ---------------------------------------
-  rpc ScanFolder(ScanFolderRequest) returns (stream ScanEvent);
-  rpc FetchSavedDecisions(FetchSavedDecisionsRequest) returns (FetchSavedDecisionsResponse);
-
-  // --- pass 2: blur / exposure -----------------------------------------
-  rpc RunQualityPass(RunQualityPassRequest) returns (stream QualityEvent);
-
-  // --- pass 3: junk (vision LLM) ----------------------------------------
-  rpc EnsureModel(EnsureModelRequest) returns (stream ModelEvent);
-  rpc RunJunkPass(RunJunkPassRequest) returns (stream JunkEvent);
-
-  // --- pass 4: similar images -------------------------------------------
-  rpc RunSimilarPass(RunSimilarPassRequest) returns (stream SimilarEvent);
-
-  // --- pass 5: trips -----------------------------------------------------
-  rpc RunTripsPass(RunTripsPassRequest) returns (stream TripsEvent);
-
-  // --- pass 6: commit ----------------------------------------------------
-  rpc Commit(CommitRequest) returns (stream CommitEvent);
-  rpc EstimateCommit(CommitRequest) returns (EstimateCommitResponse);
-}
-
-// --- lifecycle ---------------------------------------------------------
-
-message GetInfoRequest {}
-
-message GetInfoResponse {
-  string version = 1;              
-  repeated string supported_formats = 2;  
-  string model_name = 3;           
-}
-
-message ShutdownRequest {}
-message ShutdownResponse {}
-
-// --- shared -------------------------------------------------------------
-
-message GpsPoint {
-  double latitude = 1;
-  double longitude = 2;
-}
-
-message ImageMeta {
-  string id = 1;               
-  string path = 2;             
-  string name = 3;             
-  uint32 original_width = 4;
-  uint32 original_height = 5;
-  uint64 size_bytes = 6;
-  optional int64 taken_unix_ms = 7;
-  optional GpsPoint gps = 8;
-  string working_image_path = 9;   // Absolute path to the cached 768px JPEG file
-}
-
-// --- pass 1: scan --------------------------------------------------------
-
-message ScanFolderRequest {
-  string folder = 1;           
-  bool recursive = 2;          
-  bool force_fresh = 3;        // True to clear existing SQLite tables and cache assets
-}
-
-message ScanEvent {
-  oneof event {
-    ScanProgress progress = 1;
-    ImageMeta image = 2;
-    ScanComplete complete = 3;
-  }
-}
-
-message ScanProgress {
-  uint32 files_seen = 1;
-  uint32 images_found = 2;
-  string current_path = 3;
-}
-
-message ScanComplete {
-  uint32 images = 1;
-  uint32 skipped_files = 2;    
-  repeated string errors = 3;  
-  bool resumed_session = 4;    // True if a pre-existing valid SQLite state file was detected
-  uint32 saved_wizard_phase = 5; // Direct target phase step to fast-forward the frontend shell layout
-}
-
-message FetchSavedDecisionsRequest {}
-
-message FetchSavedDecisionsResponse {
-  repeated string explicit_kept_ids = 1;
-  repeated string explicit_deleted_ids = 2;
-  repeated string similar_keeper_reassignments = 3; // Format string array strings: "group_id:keeper_id"
-}
-
-// --- pass 2: quality -------------------------------------------------------
-
-message RunQualityPassRequest {}
-
-message QualityEvent {
-  oneof event {
-    QualityProgress progress = 1;
-    QualityFlag flag = 2;      
-    QualityComplete complete = 3;
-  }
-}
-
-message QualityProgress {
-  uint32 done = 1;
-  uint32 total = 2;
-}
-
-enum QualityReason {
-  QUALITY_REASON_UNSPECIFIED = 0;
-  BLURRY = 1;
-  UNDER_EXPOSED = 2;
-  OVER_EXPOSED = 3;
-}
-
-message QualityFlag {
-  string image_id = 1;
-  repeated QualityReason reasons = 2;  
-  double sharpness = 3;      -- Standardized/normalized metrics
-  double exposure_score = 4; 
-}
-
-message QualityComplete {
-  uint32 flagged = 1;
-  uint32 total = 2;
-}
-
-// --- pass 3: model + junk ---------------------------------------------------
-
-message EnsureModelRequest {}
-
-message ModelEvent {
-  oneof event {
-    ModelReady ready = 1;
-    ModelDownloadProgress progress = 2;
-  }
-}
-
-message ModelReady {
-  string model_name = 1;
-  uint64 size_bytes = 2;
-}
-
-message ModelDownloadProgress {
-  uint64 done_bytes = 1;
-  uint64 total_bytes = 2;
-  double speed_bps = 3;
-}
-
-message RunJunkPassRequest {}
-
-message JunkEvent {
-  oneof event {
-    JunkProgress progress = 1;
-    JunkFlag flag = 2;         
-    JunkComplete complete = 3;
-  }
-}
-
-message JunkProgress {
-  uint32 done = 1;
-  uint32 total = 2;
-}
-
-message JunkFlag {
-  string image_id = 1;
-  string reason = 2;    // classification: e.g. "screenshot", "scan", "meme"
-  double confidence = 3;  
-}
-
-message JunkComplete {
-  uint32 flagged = 1;
-  uint32 total = 2;
-}
-
-// --- pass 4: similar -----------------------------------------------------------
-
-message RunSimilarPassRequest {
-  repeated string skip_image_ids = 1; // already marked for deletion upstream
-}
-
-message SimilarEvent {
-  oneof event {
-    SimilarProgress progress = 1;
-    SimilarGroup group = 2;
-    SimilarComplete complete = 3;
-  }
-}
-
-message SimilarProgress {
-  uint32 done = 1;
-  uint32 total = 2;
-}
-
-message SimilarGroup {
-  uint32 id = 1;                       
-  repeated string image_ids = 2;       
-  string recommended_keep_id = 3;
-  repeated double member_scores = 4;   
-}
-
-message SimilarComplete {
-  uint32 groups = 1;
-  uint32 total_images = 2;
-}
-
-// --- pass 5: trips ----------------------------------------------------------------
-
-message RunTripsPassRequest {
-  int32 max_gap_hours = 1;
-  int32 max_distance_km = 2;
-  int32 home_radius_km = 3;
-  int32 leg_radius_km = 4;
-}
-
-message TripsEvent {
-  oneof event {
-    TripsProgress progress = 1;
-    Trip trip = 2;
-    TripsComplete complete = 3;
-  }
-}
-
-message TripsProgress {
-  uint32 done = 1;
-  uint32 total = 2;
-}
-
-message Trip {
-  uint32 id = 1;
-  int64 start_unix_ms = 2;
-  int64 end_unix_ms = 3;
-  repeated string image_ids = 4;
-  optional GpsPoint centroid = 5;
-  optional string folder = 6;
-  string folder_slug = 7;
-  string place_name = 8;
-  repeated TripLeg legs = 9;
-  bool is_home = 10;
-}
-
-message TripLeg {
-  string place_name = 1;
-  string slug = 2;
-  repeated string image_ids = 3;
-  optional GpsPoint centroid = 4;
-}
-
-message TripsComplete {
-  uint32 trips = 1;
-  uint32 unassigned = 2;  
-}
-
-// --- pass 6: commit ------------------------------------------------------------------
-
-message CommitRequest {
-  string destination = 1;
-  repeated string keep_ids = 2;
-  map<string, string> folder_for_id = 3;
-}
-
-message CommitEvent {
-  oneof event {
-    CommitProgress progress = 1;
-    CommitComplete complete = 2;
-  }
-}
-
-message CommitProgress {
-  uint32 done = 1;
-  uint32 total = 2;
-  string current_name = 3;
-}
-
-message CommitComplete {
-  uint32 copied = 1;
-  uint32 skipped = 2;        
-  repeated string errors = 3;  
-}
-```
-
-## 5. Method Semantics
-
-### GetInfo
-No preconditions. Returns application parameters. Used as a channel health readiness probe.
-
-### Shutdown
-Idempotent. Safely flushes transactions, finalizes SQLite handles, and quits.
+The back end is the `kustavi_engine` library (`backend/`). The GUI links it and calls it in its own
+process. The calls and their messages are specified in `spec/proto.md`; this document describes
+how the library is built and what its passes do.
+
+- `backend/include/engine.h` declares the `engine` class, one method per call, and the event types
+  that a pass queues for its caller. `backend/include/status.h` has `status`, `request_context`
+  and `event_writer`.
+- `backend/src/service/` implements the calls, one file per pass. `backend/src/pass/` holds the
+  image processing that the passes use, with no knowledge of the calls. `backend/src/store/` is
+  the session database (embedded SQLite, `.kustavi-cache/session.db` under the source folder).
+- The engine serves one folder at a time. Persistence is per folder: re-opening a folder resumes
+  its session, with its pass results and the user's decisions.
+- The back end never moves, modifies or deletes files inside the source folder. `Commit` only
+  copies.
+
+## 2. Threading
+
+- A streaming call runs on the thread that calls it. It starts a producer thread for the pass
+  and drains the producer's `event_queue` into the caller's `event_writer`. The caller cancels the
+  call through its `request_context`, and the call stops the producer through a stop token.
+- The session database is open in serialized mode, because the unary calls and a pass use it
+  from different threads.
+- At most one pass runs at a time. `ensure_model` is exempt, and a mutex keeps two downloads
+  from running together.
+- A pass catches its exceptions and ends with an `internal` status. The library does not let an
+  exception reach the caller.
+
+## 3. Data Files
+
+The place table (`cities.tsv`) and the face model (`face_detection_yunet.onnx`) are found beside the
+program, in a `data` folder beside it, or through `KUSTAVI_GEO_DATA` and `KUSTAVI_FACE_MODEL`
+(`backend/include/paths.h`). The vision model is downloaded to the user's application data folder.
+
+## 4. Tests
+
+- Unit tests for the passes are small programs in `backend/test/`, each built from the sources it
+  checks (label `backend`).
+- `engine_test` runs every call against a scratch copy of `test/photos`: the scan, the quality,
+  similar, repair and trips passes, commit with its estimate and merge, resume, batch scoping,
+  one pass at a time and cancelling. Its junk test downloads the vision model, so it runs only
+  under `ctest -L junk` (`just test-junk`).
+- The `sanitize` preset builds the library and these tests with ASan and UBSan.
+
+## Pass Details
 
 ### ScanFolder
 Starts or intercepts an active session. If an existing `session.db` with matching workspace state layout parameters is parsed, and `force_fresh` is false, it reads the entry inventory totals instantly and returns `resumed_session = true` along with the high-watermark `saved_wizard_phase` index payload to the caller, bypassing redundant calculations.
 If `force_fresh` is true, or no database asset is found, it initializes the SQLite scheme, walks the system paths recursively, generates downscaled 768px image artifacts to `.kustavi-cache/res768/`, and indexes metadata into the file engine table blocks.
 
-### FetchSavedDecisions
+### Saved decisions
 Precondition: Active session populated from a recovered database layout. Pulls rows from `user_decisions` and `user_group_keepers` to restore frontend memory providers to their exact pre-exit human configuration states.
 
 ### RunQualityPass

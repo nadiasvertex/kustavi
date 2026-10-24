@@ -47,8 +47,7 @@ public:
   // Called after every change to the phase or the image index.
   auto on_change(std::function<void()> handler) -> void { on_change_ = std::move(handler); }
 
-  // The back end's client. Null while the back end starts or restarts. Changing it does not
-  // change the phase.
+  // The back end's client. Changing it does not change the phase.
   auto set_client(std::shared_ptr<kustavi_client> client) -> void { client_ = std::move(client); }
 
   [[nodiscard]] auto phase() const -> wizard_phase const & { return phase_; }

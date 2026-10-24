@@ -2,57 +2,8 @@ syntax = "proto3";
 
 package kustavi;
 
-service Kustavi {
-  // --- lifecycle -------------------------------------------------------
-  rpc GetInfo(GetInfoRequest) returns (GetInfoResponse);
-  rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
-
-  // --- resume ----------------------------------------------------------
-  // Probe a folder for a saved session before scanning it. Read-only; does
-  // not open or disturb the active session.
-  rpc InspectSession(InspectSessionRequest) returns (InspectSessionResponse);
-  // Fetch every persisted pass result + the user's decisions for the active
-  // session (called right after a resume ScanFolder completes).
-  rpc GetSessionResults(GetSessionResultsRequest)
-      returns (GetSessionResultsResponse);
-  // Persist the wizard's current step, tunables, and keep/delete decisions
-  // so a later launch can resume. Write-through; called as the user works.
-  rpc SaveSessionState(SaveSessionStateRequest) returns (SaveSessionStateResponse);
-
-  // --- pass 1: scan & thumbnails ---------------------------------------
-  rpc ScanFolder(ScanFolderRequest) returns (stream ScanEvent);
-
-  // --- pass 2: blur / exposure -----------------------------------------
-  rpc RunQualityPass(RunQualityPassRequest) returns (stream QualityEvent);
-  // Count how many photos the stored quality metrics would flag at the given
-  // thresholds, without re-analyzing any image. Read-only.
-  rpc PreviewQualityThresholds(PreviewQualityThresholdsRequest)
-      returns (PreviewQualityThresholdsResponse);
-
-  // --- pass 3: junk (vision LLM) ----------------------------------------
-  rpc EnsureModel(EnsureModelRequest) returns (stream ModelEvent);
-  rpc RunJunkPass(RunJunkPassRequest) returns (stream JunkEvent);
-
-  // --- pass 4: similar images -------------------------------------------
-  rpc RunSimilarPass(RunSimilarPassRequest) returns (stream SimilarEvent);
-
-  // --- pass 5: video quality -----------------------------------------------
-  rpc RunVideoPass(RunVideoPassRequest) returns (stream VideoEvent);
-
-  // --- metadata repair ----------------------------------------------------
-  // Fills missing dates and GPS, and proposes per-camera clock corrections.
-  // Run after the scan and before the trips pass.
-  rpc RunRepairPass(RunRepairPassRequest) returns (stream RepairEvent);
-
-  // --- pass 6: trips -----------------------------------------------------
-  rpc RunTripsPass(RunTripsPassRequest) returns (stream TripsEvent);
-
-  // --- pass 7: commit ----------------------------------------------------
-  rpc Commit(CommitRequest) returns (stream CommitEvent);
-  // Sizes a commit without writing anything: bytes to write, bytes already
-  // in the destination library, and the free space there.
-  rpc EstimateCommit(CommitRequest) returns (EstimateCommitResponse);
-}
+// The data that the engine's calls take and give (backend/include/engine.h). The calls are C++
+// functions, and the messages are plain values, so nothing here is sent over a wire.
 
 // --- lifecycle ---------------------------------------------------------
 
@@ -63,9 +14,6 @@ message GetInfoResponse {
   repeated string supported_formats = 2;  // lowercase extensions, e.g. "jpg"
   string model_name = 3;           // vision model used by the junk pass
 }
-
-message ShutdownRequest {}
-message ShutdownResponse {}
 
 // --- resume -----------------------------------------------------------
 

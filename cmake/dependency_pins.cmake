@@ -1,10 +1,13 @@
 # Every third-party dependency's source location and checksum. Bump a version
-# and its hash together. gRPC is pinned by git commit because its release
-# tarballs omit the submodules that its own CMake build needs; the commit hash
-# is as immutable as a SHA-256.
+# and its hash together.
 
-set(KUSTAVI_GRPC_GIT_URL "https://github.com/grpc/grpc.git")
-set(KUSTAVI_GRPC_GIT_TAG "3252a89f10d8e92997862167ca7d095ecda85973") # v1.84.0
+# protobuf holds the messages that the back end and the GUI share, and OpenCV's dnn module reads
+# ONNX models with it. abseil is the library that protobuf is built on.
+set(KUSTAVI_PROTOBUF_URL "https://github.com/protocolbuffers/protobuf/releases/download/v35.1/protobuf-35.1.tar.gz")
+set(KUSTAVI_PROTOBUF_SHA256 "f0b6838e7522a8da96126d487068c959bc624926368f3024ac8fd03abd0a1ac4")
+
+set(KUSTAVI_ABSEIL_URL "https://github.com/abseil/abseil-cpp/releases/download/20250512.1/abseil-cpp-20250512.1.tar.gz")
+set(KUSTAVI_ABSEIL_SHA256 "9b7a064305e9fd94d124ffa6cc358592eb42b5da588fb4e07d09254aa40086db")
 
 set(KUSTAVI_OPENCV_URL "https://github.com/opencv/opencv/archive/refs/tags/5.0.0.tar.gz")
 set(KUSTAVI_OPENCV_SHA256 "b0528f5a1d379d59d4701cb28c36e22214cc51cf64594e5b56f2d3e6c0233095")

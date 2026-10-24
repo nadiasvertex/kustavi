@@ -14,7 +14,7 @@ Kustavi is an image management application.
 
 6. When the user commits to their choices, we copy the images that were _not_ marked for deletion into a user selected folder and indicate that we are done.
 
-The GUI is responsible for all user input, but the back end handles the actual image processing and classification. The back end should be launched by the front end, and they should communicate using gRPC, probably over a loopback port or domain socket.
+The GUI is responsible for all user input, but the back end handles the actual image processing and classification. The back end is a C++ library that the front end links and calls in the same process.
 
 If we need LLM support, the weights should be downloaded from huggingface the first time the user runs the program.
 
@@ -22,10 +22,7 @@ It needs to be able to run on a computer with only 16GB of RAM.
 
 ## Tech Stack Validation & Architecture
 
-* C++ GUI + C++ back end via gRPC: gRPC over a local loopback port (127.0.0.1:port) or Unix Domain Sockets (on macOS/Linux) ensures low-latency, strongly-typed IPC.
-* Alternative to gRPC (a library): Instead of a separate process and gRPC, you could compile your C++ back-end as a dynamic library (.dll, .dylib, .so) and call it directly from the GUI.
-* Pros of FFI: No network ports, no serialization overhead, simpler single-process deployment, easier to share memory pointers for raw images.
-   * Pros of gRPC: Keeps the heavy C++ memory space isolated from the UI process, crash-resilient (if the backend crashes, the UI stays alive), easier to show progressive loading bars via gRPC streams. Stick to gRPC if you want isolated process safety.
+* C++ GUI + C++ back end as a library: the GUI links the back end and calls it directly. There are no network ports and no serialization, deployment is one program, and the GUI can share files and memory with the passes. The cost is that a fault in the back end ends the program, so the passes catch their exceptions and report them as statuses. Earlier versions ran the back end as a child process behind gRPC; the single process replaced that because the isolation did not repay the launching, supervision and crash handling that it needed.
 * 16GB RAM Constraint: Totally viable. Local OpenCV operations take negligible RAM. An embedded vision LLM (like Moondream2 or LLaVA-Phi3 mini) quantized to Q4 via llama.cpp will only consume 2GB to 4GB of RAM, leaving plenty of headroom.
 
 ------------------------------
@@ -34,8 +31,8 @@ It needs to be able to run on a computer with only 16GB of RAM.
 
 ## Pass 1: Folder Selection & Grid View
 
-* Front-end: Use the platform's folder chooser (Magma's `show_open_folder_dialog`) to get the directory path. Pass this path to the C++ back-end via gRPC.
-* Optimizing the Grid: Do not load raw 4K images into the GUI's memory. Have the C++ back-end generate a cache folder of tiny, compressed JPEG thumbnails (e.g., 200px width) and stream the thumbnail paths back to the GUI. The GUI can then render them instantly with a virtualized grid.
+* Front-end: Use the platform's folder chooser (Magma's `show_open_folder_dialog`) to get the directory path. Pass this path to the C++ back end.
+* Optimizing the Grid: Do not load raw 4K images into the GUI's memory. Have the C++ back-end generate a cache folder of tiny, compressed JPEG thumbnails (e.g., 200px width) and report the thumbnail paths back to the GUI. The GUI can then render them instantly with a virtualized grid.
 
 ## Pass 2: Blurry and Poorly Exposed Detection (OpenCV)
 

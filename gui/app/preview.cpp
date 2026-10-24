@@ -2,7 +2,7 @@
 //
 //   kustavi_gui_preview --screen NAME --out FILE.png [--photos DIR] [--raster] [--scale S]
 //
-// NAME is one of start, downloading, scanning, restore, confirm, none, failed, crash, log, trips,
+// NAME is one of start, downloading, scanning, restore, confirm, none, failed, trips,
 // trips-running, menu, quality, similar, junk-prep, junk-running, review, summary, copying, done and detail. A scripted fake back end puts the controller in the state of that screen.
 
 #include "app/executable_path.h"
@@ -209,7 +209,7 @@ auto main(int argc, char **argv) -> int {
     scan_events(0);
     controller.select_folder("/Users/me/Pictures/Empty");
   } else if (screen == "failed") {
-    client->stream_error = backend_rpc{grpc::StatusCode::INTERNAL, "The disk is full."};
+    client->stream_error = backend_error{status_code::internal, "The disk is full."};
     controller.select_folder("/Users/me/Pictures/Italy 2024");
   } else if (screen == "trips") {
     trips_events();
@@ -326,17 +326,12 @@ auto main(int argc, char **argv) -> int {
     settle();
     client->hold_streams = true;
     controller.continue_from_confirm();
-  } else if (screen != "start" && screen != "crash" && screen != "log") {
+  } else if (screen != "start") {
     std::println(stderr, "Unknown screen: {}", screen);
     return EXIT_FAILURE;
   }
   settle();
   shell.update();
-  if (screen == "crash") {
-    shell.show_crash_dialog("The back end stopped unexpectedly.", [] {});
-  } else if (screen == "log") {
-    shell.show_log_dialog("starting\nlistening on 127.0.0.1:50051\nscan finished\n");
-  }
 
   // Give the loader a moment to decode the images in view, then draw the frame that has them.
   auto commands = basalt::paint_commands{};

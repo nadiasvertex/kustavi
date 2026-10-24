@@ -4,15 +4,13 @@
 #include <chrono>
 #include <stdexcept>
 
-#include <grpcpp/support/status.h>
-
 namespace kustavi::gui {
 
 namespace {
 
 // A flag with a value this build does not know is a mismatch with the back end.
 auto protocol_error(std::invalid_argument const &error) -> backend_error {
-  return backend_rpc{grpc::StatusCode::INTERNAL, error.what()};
+  return backend_error{status_code::internal, error.what()};
 }
 
 } // namespace

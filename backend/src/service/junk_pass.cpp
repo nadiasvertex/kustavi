@@ -1,4 +1,4 @@
-#include "kustavi_service.h"
+#include "engine.h"
 
 #include "net/model_download.h"
 #include "pass/junk.h"
@@ -74,14 +74,10 @@ auto classified_ids(database &db) -> std::unordered_set<std::string> {
 
 } // namespace
 
-auto kustavi_service::EnsureModel(grpc::ServerContext *context,
-                                  const EnsureModelRequest *request,
-                                  grpc::ServerWriter<ModelEvent> *writer)
-    -> grpc::Status {
+auto engine::ensure_model(request_context *context,
+                          const EnsureModelRequest *request,
+                          event_writer<ModelEvent> *writer) -> status {
   (void)request;
-  if (!check_auth(context)) {
-    return unauthenticated();
-  }
 
   const auto text = text_model_asset();
   const auto mmproj = mmproj_asset();
@@ -136,7 +132,7 @@ auto kustavi_service::EnsureModel(grpc::ServerContext *context,
         });
       });
 
-  grpc::Status status = stream_pass(
+  status status = stream_pass(
       context, writer, queue, stop_source, [&](const model_event &ev) -> bool {
         ModelEvent proto;
         std::visit(
@@ -154,7 +150,7 @@ auto kustavi_service::EnsureModel(grpc::ServerContext *context,
               }
             },
             ev);
-        return writer->Write(proto);
+        return writer->write(proto);
       });
 
   producer.join();
@@ -165,13 +161,9 @@ auto kustavi_service::EnsureModel(grpc::ServerContext *context,
   return status;
 }
 
-auto kustavi_service::RunJunkPass(grpc::ServerContext *context,
-                                  const RunJunkPassRequest *request,
-                                  grpc::ServerWriter<JunkEvent> *writer)
-    -> grpc::Status {
-  if (!check_auth(context)) {
-    return unauthenticated();
-  }
+auto engine::run_junk_pass(request_context *context,
+                           const RunJunkPassRequest *request,
+                           event_writer<JunkEvent> *writer) -> status {
   if (const auto err = require_session()) {
     return *err;
   }
@@ -182,7 +174,7 @@ auto kustavi_service::RunJunkPass(grpc::ServerContext *context,
     std::scoped_lock lock(model_mutex_);
     if (!model_ready_ &&
         !(net::asset_ready(text) && net::asset_ready(mmproj))) {
-      return {grpc::StatusCode::FAILED_PRECONDITION,
+      return {status_code::failed_precondition,
               "vision model is not ready; call EnsureModel first"};
     }
     model_ready_ = true;
@@ -212,7 +204,7 @@ auto kustavi_service::RunJunkPass(grpc::ServerContext *context,
     }
     already_done = classified_ids(session_db_);
   } catch (const std::exception &e) {
-    return {grpc::StatusCode::INTERNAL,
+    return {status_code::internal,
             std::string("failed to read session: ") + e.what()};
   }
 
@@ -316,7 +308,7 @@ auto kustavi_service::RunJunkPass(grpc::ServerContext *context,
         queue.push(junk_complete_evt{.flagged = flagged, .total = total});
       });
 
-  grpc::Status status = stream_pass(
+  status status = stream_pass(
       context, writer, queue, stop_source, [&](const junk_event &ev) -> bool {
         JunkEvent proto;
         std::visit(
@@ -338,7 +330,7 @@ auto kustavi_service::RunJunkPass(grpc::ServerContext *context,
               }
             },
             ev);
-        return writer->Write(proto);
+        return writer->write(proto);
       });
 
   producer.join();

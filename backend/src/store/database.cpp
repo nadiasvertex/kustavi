@@ -24,8 +24,8 @@ void database::open(const std::filesystem::path &folder_path) {
 
   std::string db_path = config::session_db_path(cache_dir).string();
 
-  // The session database is shared by every gRPC handler thread (passes,
-  // SaveSessionState, GetSessionResults), so the connection must be in
+  // The session database is shared by every thread that calls the engine
+  // (passes, save_session_state, get_session_results), so the connection must be in
   // serialized mode; NOMUTEX lets concurrent calls corrupt it and crash.
   int rc = sqlite3_open_v2(db_path.c_str(), &db_,
                            SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE |

@@ -26,7 +26,6 @@ struct shell_services {
   // Begins an orderly exit.
   std::function<void()> exit_app;
   // Shows the output of the back-end process.
-  std::function<void()> show_backend_log;
   // The vision model download's cancel and retry buttons.
   std::function<void()> cancel_download;
   std::function<void()> retry_download;
@@ -68,8 +67,7 @@ struct shell_services {
     -> std::unique_ptr<basalt::widget>;
 
 // A call ended in an error.
-[[nodiscard]] auto build_failed_screen(wizard_failed const &phase, shell_services const &services)
-    -> std::unique_ptr<basalt::widget>;
+[[nodiscard]] auto build_failed_screen(wizard_failed const &phase) -> std::unique_ptr<basalt::widget>;
 
 // The buttons along the bottom for the phase, or null when it has none.
 // `copy` receives the Copy button of the commit summary, whose state follows the destination.

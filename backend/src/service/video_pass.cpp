@@ -1,4 +1,4 @@
-#include "kustavi_service.h"
+#include "engine.h"
 
 #include "net/model_download.h"
 #include "pass/junk.h"
@@ -70,13 +70,9 @@ auto classified_video_ids(database &db) -> std::unordered_set<std::string> {
 
 } // namespace
 
-auto kustavi_service::RunVideoPass(grpc::ServerContext *context,
-                                   const RunVideoPassRequest *request,
-                                   grpc::ServerWriter<VideoEvent> *writer)
-    -> grpc::Status {
-  if (!check_auth(context)) {
-    return unauthenticated();
-  }
+auto engine::run_video_pass(request_context *context,
+                            const RunVideoPassRequest *request,
+                            event_writer<VideoEvent> *writer) -> status {
   if (const auto err = require_session()) {
     return *err;
   }
@@ -109,7 +105,7 @@ auto kustavi_service::RunVideoPass(grpc::ServerContext *context,
     }
     already_done = classified_video_ids(session_db_);
   } catch (const std::exception &e) {
-    return {grpc::StatusCode::INTERNAL,
+    return {status_code::internal,
             std::string("failed to read session: ") + e.what()};
   }
 
@@ -227,7 +223,7 @@ auto kustavi_service::RunVideoPass(grpc::ServerContext *context,
         queue.push(video_complete_evt{.flagged = flagged, .total = total});
       });
 
-  grpc::Status status = stream_pass(
+  status status = stream_pass(
       context, writer, queue, stop_source, [&](const video_event &ev) -> bool {
         VideoEvent proto;
         std::visit(
@@ -249,7 +245,7 @@ auto kustavi_service::RunVideoPass(grpc::ServerContext *context,
               }
             },
             ev);
-        return writer->Write(proto);
+        return writer->write(proto);
       });
 
   producer.join();

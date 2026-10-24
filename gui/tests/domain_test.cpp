@@ -153,16 +153,13 @@ TEST_CASE("an empty folder name maps to no folder", "[domain]") {
   CHECK(info.is_home);
 }
 
-TEST_CASE("gRPC statuses map to back-end errors", "[domain][error]") {
-  auto const missing = map_grpc_status({grpc::StatusCode::NOT_FOUND, "missing"});
-  REQUIRE(std::holds_alternative<backend_not_found>(missing));
+TEST_CASE("an engine status becomes a back-end error", "[domain][error]") {
+  auto const missing = to_backend_error({status_code::not_found, "missing"});
+  CHECK(missing.not_found());
   CHECK(message_of(missing) == "missing");
 
-  auto const gone = map_grpc_status({grpc::StatusCode::UNAVAILABLE, "gone"});
-  CHECK(std::holds_alternative<backend_crashed>(gone));
-
-  auto const boom = map_grpc_status({grpc::StatusCode::INTERNAL, "boom"});
-  REQUIRE(std::holds_alternative<backend_rpc>(boom));
-  CHECK(std::get<backend_rpc>(boom).code == grpc::StatusCode::INTERNAL);
+  auto const boom = to_backend_error({status_code::internal, "boom"});
+  CHECK_FALSE(boom.not_found());
+  CHECK(boom.code == status_code::internal);
   CHECK(message_of(boom) == "boom");
 }

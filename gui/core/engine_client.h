@@ -2,35 +2,19 @@
 
 #include "core/kustavi_client.h"
 
-#include <grpcpp/grpcpp.h>
+#include "engine.h"
 
-#include "proto/service.grpc.pb.h"
-
-#include <chrono>
 #include <memory>
-#include <string>
 
 namespace kustavi::gui {
 
-// The gRPC metadata header that carries the auth token.
-inline constexpr auto auth_token_header = "x-kustavi-auth-token";
-
-// A channel to the back end on the loopback address. Messages may be as large as the back end
-// sends, because a resumed session returns every stored result in one reply.
-[[nodiscard]] auto connect_to_backend(int port) -> std::shared_ptr<grpc::Channel>;
-
-// Asks the back end for its version, to see that it answers before the GUI uses it.
-[[nodiscard]] auto probe_backend(std::shared_ptr<grpc::Channel> const &channel,
-                                 std::string const &token, std::chrono::milliseconds timeout)
-    -> call_result<GetInfoResponse>;
-
-// The production client: gRPC over `channel`, with the auth token on every call.
-class grpc_kustavi_client final : public kustavi_client {
+// The production client: calls the engine in this process. A streaming call runs its pass on a
+// worker thread of its own, and cancelling it cancels the pass.
+class engine_client final : public kustavi_client {
 public:
-  grpc_kustavi_client(std::shared_ptr<grpc::Channel> channel, std::string token);
+  explicit engine_client(std::shared_ptr<engine> backend) : engine_(std::move(backend)) {}
 
   [[nodiscard]] auto get_info() -> call_result<GetInfoResponse> override;
-  [[nodiscard]] auto shutdown() -> call_result<void> override;
   [[nodiscard]] auto inspect_session(std::string folder)
       -> call_result<InspectSessionResponse> override;
   [[nodiscard]] auto get_session_results() -> call_result<GetSessionResultsResponse> override;
@@ -63,15 +47,15 @@ public:
       -> stream_subscription override;
 
 private:
+  // Runs the unary call `call` of the engine and returns the reply or the failure.
   template <class Response, class Request, class Call>
-  [[nodiscard]] auto unary(Request const &request, Call call) -> call_result<Response>;
-  template <class Event, class Request, class Start>
-  [[nodiscard]] auto stream(Request request, stream_handlers<Event> handlers, Start start)
-      -> stream_subscription;
+  auto unary(Request const &request, Call call) -> call_result<Response>;
 
-  std::shared_ptr<grpc::Channel> channel_;
-  std::shared_ptr<Kustavi::Stub> stub_;
-  std::string token_;
+  // Starts a worker that runs the streaming call `call` of the engine and reports to `handlers`.
+  template <class Event, class Request, class Call>
+  auto stream(Request request, stream_handlers<Event> handlers, Call call) -> stream_subscription;
+
+  std::shared_ptr<engine> engine_;
 };
 
 } // namespace kustavi::gui

@@ -1,4 +1,4 @@
-#include "kustavi_service.h"
+#include "engine.h"
 
 #include "algorithm/append_range.h"
 #include "pass/keeper_signals.h"
@@ -24,13 +24,9 @@ using algorithm::append_range;
 // Pass 4: similar images
 // ---------------------------------------------------------------------------
 
-auto kustavi_service::RunSimilarPass(grpc::ServerContext *context,
-                                     const RunSimilarPassRequest *request,
-                                     grpc::ServerWriter<SimilarEvent> *writer)
-    -> grpc::Status {
-  if (!check_auth(context)) {
-    return unauthenticated();
-  }
+auto engine::run_similar_pass(request_context *context,
+                              const RunSimilarPassRequest *request,
+                              event_writer<SimilarEvent> *writer) -> status {
   if (const auto err = require_session()) {
     return *err;
   }
@@ -66,7 +62,7 @@ auto kustavi_service::RunSimilarPass(grpc::ServerContext *context,
       group_base = static_cast<uint32_t>(sqlite3_column_int(stmt.raw(), 0));
     }
   } catch (const std::exception &e) {
-    return {grpc::StatusCode::INTERNAL,
+    return {status_code::internal,
             std::string("failed to read session: ") + e.what()};
   }
 
@@ -233,7 +229,7 @@ auto kustavi_service::RunSimilarPass(grpc::ServerContext *context,
       });
 
   uint32_t next_group_id = group_base;
-  grpc::Status status = stream_pass(
+  status status = stream_pass(
       context, writer, queue, stop_source,
       [&](const similar_event &ev) -> bool {
         SimilarEvent proto;
@@ -257,7 +253,7 @@ auto kustavi_service::RunSimilarPass(grpc::ServerContext *context,
               }
             },
             ev);
-        return writer->Write(proto);
+        return writer->write(proto);
       });
 
   producer.join();

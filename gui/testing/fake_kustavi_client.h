@@ -50,7 +50,6 @@ public:
   std::optional<CommitRequest> last_estimate_request;
   std::optional<PreviewQualityThresholdsRequest> last_preview_request;
   std::vector<SaveSessionStateRequest> saved_session_states;
-  int shutdown_calls = 0;
   int ensure_model_calls = 0;
 
   // Delivers the events of every stream that was held. A cancelled stream delivers nothing.
@@ -58,7 +57,6 @@ public:
   [[nodiscard]] auto held_streams() const -> std::size_t { return held_.size(); }
 
   [[nodiscard]] auto get_info() -> call_result<GetInfoResponse> override;
-  [[nodiscard]] auto shutdown() -> call_result<void> override;
   [[nodiscard]] auto inspect_session(std::string folder)
       -> call_result<InspectSessionResponse> override;
   [[nodiscard]] auto get_session_results() -> call_result<GetSessionResultsResponse> override;
