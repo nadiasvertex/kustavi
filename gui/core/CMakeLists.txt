@@ -16,7 +16,8 @@ add_library(kustavi_gui_core STATIC
   trip_edits.cpp
   trips_plan.cpp
   ui_queue.cpp
-  wizard_controller.cpp)
+  wizard_controller.cpp
+  wizard_controller_trips.cpp)
 add_library(kustavi::gui_core ALIAS kustavi_gui_core)
 # Sources include each other as "core/<name>.h".
 target_include_directories(kustavi_gui_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)

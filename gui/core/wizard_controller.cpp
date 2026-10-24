@@ -40,7 +40,9 @@ auto wizard_controller::set_phase(wizard_phase next) -> void {
   notify();
   // The saved position is only updated when the wizard rests on a screen, and not while a resume
   // is putting the restored state back.
-  if (!resuming_ && std::holds_alternative<wizard_confirm_folder>(phase_)) {
+  auto const resting = std::holds_alternative<wizard_confirm_folder>(phase_) ||
+                       std::holds_alternative<wizard_trips_review>(phase_);
+  if (resting && !resuming_ && !resume_target_step_) {
     persist_progress();
   }
 }
@@ -51,12 +53,15 @@ auto wizard_controller::fail(backend_error error) -> void {
 }
 
 auto wizard_controller::clear_results() -> void {
-  scan_.cancel();
+  pass_.cancel();
   scope_.next_generation();
   images_.clear();
   ordered_ids_.clear();
   pending_complete_.reset();
   restored_.reset();
+  plan_ = trips_plan{};
+  pending_trip_edits_.reset();
+  resume_target_step_.reset();
   resuming_ = false;
 }
 
@@ -140,7 +145,7 @@ auto wizard_controller::begin_scan(bool resume) -> void {
       }
     });
   };
-  scan_ = client_->scan_folder(std::move(request), std::move(handlers));
+  pass_ = client_->scan_folder(std::move(request), std::move(handlers));
 }
 
 auto wizard_controller::resume_session() -> void {
@@ -242,8 +247,8 @@ auto wizard_controller::on_resume_scan_done() -> void {
 }
 
 // Puts back the settings of the saved session. The pass results stay in `restored_` for the
-// screens that show them. A session saved at or after the first pass would continue at the
-// trips pass, which is not part of this controller yet, so it lands on the confirm screen.
+// screens that show them. A session that got past the select step re-runs the trips pass, which is
+// cheap and keeps no result of its own, and lays the saved edits over it.
 auto wizard_controller::apply_session_results(GetSessionResultsResponse results) -> void {
   auto const &quality = results.quality_thresholds();
   restore(tunables_.blur_threshold, quality.blur_threshold());
@@ -254,21 +259,29 @@ auto wizard_controller::apply_session_results(GetSessionResultsResponse results)
   restore(tunables_.trip_distance_km, trips.max_distance_km());
   restore(tunables_.trip_home_radius_km, trips.home_radius_km());
   restore(tunables_.trip_leg_radius_km, trips.leg_radius_km());
-  auto const saved_step = results.resume_step();
+  auto const saved_step = static_cast<int>(results.resume_step());
+  pending_trip_edits_ = results.trip_edits();
   restored_ = std::move(results);
-  // The confirm screen would save step zero over the saved position, so a session that got
-  // further keeps its saved step until the user moves on.
-  resuming_ = saved_step > 0;
-  set_phase(wizard_confirm_folder{source_folder_, static_cast<std::uint32_t>(ordered_ids_.size()),
-                                  {}});
   resuming_ = false;
+  auto const confirm = wizard_confirm_folder{
+      source_folder_, static_cast<std::uint32_t>(ordered_ids_.size()), {}};
+  if (saved_step < index_of(wizard_step::quality)) {
+    pending_trip_edits_.reset();
+    set_phase(confirm);
+    return;
+  }
+  // The batch menu and the review screens come later, so every saved step lands on the trips
+  // review for now.
+  resume_target_step_ = saved_step;
+  return_phase_ = confirm;
+  start_trips_pass();
 }
 
 auto wizard_controller::cancel_scan() -> void {
   if (!std::holds_alternative<wizard_scanning>(phase_)) {
     return;
   }
-  scan_.cancel();
+  pass_.cancel();
   scope_.next_generation();
   pending_complete_.reset();
   resuming_ = false;

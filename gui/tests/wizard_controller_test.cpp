@@ -3,6 +3,9 @@
 #include "core/wizard_controller.h"
 #include "testing/fake_kustavi_client.h"
 
+#include "core/trip_edits.h"
+
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <vector>
@@ -298,17 +301,20 @@ TEST_CASE("resume rescans with the resume flag and restores the tunables", "[wiz
   CHECK(h.in<wizard_scanning>());
   h.settle();
 
-  REQUIRE(h.in<wizard_confirm_folder>());
+  // A session saved at the quality step re-runs the trips pass and lands on its review.
+  REQUIRE(h.in<wizard_trips_review>());
   CHECK(h.client->last_scan_request->resume());
-  CHECK(h.get<wizard_confirm_folder>().image_count == 2);
+  CHECK(h.client->last_trips_request->max_gap_hours() == 72);
+  CHECK(h.controller.image_count() == 2);
   CHECK(h.controller.tunables().blur_threshold == 150.0);
   CHECK(h.controller.tunables().trip_gap_hours == 72);
   // Unset values keep their defaults.
   CHECK(h.controller.tunables().under_exposed_threshold == 0.3);
   CHECK(h.controller.tunables().trip_distance_km == 300);
   REQUIRE(h.controller.restored_session() != nullptr);
-  // The saved step is not overwritten by the confirm screen.
-  CHECK(h.client->saved_session_states.size() == 0);
+  // The saved position is written only once the review is reached, with the review's step.
+  REQUIRE(h.client->saved_session_states.size() == 1);
+  CHECK(h.client->saved_session_states.front().step() == 5);
 }
 
 TEST_CASE("a resume that cannot read the results fails", "[wizard][resume]") {
@@ -368,4 +374,240 @@ TEST_CASE("a resume of a session saved before any pass saves the confirm positio
   h.settle();
   REQUIRE(h.in<wizard_confirm_folder>());
   CHECK(h.client->saved_session_states.size() == 1);
+}
+
+namespace {
+
+auto trip_event(std::uint32_t id, std::int64_t start_ms, std::vector<std::string> const &ids,
+                std::string const &folder) -> kustavi::TripsEvent {
+  kustavi::TripsEvent event;
+  auto *trip = event.mutable_trip();
+  trip->set_id(id);
+  trip->set_start_unix_ms(start_ms);
+  trip->set_end_unix_ms(start_ms + 1000);
+  for (auto const &image : ids) {
+    trip->add_image_ids(image);
+  }
+  trip->set_folder(folder);
+  trip->set_folder_slug(folder);
+  return event;
+}
+
+auto trips_progress(std::uint32_t done, std::uint32_t total) -> kustavi::TripsEvent {
+  kustavi::TripsEvent event;
+  event.mutable_progress()->set_done(done);
+  event.mutable_progress()->set_total(total);
+  return event;
+}
+
+// Four photos and two trips: a and b in "Rome", c in "Paris", and d in no trip.
+auto reach_trips_review(harness &h) -> void {
+  h.client->scan_events = {scan_image("a.jpg"), scan_image("b.jpg"), scan_image("c.jpg"),
+                           scan_image("d.jpg"), scan_complete(4)};
+  h.client->trips_events = {trip_event(1, 1000, {"a.jpg", "b.jpg"}, "Rome"),
+                            trip_event(2, 2000, {"c.jpg"}, "Paris")};
+  reach_confirm(h);
+  h.controller.continue_from_confirm();
+  h.settle();
+  REQUIRE(h.in<wizard_trips_review>());
+}
+
+auto saved_edits(harness &h) -> std::optional<trip_edits> {
+  for (auto it = h.client->saved_session_states.rbegin(); it != h.client->saved_session_states.rend();
+       ++it) {
+    if (it->has_trip_edits()) {
+      return trip_edits::decode(it->trip_edits());
+    }
+  }
+  return std::nullopt;
+}
+
+} // namespace
+
+TEST_CASE("continue from confirm runs the trips pass and shows the review", "[wizard][trips]") {
+  harness h;
+  reach_trips_review(h);
+  auto const &review = h.get<wizard_trips_review>();
+  CHECK(review.trips.size() == 2);
+  CHECK(review.folders.size() == 2);
+  CHECK(review.folders.front().name == "Paris");
+  CHECK(review.unassigned_ids == std::vector<std::string>{"d.jpg"});
+  REQUIRE(h.client->last_trips_request.has_value());
+  CHECK(h.client->last_trips_request->max_gap_hours() == 48);
+  CHECK(stage_index_of(h.controller.phase()) == static_cast<int>(wizard_stage::organize));
+}
+
+TEST_CASE("trips progress is shown while the pass runs", "[wizard][trips]") {
+  harness h;
+  h.client->scan_events = {scan_image("a.jpg"), scan_complete(1)};
+  reach_confirm(h);
+  h.client->hold_streams = true;
+  h.client->trips_events = {trips_progress(3, 10)};
+  h.controller.continue_from_confirm();
+  h.settle();
+  REQUIRE(h.in<wizard_trips_running>());
+  h.client->release_streams();
+  h.queue.drain();
+  // The progress event runs before the end of the stream.
+  CHECK((h.in<wizard_trips_review>() || h.get<wizard_trips_running>().done == 3));
+}
+
+TEST_CASE("cancelling the trips pass returns to the confirm screen", "[wizard][trips]") {
+  harness h;
+  h.client->scan_events = {scan_image("a.jpg"), scan_complete(1)};
+  reach_confirm(h);
+  h.client->hold_streams = true;
+  h.controller.continue_from_confirm();
+  h.settle();
+  REQUIRE(h.in<wizard_trips_running>());
+  h.controller.cancel_trips();
+  CHECK(h.in<wizard_confirm_folder>());
+  h.client->release_streams();
+  h.settle();
+  CHECK(h.in<wizard_confirm_folder>());
+}
+
+TEST_CASE("back from the trips review returns to the confirm screen", "[wizard][trips]") {
+  harness h;
+  reach_trips_review(h);
+  h.controller.back_from_trips();
+  CHECK(h.in<wizard_confirm_folder>());
+}
+
+TEST_CASE("a failing trips pass leads to the error screen and back", "[wizard][trips]") {
+  harness h;
+  h.client->scan_events = {scan_image("a.jpg"), scan_complete(1)};
+  reach_confirm(h);
+  h.client->stream_error = backend_rpc{grpc::StatusCode::INTERNAL, "no geo table"};
+  h.controller.continue_from_confirm();
+  h.settle();
+  REQUIRE(h.in<wizard_failed>());
+  CHECK(h.get<wizard_failed>().step_index == index_of(wizard_step::trips));
+  h.controller.go_back_from_error();
+  CHECK(h.in<wizard_confirm_folder>());
+}
+
+TEST_CASE("moving photos between trips updates the review and saves the edit", "[wizard][trips]") {
+  harness h;
+  reach_trips_review(h);
+  h.controller.move_images_to_trip({"d.jpg"}, 1);
+  auto const &review = h.get<wizard_trips_review>();
+  CHECK(review.unassigned_ids.empty());
+  auto const rome = std::ranges::find_if(review.trips, [](auto const &t) { return t.id == 1; });
+  REQUIRE(rome != review.trips.end());
+  CHECK(rome->member_ids.size() == 3);
+  auto const edits = saved_edits(h);
+  REQUIRE(edits.has_value());
+  CHECK(edits->membership.at("d.jpg") == 1);
+
+  h.controller.move_images_to_trip({"a.jpg"}, std::nullopt);
+  CHECK(h.get<wizard_trips_review>().unassigned_ids.size() == 1);
+}
+
+TEST_CASE("a trip made by hand takes the chosen photos", "[wizard][trips]") {
+  harness h;
+  reach_trips_review(h);
+  h.controller.set_clock([] { return time_ms{std::chrono::milliseconds{1'700'000'000'000}}; });
+  auto const id = h.controller.create_trip_from_images({"d.jpg"});
+  CHECK(id >= trips_plan::first_user_trip_id);
+  auto const &review = h.get<wizard_trips_review>();
+  CHECK(review.trips.size() == 3);
+  CHECK(review.unassigned_ids.empty());
+  auto const edits = saved_edits(h);
+  REQUIRE(edits.has_value());
+  CHECK(edits->user_trips.size() == 1);
+}
+
+TEST_CASE("renaming a folder changes the review and the commit plan", "[wizard][trips]") {
+  harness h;
+  reach_trips_review(h);
+  h.controller.rename_trip_folder(1, "Italy 2024");
+  auto const &review = h.get<wizard_trips_review>();
+  CHECK(std::ranges::any_of(review.folders, [](auto const &f) { return f.name == "Italy 2024"; }));
+  CHECK(h.controller.commit_folder_plan().at("a.jpg") == "italy-2024");
+  h.controller.rename_trip_folder(1, "");
+  CHECK(std::ranges::any_of(h.get<wizard_trips_review>().folders,
+                            [](auto const &f) { return f.name == "Italy 2024"; }));
+}
+
+TEST_CASE("turning folders off empties the commit plan and is saved", "[wizard][trips]") {
+  harness h;
+  reach_trips_review(h);
+  h.controller.set_organize_into_folders(false);
+  CHECK(h.controller.commit_folder_plan().empty());
+  auto const edits = saved_edits(h);
+  REQUIRE(edits.has_value());
+  CHECK_FALSE(edits->organize_into_folders);
+}
+
+TEST_CASE("running the pass again uses the new settings and drops the edits", "[wizard][trips]") {
+  harness h;
+  reach_trips_review(h);
+  h.controller.move_images_to_trip({"d.jpg"}, 1);
+  wizard_controller::trip_params params;
+  params.gap_hours = 24;
+  params.leg_radius_km = 10;
+  h.controller.rerun_trips_pass(params);
+  h.settle();
+  REQUIRE(h.in<wizard_trips_review>());
+  CHECK(h.client->last_trips_request->max_gap_hours() == 24);
+  CHECK(h.client->last_trips_request->leg_radius_km() == 10);
+  CHECK(h.client->last_trips_request->max_distance_km() == 300);
+  CHECK(h.get<wizard_trips_review>().unassigned_ids == std::vector<std::string>{"d.jpg"});
+  // The saved edits are cleared: an empty text, or one with no moves.
+  auto const edits = saved_edits(h);
+  CHECK((!edits.has_value() || edits->membership.empty()));
+  CHECK(std::ranges::any_of(h.client->saved_session_states,
+                            [](auto const &saved) { return saved.has_trip_edits(); }));
+}
+
+TEST_CASE("photos marked for deletion leave their trips", "[wizard][trips]") {
+  harness h;
+  reach_trips_review(h);
+  h.controller.set_deleted_ids({"a.jpg"});
+  auto const &review = h.get<wizard_trips_review>();
+  CHECK(review.marked_count == 1);
+  auto const rome = std::ranges::find_if(review.trips, [](auto const &t) { return t.id == 1; });
+  REQUIRE(rome != review.trips.end());
+  CHECK(rome->member_ids == std::vector<std::string>{"b.jpg"});
+}
+
+TEST_CASE("the trips review saves the position, and edits only after a resume restores them",
+          "[wizard][trips][resume]") {
+  harness h;
+  h.client->inspect_response.set_has_session(true);
+  h.client->inspect_response.set_image_count(4);
+  h.client->inspect_response.set_resume_step(5);
+  h.client->scan_events = {scan_image("a.jpg"), scan_image("b.jpg"), scan_image("c.jpg"),
+                           scan_image("d.jpg"), scan_complete(4)};
+  h.client->trips_events = {trip_event(1, 1000, {"a.jpg", "b.jpg"}, "Rome"),
+                            trip_event(2, 2000, {"c.jpg"}, "Paris")};
+  trip_edits saved;
+  saved.membership["d.jpg"] = 1;
+  saved.renames.push_back({2, "Paris", "Trip to France"});
+  saved.organize_into_folders = false;
+  h.client->session_results.set_resume_step(5);
+  h.client->session_results.set_trip_edits(saved.encode());
+  h.client->session_results.mutable_trip_params()->set_max_gap_hours(72);
+
+  h.controller.select_folder("/photos");
+  h.settle();
+  REQUIRE(h.in<wizard_session_restore>());
+  h.controller.resume_session();
+  h.settle();
+
+  REQUIRE(h.in<wizard_trips_review>());
+  CHECK(h.client->last_trips_request->max_gap_hours() == 72);
+  auto const &review = h.get<wizard_trips_review>();
+  CHECK(review.unassigned_ids.empty());
+  CHECK(std::ranges::any_of(review.folders, [](auto const &f) { return f.name == "Trip to France"; }));
+  CHECK_FALSE(h.controller.organize_into_folders());
+  // While the saved edits waited, none were saved over them.
+  CHECK_FALSE(saved_edits(h).has_value());
+  // The position is saved once the review is reached.
+  REQUIRE_FALSE(h.client->saved_session_states.empty());
+  CHECK(h.client->saved_session_states.back().step() == 5);
+  // A later edit is saved.
+  h.controller.move_images_to_trip({"a.jpg"}, std::nullopt);
+  CHECK(saved_edits(h).has_value());
 }

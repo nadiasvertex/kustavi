@@ -6,6 +6,8 @@ namespace {
 
 struct step_visitor {
   auto operator()(wizard_failed const &failed) const -> int { return failed.step_index; }
+  auto operator()(wizard_trips_running const &) const -> int { return index_of(wizard_step::trips); }
+  auto operator()(wizard_trips_review const &) const -> int { return index_of(wizard_step::trips); }
   // Every phase of the select stage reports the first step.
   template <class Phase> auto operator()(Phase const &) const -> int {
     return index_of(wizard_step::select);

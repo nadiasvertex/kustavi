@@ -4,6 +4,7 @@
 #include "core/domain.h"
 #include "core/kustavi_client.h"
 #include "core/phases.h"
+#include "core/trips_plan.h"
 #include "core/ui_scope.h"
 
 #include <functional>
@@ -11,6 +12,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace kustavi::gui {
@@ -73,6 +75,39 @@ public:
   auto back_from_confirm() -> void;
   // The error screen: return to where the failed call began.
   auto go_back_from_error() -> void;
+  // S2: start the trips pass, whose folders the user reviews next.
+  auto continue_from_confirm() -> void;
+  // The trips pass is running: stop it and return to where it began.
+  auto cancel_trips() -> void;
+  // The trips review: return to the confirm screen.
+  auto back_from_trips() -> void;
+
+  // The trips review. Edits lay over the clustering and are saved with the session.
+  struct trip_params {
+    std::optional<int> gap_hours;
+    std::optional<int> distance_km;
+    std::optional<int> home_radius_km;
+    std::optional<int> leg_radius_km;
+  };
+  // Runs the pass again with new settings. The edits are dropped, because they are defined against
+  // the old clustering.
+  auto rerun_trips_pass(trip_params params) -> void;
+  // Moves photos to a trip, or out of every trip when `trip_id` is empty.
+  auto move_images_to_trip(std::vector<std::string> const &image_ids,
+                           std::optional<std::int64_t> trip_id) -> void;
+  // Makes a trip from the photos and returns its id.
+  auto create_trip_from_images(std::vector<std::string> const &image_ids) -> std::int64_t;
+  // Renames the folder of a trip. An empty name is ignored.
+  auto rename_trip_folder(std::int64_t trip_id, std::string name) -> void;
+  auto set_organize_into_folders(bool organize) -> void;
+  [[nodiscard]] auto organize_into_folders() const -> bool { return plan_.organize_into_folders(); }
+  // The photos that some step marked for deletion. They leave their trips.
+  auto set_deleted_ids(std::unordered_set<std::string> deleted) -> void;
+  // The sub-path of each photo in the commit; empty when folders are off.
+  [[nodiscard]] auto commit_folder_plan() const -> std::unordered_map<std::string, std::string>;
+  // The time that a new trip is named from when no photo has a date.
+  auto set_clock(std::function<time_ms()> clock) -> void { clock_ = std::move(clock); }
+
   // Return to the start with nothing kept. The next folder begins a new back-end session.
   auto reset_to_start() -> void;
 
@@ -88,6 +123,13 @@ private:
   auto on_resume_scan_done() -> void;
   auto apply_session_results(GetSessionResultsResponse results) -> void;
   auto persist_progress() -> void;
+  auto persist_trip_edits() -> void;
+  [[nodiscard]] auto context() const -> trip_context;
+  auto start_trips_pass() -> void;
+  auto on_trips_event(TripsEvent const &event) -> void;
+  auto on_trips_done() -> void;
+  auto publish_trips_review() -> void;
+  [[nodiscard]] auto trips_request() const -> RunTripsPassRequest;
 
   ui_scope scope_;
   background_executor executor_;
@@ -106,7 +148,15 @@ private:
 
   // True from a resume scan until its results are applied. Progress is not saved meanwhile.
   bool resuming_ = false;
-  stream_subscription scan_;
+  // Saved trip edits that wait for the trips pass of a resume. While set, edits are not saved, so
+  // that they do not overwrite what is waiting.
+  std::optional<std::string> pending_trip_edits_;
+  // The step to land on after the trips pass of a resume. While set, progress is not saved.
+  std::optional<int> resume_target_step_;
+  trips_plan plan_;
+  std::unordered_set<std::string> deleted_ids_;
+  std::function<time_ms()> clock_;
+  stream_subscription pass_;
 };
 
 } // namespace kustavi::gui

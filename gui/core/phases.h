@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/backend_error.h"
+#include "core/domain.h"
 #include "core/wizard_step.h"
 
 #include <array>
@@ -55,6 +56,23 @@ struct wizard_no_images {
   std::string folder;
 };
 
+// The trips pass is running.
+struct wizard_trips_running {
+  std::uint32_t done = 0;
+  std::uint32_t total = 0;
+};
+
+// The trips review: the clustering with the user's edits laid over it.
+struct wizard_trips_review {
+  // The effective trips in order of start time, grouped by folder name.
+  std::vector<trip_info> trips;
+  std::vector<trip_folder_info> folders;
+  // The photos in no trip, in scan order.
+  std::vector<std::string> unassigned_ids;
+  // Photos that the back end clustered and a step has since marked for deletion.
+  int marked_count = 0;
+};
+
 // A call ended in an error. `step_index` is where the user was, for the step indicator.
 struct wizard_failed {
   backend_error error;
@@ -62,7 +80,8 @@ struct wizard_failed {
 };
 
 using wizard_phase = std::variant<wizard_start, wizard_scanning, wizard_session_restore,
-                                  wizard_confirm_folder, wizard_no_images, wizard_failed>;
+                                  wizard_confirm_folder, wizard_no_images, wizard_trips_running,
+                                  wizard_trips_review, wizard_failed>;
 
 // The step that the back end saves for a resume.
 [[nodiscard]] auto step_index_of(wizard_phase const &phase) -> int;
