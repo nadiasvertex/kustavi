@@ -3,15 +3,13 @@
 
 The repository-root ``VERSION.txt`` file (``MAJOR.MINOR.PATCH``) is the one place a
 human edits the app version. This script propagates it to every derived
-location so the front end, the back end, the Windows
-executable metadata and the installer all agree:
+location so the back end and the installer agree:
 
-  * ``frontend/pubspec.yaml``               -- Flutter bundle version (the
-                                              ``+<build>`` suffix is preserved)
-  * ``frontend/lib/src/version.dart``       -- ``kAppVersion`` runtime constant
   * ``backend/include/version.h``           -- ``kustavi::version`` (``--version``
                                               and the ``GetInfo`` RPC)
-  * ``frontend/windows/runner/Runner.rc``   -- VERSIONINFO fallback literals
+
+The root ``CMakeLists.txt`` reads ``VERSION.txt`` itself, so the GUI's version
+constant, the bundle metadata and the installer follow it without an edit.
 
 Usage:
     python tools/version.py show
@@ -53,34 +51,10 @@ class Target:
 
 def _targets() -> list[Target]:
     return [
-        # version: X.Y.Z+<build>   (keep the build suffix, whatever it is)
-        Target(
-            REPO_ROOT / "frontend" / "pubspec.yaml",
-            re.compile(r"^(version:[ \t]*)\d+\.\d+\.\d+(\+\S+)?[ \t]*$", re.MULTILINE),
-            r"\g<1>{v}\g<2>",
-        ),
-        # const String kAppVersion = 'X.Y.Z';
-        Target(
-            REPO_ROOT / "frontend" / "lib" / "src" / "version.dart",
-            re.compile(r"(const String kAppVersion = ')[^']*(';)"),
-            r"\g<1>{v}\g<2>",
-        ),
         # inline constexpr std::string_view version = "X.Y.Z";
         Target(
             REPO_ROOT / "backend" / "include" / "version.h",
             re.compile(r'(inline constexpr std::string_view version = ")[^"]*(";)'),
-            r"\g<1>{v}\g<2>",
-        ),
-        # #define VERSION_AS_NUMBER X,Y,Z,0
-        Target(
-            REPO_ROOT / "frontend" / "windows" / "runner" / "Runner.rc",
-            re.compile(r"(#define VERSION_AS_NUMBER )\d+,\d+,\d+,\d+"),
-            r"\g<1>{major},{minor},{patch},0",
-        ),
-        # #define VERSION_AS_STRING "X.Y.Z"
-        Target(
-            REPO_ROOT / "frontend" / "windows" / "runner" / "Runner.rc",
-            re.compile(r'(#define VERSION_AS_STRING ")\d+\.\d+\.\d+(")'),
             r"\g<1>{v}\g<2>",
         ),
     ]

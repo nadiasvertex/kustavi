@@ -35,3 +35,15 @@ else()
     DOWNLOAD_EXTRACT_TIMESTAMP ON)
 endif()
 FetchContent_MakeAvailable(basalt magma)
+
+# libmdk for video playback. KUSTAVI_MDK_DIR points at an mdk-sdk to use instead of the pinned
+# archive, and KUSTAVI_ENABLE_VIDEO=OFF builds without video, so the detail view shows the still
+# image of a video.
+option(KUSTAVI_ENABLE_VIDEO "Play videos in the GUI with libmdk" ON)
+set(KUSTAVI_MDK_DIR "" CACHE PATH "An mdk-sdk to use instead of the pinned archive")
+if(KUSTAVI_ENABLE_VIDEO AND NOT KUSTAVI_MDK_DIR AND DEFINED KUSTAVI_MDK_URL)
+  FetchContent_Declare(mdk URL "${KUSTAVI_MDK_URL}" URL_HASH "SHA256=${KUSTAVI_MDK_SHA256}"
+    DOWNLOAD_EXTRACT_TIMESTAMP ON)
+  FetchContent_MakeAvailable(mdk)
+  set(KUSTAVI_MDK_DIR "${mdk_SOURCE_DIR}")
+endif()

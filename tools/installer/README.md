@@ -20,14 +20,15 @@ just installer
 
 which runs `python tools/package.py --installer`. That:
 
-1. builds the release back end (the `release` CMake preset, `server` target) and the
-   Flutter Windows bundle (`flutter build windows --release`),
-2. stages the full application tree into `dist/Kustavi/` (GUI, `kustavi-backend.exe`,
-   `cities.tsv`, `face_detection_yunet.onnx`, a `VERSION` marker),
+1. builds the release back end and the GUI (the `release` CMake preset, `server` and
+   `kustavi_gui` targets),
+2. stages the full application tree into `dist/Kustavi/` (`Kustavi.exe`, libmdk and its
+   libraries, `kustavi-backend.exe`, `cities.tsv`, `face_detection_yunet.onnx`, a `VERSION`
+   marker),
 3. runs `wix build` to produce `dist/Kustavi-<version>-x64.msi`.
 
 `<version>` is the repo-root `VERSION.txt` file, maintained by `tools/version.py`
-(`just version-bump {major|minor|patch}`). The MSI `ProductVersion`, the payload
+(`just bump-version {major|minor|patch}`). The MSI `ProductVersion`, the payload
 `VERSION` marker and the file name all come from that one value.
 
 To rebuild the MSI without rebuilding the app:
@@ -46,8 +47,7 @@ python tools/package.py --installer --skip-build
 - Listed in **Settings → Apps → Installed apps** as "Kustavi <version>",
   publisher "Kustavi".
 - ARP entry and Start Menu shortcut show the app icon
-  (`frontend/windows/runner/resources/app_icon.ico`, generated from
-  `resources/icon.png`), passed to `wix build` via the `Resources` bindpath.
+  (`resources/app_icon.ico`, generated from `resources/icon.png`), passed to `wix build` via the `Resources` bindpath.
 
 ## Not handled on uninstall
 

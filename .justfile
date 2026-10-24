@@ -23,20 +23,25 @@ build-server:
   cmake --preset {{ PRESET }}
   cmake --build --preset {{ PRESET }} --target server
 
-# Builds the Flutter GUI with the host's Flutter SDK. Goes away with the
-# Flutter front end (spec/plans/cpp-gui-rewrite.md, phase 8).
+# Builds the C++ GUI. Basalt and Magma are not pinned yet, so point
+# KUSTAVI_BASALT_SOURCE_DIR and KUSTAVI_MAGMA_SOURCE_DIR at checkouts of them.
 build-gui:
   #!/usr/bin/env sh
   set -e
-  case "$(uname -s)" in
-    Darwin) target=macos ;;
-    Linux) target=linux ;;
-    *) target=windows ;;
-  esac
-  cd frontend && flutter build "$target" --release
+  cmake --preset {{ PRESET }} -DKUSTAVI_BUILD_GUI=ON \
+    ${KUSTAVI_BASALT_SOURCE_DIR:+-DKUSTAVI_BASALT_SOURCE_DIR="$KUSTAVI_BASALT_SOURCE_DIR"} \
+    ${KUSTAVI_MAGMA_SOURCE_DIR:+-DKUSTAVI_MAGMA_SOURCE_DIR="$KUSTAVI_MAGMA_SOURCE_DIR"}
+  cmake --build --preset {{ PRESET }} --target kustavi_gui server
 
-test-gui:
-  cd frontend && flutter test
+# Runs the GUI from the build tree, with the back end that the build made.
+run-gui: build-gui
+  #!/usr/bin/env sh
+  set -e
+  KUSTAVI_BACKEND_PATH="$PWD/.build/{{ PRESET }}/backend/server" ".build/{{ PRESET }}/bin/kustavi_gui"
+
+# The GUI's tests: the logic, the screens, and the gRPC client against an in-process server.
+test-gui: build-gui
+  ctest --preset {{ PRESET }} -L "gui|process|grpc"
 
 # Back-end tests: unit tests plus the smoke test, where the smoke client spawns
 # the server itself (ephemeral loopback port), exercises every RPC pass against
@@ -44,8 +49,8 @@ test-gui:
 test-backend: build
   ctest --preset {{ PRESET }} -L backend
 
-# C++ GUI core tests: the pure logic, the gRPC client against an in-process
-# server, and the process library.
+# The GUI's core tests alone, which need no window library: the pure logic, the gRPC client
+# against an in-process server, and the process library.
 test-gui-core: build
   ctest --preset {{ PRESET }} -L "gui|process|grpc"
 
@@ -74,14 +79,6 @@ test-quality: build
 
 test: test-backend test-llama test-gui
 
-proto:
-  mkdir -p frontend/lib/src/generated && \
-  tmp="$(mktemp -d)" && \
-  mkdir "$tmp/kustavi" && \
-  cp proto/service.proto "$tmp/kustavi/" && \
-  PATH="$HOME/.pub-cache/bin:$PATH" protoc -I "$tmp" --dart_out="grpc:frontend/lib/src/generated" kustavi/service.proto && \
-  rm -rf "$tmp"
-
 # CMake writes .build/<preset>/compile_commands.json while configuring.
 compile-commands:
   cmake --preset {{ PRESET }}
@@ -103,7 +100,9 @@ lint: compile-commands
 
 # Build a redistributable desktop package (zip) for the host OS. The build +
 # bundle logic lives in tools/package.py, which also covers Windows. Extra
-# args pass straight through, e.g. `just package --keep`.
+# args pass straight through, e.g. `just package --keep`. Basalt and Magma are
+# not pinned yet: set KUSTAVI_BASALT_SOURCE_DIR and KUSTAVI_MAGMA_SOURCE_DIR, or
+# pass --basalt-dir and --magma-dir.
 package *ARGS:
   #!/usr/bin/env sh
   set -e
@@ -128,8 +127,8 @@ show-version:
   : "${PY:?no working python interpreter on PATH}"
   "$PY" tools/version.py show
 
-# Bump the global version and propagate it to the front end, back end,
-# the CMake project and the Windows resource script. COMPONENT is major|minor|patch.
+# Bump the global version and propagate it to the back end. The CMake project reads it
+# itself. COMPONENT is major|minor|patch.
 # Pass `--tag` through to also commit + tag, e.g. `just version-bump patch --tag`.
 bump-version COMPONENT *ARGS:
   #!/usr/bin/env sh
@@ -138,7 +137,8 @@ bump-version COMPONENT *ARGS:
   : "${PY:?no working python interpreter on PATH}"
   "$PY" tools/version.py bump {{ COMPONENT }} {{ ARGS }}
 
-# Package, then launch the unpacked macOS app from dist/.
+# Package, then launch the unpacked macOS app from dist/. Pass the Basalt and Magma checkouts
+# through KUSTAVI_BASALT_SOURCE_DIR and KUSTAVI_MAGMA_SOURCE_DIR.
 run:
   #!/usr/bin/env sh
   set -e

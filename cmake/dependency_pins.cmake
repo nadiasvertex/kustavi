@@ -33,6 +33,21 @@ set(KUSTAVI_LLAMA_SHA256 "07de784d07b346647da6bd8796a42127304c7508dd007a21f63ab7
 # cmake/gui_dependencies.cmake will use them. Until then, configure with
 # KUSTAVI_BASALT_SOURCE_DIR and KUSTAVI_MAGMA_SOURCE_DIR.
 
+# libmdk plays the videos of the detail view. The archives are release assets, whose bytes do not
+# change, and not the nightly builds. On a version change move the three hashes with it.
+set(KUSTAVI_MDK_VERSION "0.38.0")
+set(KUSTAVI_MDK_BASE "https://github.com/wang-bin/mdk-sdk/releases/download/v${KUSTAVI_MDK_VERSION}")
+if(APPLE)
+  set(KUSTAVI_MDK_URL "${KUSTAVI_MDK_BASE}/mdk-sdk-macOS.tar.xz")
+  set(KUSTAVI_MDK_SHA256 "ecbb5250376f59a179594fb3df3593f80f3d46a62eb4bd8ee1e1c24e2db8a7b9")
+elseif(WIN32)
+  set(KUSTAVI_MDK_URL "${KUSTAVI_MDK_BASE}/mdk-sdk-windows-x64-vs2026.7z")
+  set(KUSTAVI_MDK_SHA256 "57d38877a72607c5d135699207320d757b8c6b60437e8fb9b984ede5265a9c06")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  set(KUSTAVI_MDK_URL "${KUSTAVI_MDK_BASE}/mdk-sdk-linux-x64.tar.xz")
+  set(KUSTAVI_MDK_SHA256 "9ce29b1c29aa2d051e52f50af8a1578ab80f6d17955a2935514e1c69b8a23d3e")
+endif()
+
 # The C++ GUI's core library and its tests.
 set(KUSTAVI_NLOHMANN_JSON_URL "https://github.com/nlohmann/json/releases/download/v3.12.0/json.tar.xz")
 set(KUSTAVI_NLOHMANN_JSON_SHA256 "42f6e95cad6ec532fd372391373363b62a14af6d771056dbfc86160e6dfff7aa")

@@ -35,17 +35,22 @@ target_link_libraries(kustavi_gui_app PUBLIC kustavi::gui_core basalt::basalt ma
   PRIVATE kustavi_options opencv_core opencv_imgproc opencv_imgcodecs)
 kustavi_opencv_includes(kustavi_gui_app)
 
-# Video playback uses libmdk. Point KUSTAVI_MDK_DIR at an mdk-sdk to build it in. Without it the
-# detail view shows the still image of a video.
-set(KUSTAVI_MDK_DIR "" CACHE PATH "An mdk-sdk for video playback in the GUI")
+# Video playback uses libmdk, which cmake/gui_dependencies.cmake fetches. Without it the detail view
+# shows the still image of a video.
 if(KUSTAVI_MDK_DIR AND EXISTS "${KUSTAVI_MDK_DIR}/lib/cmake/FindMDK.cmake")
   list(APPEND CMAKE_MODULE_PATH "${KUSTAVI_MDK_DIR}/lib/cmake")
   find_package(MDK REQUIRED)
   target_link_libraries(kustavi_gui_app PUBLIC mdk)
   if(APPLE)
-    # The framework is found at run time through the path of the SDK it was built from.
-    target_link_options(kustavi_gui_app PUBLIC
-      "-Wl,-rpath,${KUSTAVI_MDK_DIR}/lib/mdk.xcframework/macos-arm64_x86_64")
+    # The SDK comes as a framework in `lib`, or as an xcframework with a slice for macOS. A run
+    # from the build finds it by this path, and the package copies it beside the program.
+    if(EXISTS "${KUSTAVI_MDK_DIR}/lib/mdk.xcframework/macos-arm64_x86_64")
+      set(KUSTAVI_MDK_FRAMEWORK_DIR "${KUSTAVI_MDK_DIR}/lib/mdk.xcframework/macos-arm64_x86_64")
+    else()
+      set(KUSTAVI_MDK_FRAMEWORK_DIR "${KUSTAVI_MDK_DIR}/lib")
+    endif()
+    set(KUSTAVI_MDK_FRAMEWORK_DIR "${KUSTAVI_MDK_FRAMEWORK_DIR}" CACHE INTERNAL "")
+    target_link_options(kustavi_gui_app PUBLIC "-Wl,-rpath,${KUSTAVI_MDK_FRAMEWORK_DIR}")
   endif()
   target_compile_definitions(kustavi_gui_app PRIVATE KUSTAVI_HAVE_MDK)
 endif()
