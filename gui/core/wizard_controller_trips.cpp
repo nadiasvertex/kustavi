@@ -79,7 +79,15 @@ auto wizard_controller::on_trips_done() -> void {
       plan_.apply_edits(*edits, images_);
     }
   }
-  resume_target_step_.reset();
+  if (resume_target_step_) {
+    // A resumed session lands where it was: the batch menu, whose batches are the folders that
+    // were just rebuilt.
+    resume_target_step_.reset();
+    enter_batch_mode();
+    recompute_deleted();
+    set_phase(batch_menu_phase());
+    return;
+  }
   publish_trips_review();
 }
 

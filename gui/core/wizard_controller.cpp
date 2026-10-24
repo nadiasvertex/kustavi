@@ -2,6 +2,8 @@
 
 #include <grpcpp/support/status.h>
 
+#include <stdexcept>
+
 namespace kustavi::gui {
 
 namespace {
@@ -41,7 +43,12 @@ auto wizard_controller::set_phase(wizard_phase next) -> void {
   // The saved position is only updated when the wizard rests on a screen, and not while a resume
   // is putting the restored state back.
   auto const resting = std::holds_alternative<wizard_confirm_folder>(phase_) ||
-                       std::holds_alternative<wizard_trips_review>(phase_);
+                       std::holds_alternative<wizard_trips_review>(phase_) ||
+                       std::holds_alternative<wizard_quality_review>(phase_) ||
+                       std::holds_alternative<wizard_similar_review>(phase_) ||
+                       std::holds_alternative<wizard_junk_review>(phase_) ||
+                       std::holds_alternative<wizard_video_review>(phase_) ||
+                       std::holds_alternative<wizard_batch_menu>(phase_);
   if (resting && !resuming_ && !resume_target_step_) {
     persist_progress();
   }
@@ -60,6 +67,20 @@ auto wizard_controller::clear_results() -> void {
   pending_complete_.reset();
   restored_.reset();
   plan_ = trips_plan{};
+  flags_ = {};
+  sets_ = {};
+  intent_ = {};
+  deleted_ids_.clear();
+  video_total_ = 0;
+  batch_mode_ = false;
+  batches_.clear();
+  selected_batch_.reset();
+  active_batch_.reset();
+  progress_ = {};
+  run_all_queue_.clear();
+  run_all_step_.reset();
+  has_last_run_thresholds_ = false;
+  preview_flagged_.reset();
   pending_trip_edits_.reset();
   resume_target_step_.reset();
   resuming_ = false;
@@ -261,6 +282,59 @@ auto wizard_controller::apply_session_results(GetSessionResultsResponse results)
   restore(tunables_.trip_leg_radius_km, trips.leg_radius_km());
   auto const saved_step = static_cast<int>(results.resume_step());
   pending_trip_edits_ = results.trip_edits();
+  // The pass results and the user's choices go back as they were. Nothing runs again except the
+  // trips pass below, whose folders are the batches.
+  try {
+    for (auto const &flag : results.quality_flags()) {
+      auto info = quality_flag_info_from(flag);
+      auto id = info.image_id;
+      flags_.quality.insert_or_assign(std::move(id), std::move(info));
+    }
+  } catch (std::invalid_argument const &error) {
+    fail(backend_rpc{grpc::StatusCode::INTERNAL, error.what()});
+    return;
+  }
+  for (auto const &group : results.similar_groups()) {
+    flags_.similar_groups.push_back(similar_group_info_from(group));
+  }
+  for (auto const &flag : results.junk_flags()) {
+    auto info = junk_flag_info_from(flag);
+    auto id = info.image_id;
+    flags_.junk.insert_or_assign(std::move(id), std::move(info));
+  }
+  for (auto const &flag : results.video_flags()) {
+    auto info = video_flag_info_from(flag);
+    auto id = info.video_id;
+    flags_.video.insert_or_assign(std::move(id), std::move(info));
+  }
+  video_total_ = static_cast<int>(results.video_total());
+  for (auto const &entry : results.decisions()) {
+    if (entry.decision() == DELETE) {
+      intent_.explicit_deleted.insert(entry.image_id());
+    } else if (entry.decision() == KEEP) {
+      intent_.explicit_kept.insert(entry.image_id());
+    }
+  }
+  for (auto const &[group, keeper] : results.group_keepers()) {
+    intent_.group_keepers[group] = keeper;
+  }
+  if (results.quality_done()) {
+    progress_.session.insert(index_of(wizard_step::quality));
+  }
+  if (results.similar_done()) {
+    progress_.session.insert(index_of(wizard_step::duplicates));
+  }
+  if (results.junk_done()) {
+    progress_.session.insert(index_of(wizard_step::junk));
+  }
+  if (results.video_done()) {
+    progress_.session.insert(index_of(wizard_step::video));
+  }
+  for (auto const &entry : results.completed_batch_passes()) {
+    progress_.batches.insert(entry);
+  }
+  save_last_run_thresholds();
+  recompute_deleted();
   restored_ = std::move(results);
   resuming_ = false;
   auto const confirm = wizard_confirm_folder{
@@ -270,8 +344,6 @@ auto wizard_controller::apply_session_results(GetSessionResultsResponse results)
     set_phase(confirm);
     return;
   }
-  // The batch menu and the review screens come later, so every saved step lands on the trips
-  // review for now.
   resume_target_step_ = saved_step;
   return_phase_ = confirm;
   start_trips_pass();
@@ -298,6 +370,13 @@ auto wizard_controller::back_from_confirm() -> void {
 
 auto wizard_controller::go_back_from_error() -> void {
   if (!std::holds_alternative<wizard_failed>(phase_)) {
+    return;
+  }
+  if (batch_mode_ && !batches_.empty()) {
+    // A pass in a batch failed. Every result so far stays, and the menu opens.
+    pass_.cancel();
+    scope_.next_generation();
+    return_to_batch_menu();
     return;
   }
   clear_results();

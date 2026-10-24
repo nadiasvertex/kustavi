@@ -6,6 +6,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -73,6 +74,68 @@ struct wizard_trips_review {
   int marked_count = 0;
 };
 
+// The quality pass is running.
+struct wizard_quality_running {
+  std::uint32_t done = 0;
+  std::uint32_t total = 0;
+};
+
+// The quality review of the photos that the pass flagged.
+struct wizard_quality_review {
+  int flagged_count = 0;
+  int total_images = 0;
+  // The thresholds differ from the ones of the last run, so a new run can change the result.
+  bool rerun_enabled = false;
+  // What the stored metrics flag at the thresholds now; nothing before the first answer.
+  std::optional<int> preview_flagged;
+};
+
+// Waiting for the vision model before the junk pass can start.
+struct wizard_junk_prep {};
+
+struct wizard_junk_running {
+  std::uint32_t done = 0;
+  std::uint32_t total = 0;
+  // The measured cost of one photo on this machine, once enough photos have been done.
+  std::optional<double> seconds_per_image;
+  std::optional<time_ms> estimated_completion;
+};
+
+struct wizard_junk_review {
+  int flagged_count = 0;
+  int total_images = 0;
+};
+
+struct wizard_similar_running {
+  std::uint32_t done = 0;
+  std::uint32_t total = 0;
+};
+
+struct wizard_similar_review {
+  int group_count = 0;
+  int marked_count = 0;
+};
+
+struct wizard_video_running {
+  std::uint32_t done = 0;
+  std::uint32_t total = 0;
+};
+
+struct wizard_video_review {
+  int flagged_count = 0;
+  int total_videos = 0;
+};
+
+// The hub: pick a batch, run any passes on it in any order, and open their reviews.
+struct wizard_batch_menu {
+  std::vector<batch_summary> batches;
+  // The batch whose passes show; nothing before one is chosen.
+  std::optional<std::string> selected_key;
+  // Photos marked for deletion by any pass or by the user.
+  int marked_count = 0;
+  int total_images = 0;
+};
+
 // A call ended in an error. `step_index` is where the user was, for the step indicator.
 struct wizard_failed {
   backend_error error;
@@ -81,7 +144,11 @@ struct wizard_failed {
 
 using wizard_phase = std::variant<wizard_start, wizard_scanning, wizard_session_restore,
                                   wizard_confirm_folder, wizard_no_images, wizard_trips_running,
-                                  wizard_trips_review, wizard_failed>;
+                                  wizard_trips_review, wizard_quality_running,
+                                  wizard_quality_review, wizard_junk_prep, wizard_junk_running,
+                                  wizard_junk_review, wizard_similar_running,
+                                  wizard_similar_review, wizard_video_running,
+                                  wizard_video_review, wizard_batch_menu, wizard_failed>;
 
 // The step that the back end saves for a resume.
 [[nodiscard]] auto step_index_of(wizard_phase const &phase) -> int;

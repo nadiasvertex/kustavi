@@ -3,6 +3,8 @@
 #include "core/background.h"
 #include "core/domain.h"
 #include "core/kustavi_client.h"
+#include "core/batches.h"
+#include "core/deletion.h"
 #include "core/phases.h"
 #include "core/trips_plan.h"
 #include "core/ui_scope.h"
@@ -108,6 +110,64 @@ public:
   // The time that a new trip is named from when no photo has a date.
   auto set_clock(std::function<time_ms()> clock) -> void { clock_ = std::move(clock); }
 
+  // The trips review: the batches are the folders as they stand, and the batch menu opens.
+  auto continue_from_trips() -> void;
+
+  // ---- The batch menu and its passes ----
+
+  [[nodiscard]] auto batches() const -> std::vector<batch_info> const & { return batches_; }
+  [[nodiscard]] auto flags() const -> review_flags const & { return flags_; }
+  [[nodiscard]] auto intent() const -> deletion_intent const & { return intent_; }
+  // The photos of the batch that a pass runs on or a review shows; nothing outside a batch.
+  [[nodiscard]] auto review_scope() const -> std::optional<std::unordered_set<std::string>>;
+  // The duplicate groups with a member in the review scope.
+  [[nodiscard]] auto review_similar_groups() const -> std::vector<similar_group_info>;
+  // Whether a photo is marked for deletion as `step` sees it.
+  [[nodiscard]] auto is_marked(std::string const &id, std::optional<deletion_step> step) const
+      -> bool;
+  // Why a photo is deleted, as labels.
+  [[nodiscard]] auto reasons_for(std::string const &id) const -> std::vector<std::string>;
+  // The photos marked for deletion by any step, in scan order.
+  [[nodiscard]] auto deleted_ids() const -> std::vector<std::string>;
+
+  auto select_batch(std::string const &key) -> void;
+  // Runs `step` on the selected batch; its review opens when it ends.
+  auto start_batch_pass(wizard_step step) -> void;
+  // Runs `step` on every batch that has not finished it, one after another.
+  auto start_pass_on_all_batches(wizard_step step) -> void;
+  // Opens the review of a pass that the selected batch finished.
+  auto review_batch_pass(wizard_step step) -> void;
+  // Done on any review: back to the menu.
+  auto close_batch_review() -> void;
+  // The menu: back to the trips, which rebuilds the batches when the user continues.
+  auto reopen_organize() -> void;
+  // A running pass: stop it and return to the menu.
+  auto cancel_pass() -> void;
+  // The junk preparation: stop waiting for the model and return to the menu.
+  auto cancel_junk_prep() -> void;
+  // What the app does to stop the model download.
+  auto set_cancel_model_download(std::function<void()> cancel) -> void {
+    cancel_model_download_ = std::move(cancel);
+  }
+  // The app tells the controller when the vision model is ready. A junk pass that waits starts.
+  auto set_model_ready(bool ready) -> void;
+
+  // The quality thresholds. A change asks the back end how many photos it would flag.
+  auto set_blur_threshold(double value) -> void;
+  auto set_under_exposed_threshold(double value) -> void;
+  auto set_over_exposed_threshold(double value) -> void;
+  auto reset_thresholds() -> void;
+  auto rerun_quality_pass() -> void;
+
+  // The user's choices. Each is saved with the session.
+  auto toggle_deletion(std::string const &id) -> void;
+  auto keep_image(std::string const &id) -> void;
+  auto mark_image(std::string const &id) -> void;
+  auto set_group_keeper(std::uint32_t group_id, std::string keeper_id) -> void;
+  // Every photo that `step` flagged in the review scope.
+  auto keep_all_flagged(deletion_step step) -> void;
+  auto mark_all_flagged(deletion_step step) -> void;
+
   // Return to the start with nothing kept. The next folder begins a new back-end session.
   auto reset_to_start() -> void;
 
@@ -130,6 +190,64 @@ private:
   auto on_trips_done() -> void;
   auto publish_trips_review() -> void;
   [[nodiscard]] auto trips_request() const -> RunTripsPassRequest;
+
+  // Batches and passes (wizard_controller_batches.cpp).
+  auto enter_batch_mode() -> void;
+  [[nodiscard]] auto batch_menu_phase() const -> wizard_batch_menu;
+  [[nodiscard]] auto find_batch(std::string const &key) const -> batch_info const *;
+  [[nodiscard]] auto scope_ids() const -> std::vector<std::string>;
+  [[nodiscard]] auto count_in_scope(std::vector<std::string> const &ids) const -> int;
+  [[nodiscard]] auto scope_count() const -> int;
+  auto return_to_batch_menu() -> void;
+  auto begin_pass(wizard_step step) -> void;
+  auto finish_batch_run(wizard_step step) -> void;
+  [[nodiscard]] auto review_phase_for(wizard_step step) const -> wizard_phase;
+  [[nodiscard]] auto quality_review_phase() const -> wizard_quality_review;
+  [[nodiscard]] auto junk_review_phase() const -> wizard_junk_review;
+  [[nodiscard]] auto similar_review_phase() const -> wizard_similar_review;
+  [[nodiscard]] auto video_review_phase() const -> wizard_video_review;
+  auto start_quality_pass() -> void;
+  auto start_junk_pass() -> void;
+  auto start_similar_pass() -> void;
+  auto start_video_pass() -> void;
+  auto on_quality_event(QualityEvent const &event) -> void;
+  auto on_junk_event(JunkEvent const &event) -> void;
+  auto on_similar_event(SimilarEvent const &event) -> void;
+  auto on_video_event(VideoEvent const &event) -> void;
+  auto save_last_run_thresholds() -> void;
+  [[nodiscard]] auto thresholds_changed() const -> bool;
+  auto refresh_quality_preview() -> void;
+  auto republish_review() -> void;
+  // Works out what each step flags and which photos are deleted, after the flags or the choices
+  // changed.
+  auto recompute_deleted() -> void;
+  // The deletion state changed: save it, recompute what is deleted and update the screen.
+  auto deletion_changed() -> void;
+  auto persist_decisions() -> void;
+  [[nodiscard]] auto now() const -> time_ms;
+  [[nodiscard]] auto flagged_in_scope(deletion_step step) const -> std::vector<std::string>;
+
+  // Handlers for a stream that run on the UI thread and belong to the current operation.
+  template <class Event>
+  auto make_handlers(std::function<void(Event const &)> on_event, std::function<void()> on_done)
+      -> stream_handlers<Event> {
+    auto const generation = scope_.next_generation();
+    stream_handlers<Event> handlers;
+    handlers.on_event = [this, generation, on_event = std::move(on_event)](Event const &event) {
+      scope_.post(generation, [on_event, event] { on_event(event); });
+    };
+    handlers.on_done = [this, generation, on_done = std::move(on_done)](
+                           std::optional<backend_error> error) {
+      scope_.post(generation, [this, on_done, error = std::move(error)]() mutable {
+        if (error) {
+          fail(std::move(*error));
+        } else {
+          on_done();
+        }
+      });
+    };
+    return handlers;
+  }
 
   ui_scope scope_;
   background_executor executor_;
@@ -155,6 +273,38 @@ private:
   std::optional<int> resume_target_step_;
   trips_plan plan_;
   std::unordered_set<std::string> deleted_ids_;
+
+  // What the passes found and what the user decided.
+  review_flags flags_;
+  int video_total_ = 0;
+  deletion_intent intent_;
+  flag_sets sets_;
+  bool hydrating_decisions_ = false;
+
+  // The batches, from the trip folders as they stand when the menu opens.
+  bool batch_mode_ = false;
+  std::vector<batch_info> batches_;
+  std::optional<std::string> selected_batch_;
+  // The batch that a running or open pass belongs to.
+  std::optional<std::string> active_batch_;
+  pass_progress progress_;
+  std::vector<std::string> run_all_queue_;
+  std::optional<wizard_step> run_all_step_;
+
+  // The last quality run's thresholds, to tell whether the sliders moved.
+  bool has_last_run_thresholds_ = false;
+  session_tunables last_run_;
+  std::optional<int> preview_flagged_;
+  std::uint64_t preview_seq_ = 0;
+
+  // The junk pass's timing profile. It starts at the first progress event that follows a real gap,
+  // because a resume sends the photos that are already classified in a burst.
+  std::optional<time_ms> junk_profile_start_;
+  std::optional<std::uint32_t> junk_profile_base_done_;
+  std::optional<time_ms> junk_last_event_;
+  std::uint32_t junk_last_done_ = 0;
+  bool model_ready_ = false;
+  std::function<void()> cancel_model_download_;
   std::function<time_ms()> clock_;
   stream_subscription pass_;
 };
