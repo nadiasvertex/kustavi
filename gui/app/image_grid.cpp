@@ -65,6 +65,11 @@ auto image_grid::make_cell(std::size_t index, std::unique_ptr<basalt::widget> re
   if (decorator_) {
     decorator_(*tile, info);
   }
+  if (on_open_) {
+    auto open = std::make_unique<basalt::button>("⤢", [this, index] { on_open_(images_[index]); });
+    open->set_variant(basalt::button_variant::tertiary);
+    tile->set_badge(basalt::tile_corner::top_right, std::move(open));
+  }
   return tile;
 }
 

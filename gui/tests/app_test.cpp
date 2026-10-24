@@ -34,7 +34,7 @@ auto scan_complete(std::uint32_t images) -> kustavi::ScanEvent {
 struct harness {
   harness()
       : tree(basalt::make_theme(basalt::color_scheme::light)), controller(queue, inline_executor()),
-        model(queue), loader(64, 1, [] {}) {
+        model(queue), loader(64, 1, [] {}), master_loader(512, 1, [] {}, true) {
     fonts.add_system_fonts();
     shaper = std::make_unique<basalt::text::text_shaper>(fonts);
     tree.set_text_shaper(shaper.get());
@@ -44,7 +44,8 @@ struct harness {
     services.exit_app = [this] { ++exits; };
     services.show_backend_log = [this] { ++log_requests; };
     services.pick_folder = [this] { ++picks; };
-    shell = std::make_unique<wizard_shell>(tree, controller, model, loader, services);
+    shell = std::make_unique<wizard_shell>(tree, controller, model, loader, master_loader, services,
+                                           video_factory);
     controller.on_change([this] { shell->phase_changed(); });
     model.on_change([this](model_prep_state const &) { shell->mark_dirty(); });
     router = std::make_unique<basalt::event_router>(tree);
@@ -131,6 +132,8 @@ struct harness {
   wizard_controller controller;
   model_status model;
   image_loader loader;
+  image_loader master_loader;
+  video_player_factory video_factory;
   shell_services services;
   std::unique_ptr<wizard_shell> shell;
   std::unique_ptr<basalt::event_router> router;
@@ -944,4 +947,66 @@ TEST_CASE("cancelling the copy returns to the summary", "[app][commit]") {
   h.button("Cancel")->press();
   h.refresh();
   CHECK(std::holds_alternative<wizard_commit_summary>(h.controller.phase()));
+}
+
+TEST_CASE("a click on a photo of the confirm screen opens its detail", "[app][detail]") {
+  harness h;
+  h.client->scan_events = {scan_image("a.jpg"), scan_complete(1)};
+  h.controller.select_folder("/photos");
+  h.refresh();
+  auto grids = h.find_all<basalt::grid_view>();
+  REQUIRE(grids.size() == 1);
+  h.click(*grids.front()->cell(0));
+  REQUIRE(h.shell->detail() != nullptr);
+  CHECK(h.shell->detail()->info().image.id == "a.jpg");
+  CHECK_FALSE(h.shell->detail()->info().can_toggle);
+  CHECK(h.shell->overlays().overlay_count() == 1);
+  CHECK(h.button("Close") != nullptr);
+
+  h.button("Close")->press();
+  h.refresh();
+  CHECK(h.shell->overlays().overlay_count() == 0);
+  CHECK(h.shell->detail() == nullptr);
+}
+
+TEST_CASE("the detail of a flagged photo carries its flags and can mark it", "[app][detail]") {
+  harness h;
+  reach_menu_screen(h);
+  h.client->quality_events = {quality_flag("c.jpg")};
+  h.controller.start_batch_pass(wizard_step::quality);
+  h.refresh();
+  h.shell->open_detail(*h.controller.image("c.jpg"));
+  h.refresh();
+  REQUIRE(h.shell->detail() != nullptr);
+  auto const &info = h.shell->detail()->info();
+  CHECK(info.step == deletion_step::quality);
+  CHECK(info.can_toggle);
+  CHECK(info.sharpness.has_value());
+  auto *const toggle = h.find_all<basalt::toggle>().front();
+  CHECK(toggle->on());
+  toggle->activate();
+  h.refresh();
+  CHECK(h.controller.intent().explicit_kept.contains("c.jpg"));
+}
+
+TEST_CASE("the detail of a trip photo names its trip", "[app][detail]") {
+  harness h;
+  reach_trips(h);
+  h.shell->open_detail(*h.controller.image("a.jpg"));
+  h.refresh();
+  auto const &mappings = h.shell->detail()->info().mappings;
+  REQUIRE_FALSE(mappings.empty());
+  CHECK(mappings.front().first == "Trip");
+  CHECK(mappings.front().second.starts_with("Rome"));
+}
+
+TEST_CASE("opening another photo replaces the open detail", "[app][detail]") {
+  harness h;
+  reach_trips(h);
+  h.shell->open_detail(*h.controller.image("a.jpg"));
+  h.refresh();
+  h.shell->open_detail(*h.controller.image("b.jpg"));
+  h.refresh();
+  CHECK(h.shell->overlays().overlay_count() == 1);
+  CHECK(h.shell->detail()->info().image.id == "b.jpg");
 }

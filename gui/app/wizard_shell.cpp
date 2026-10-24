@@ -3,17 +3,20 @@
 #include "app/batch_menu_screen.h"
 #include "app/ui_kit.h"
 #include "core/format.h"
+#include "core/neighbors.h"
 
 #include <algorithm>
 #include <chrono>
+#include <unordered_set>
 #include <format>
 
 namespace kustavi::gui {
 
 wizard_shell::wizard_shell(basalt::widget_tree &tree, wizard_controller &controller,
-                           model_status &model, image_loader &loader, shell_services services)
+                           model_status &model, image_loader &loader, image_loader &master_loader,
+                           shell_services services, video_player_factory videos)
     : tree_(tree), controller_(controller), model_(model), loader_(loader),
-      services_(std::move(services)) {
+      master_loader_(master_loader), services_(std::move(services)), videos_(std::move(videos)) {
   host_ = &tree_.emplace_root<basalt::overlay_host>();
   auto frame = ui::column(0);
   frame->set_cross_alignment(basalt::alignment::stretch);
@@ -21,6 +24,8 @@ wizard_shell::wizard_shell(basalt::widget_tree &tree, wizard_controller &control
 }
 
 wizard_shell::~wizard_shell() {
+  detail_.reset();
+  retired_detail_.reset();
   // The grids refer to widgets in the tree, and their cells refer to the grids.
   grid_.reset();
   trips_.reset();
@@ -54,8 +59,13 @@ auto wizard_shell::phase_changed() -> void {
 }
 
 auto wizard_shell::update() -> void {
+  // A detail view that was closed goes now, after the handler that closed it has returned.
+  retired_detail_.reset();
   if (dirty_) {
     rebuild();
+  }
+  if (detail_) {
+    detail_->update();
   }
   if (grid_) {
     grid_->apply_ready_images();
@@ -144,6 +154,8 @@ auto wizard_shell::build_body() -> std::unique_ptr<basalt::widget> {
         images.push_back(*shell.controller_.image(id));
       }
       shell.grid_ = std::make_unique<image_grid>(std::move(images), shell.loader_, shell.images_);
+      shell.grid_->set_on_activate(
+          [&shell = shell](image_info const &image) { shell.open_detail(image); });
       return build_confirm_screen(confirm, *shell.grid_);
     }
     auto operator()(wizard_no_images const &none) const -> std::unique_ptr<basalt::widget> {
@@ -155,6 +167,8 @@ auto wizard_shell::build_body() -> std::unique_ptr<basalt::widget> {
     auto operator()(wizard_trips_review const &review) const -> std::unique_ptr<basalt::widget> {
       shell.trips_ = std::make_unique<trips_screen>(shell.controller_, shell.trips_state_,
                                                     shell.loader_, shell.images_);
+      shell.trips_->set_open_detail(
+          [&shell = shell](image_info const &image) { shell.open_detail(image); });
       return shell.trips_->build(review);
     }
     auto operator()(wizard_quality_running const &running) const
@@ -195,6 +209,8 @@ auto wizard_shell::build_body() -> std::unique_ptr<basalt::widget> {
     auto operator()(wizard_similar_review const &) const -> std::unique_ptr<basalt::widget> {
       shell.similar_ = std::make_unique<similar_review_screen>(
           shell.controller_, shell.loader_, shell.images_, shell.similar_scroll_);
+      shell.similar_->set_open_detail(
+          [&shell = shell](image_info const &image) { shell.open_detail(image); });
       return shell.similar_->build();
     }
     auto operator()(wizard_video_running const &running) const -> std::unique_ptr<basalt::widget> {
@@ -211,6 +227,8 @@ auto wizard_shell::build_body() -> std::unique_ptr<basalt::widget> {
     auto operator()(wizard_deletion_review const &) const -> std::unique_ptr<basalt::widget> {
       shell.deletion_ = std::make_unique<deletion_review_screen>(
           shell.controller_, shell.loader_, shell.images_, shell.review_state_.keep_scroll);
+      shell.deletion_->set_open_detail(
+          [&shell = shell](image_info const &image) { shell.open_detail(image); });
       return shell.deletion_->build();
     }
     auto operator()(wizard_commit_summary const &summary) const
@@ -237,7 +255,107 @@ auto wizard_shell::flagged_review(deletion_step step, std::string header)
     -> std::unique_ptr<basalt::widget> {
   flagged_ = std::make_unique<flagged_review_screen>(controller_, step, review_state_, loader_,
                                                      images_, [this] { mark_dirty(); });
+  flagged_->set_open_detail([this](image_info const &image) { open_detail(image); });
   return flagged_->build(std::move(header));
+}
+
+auto wizard_shell::detail_info_for(image_info const &image) const -> detail_info {
+  detail_info info;
+  info.image = image;
+  auto const &phase = controller_.phase();
+  // The confirm screen only looks. Everywhere else the switch works.
+  info.can_toggle = !std::holds_alternative<wizard_confirm_folder>(phase);
+  if (std::holds_alternative<wizard_quality_review>(phase)) {
+    info.step = deletion_step::quality;
+  } else if (std::holds_alternative<wizard_junk_review>(phase)) {
+    info.step = deletion_step::junk;
+  } else if (std::holds_alternative<wizard_video_review>(phase)) {
+    info.step = deletion_step::video;
+  } else if (std::holds_alternative<wizard_similar_review>(phase)) {
+    info.step = deletion_step::similar;
+  }
+  auto const &flags = controller_.flags();
+  if (auto const flag = flags.quality.find(image.id); flag != flags.quality.end()) {
+    info.sharpness = flag->second.sharpness;
+    info.exposure_score = flag->second.exposure_score;
+  }
+  if (auto const flag = flags.junk.find(image.id); flag != flags.junk.end()) {
+    info.junk_reason = flag->second.reason;
+    info.junk_confidence = flag->second.confidence;
+  }
+  if (auto const flag = flags.video.find(image.id); flag != flags.video.end()) {
+    info.video_reason = flag->second.reason;
+    info.video_confidence = flag->second.confidence;
+  }
+  // Where the photo sits in the trips.
+  if (auto const *review = std::get_if<wizard_trips_review>(&phase)) {
+    auto const iso = [](time_ms instant) {
+      auto const civil = to_local_civil(instant);
+      return std::format("{:04}-{:02}-{:02}", civil.year, civil.month, civil.day);
+    };
+    for (auto const &trip : review->trips) {
+      auto const leg = std::ranges::find_if(trip.legs, [&](trip_leg_info const &candidate) {
+        return std::ranges::find(candidate.member_ids, image.id) != candidate.member_ids.end();
+      });
+      if (std::ranges::find(trip.member_ids, image.id) == trip.member_ids.end()) {
+        continue;
+      }
+      auto const label = trip.is_home ? std::string{"Home"}
+                         : !trip.place_name.empty() ? trip.place_name
+                                                    : trip.folder.value_or("Trip");
+      info.mappings.emplace_back("Trip", std::format("{} · {} – {}", label, iso(trip.start),
+                                                     iso(trip.end)));
+      if (trip.legs.size() > 1 && leg != trip.legs.end() && !leg->place_name.empty()) {
+        info.mappings.emplace_back("Leg", leg->place_name);
+      }
+      if (!trip.place_name.empty()) {
+        info.mappings.emplace_back("Place", trip.place_name);
+      }
+      break;
+    }
+  }
+  // The unflagged shots around a flagged photo, so the reviewer can see a better one.
+  if (info.step == deletion_step::quality && flags.quality.contains(image.id)) {
+    auto const scope = controller_.review_scope();
+    std::vector<image_info> candidates;
+    for (auto const &id : controller_.image_ids()) {
+      if (auto const *candidate = controller_.image(id);
+          candidate != nullptr && (!scope || scope->contains(id))) {
+        candidates.push_back(*candidate);
+      }
+    }
+    std::unordered_set<std::string> quality_flagged;
+    for (auto const &entry : flags.quality) {
+      quality_flagged.insert(entry.first);
+    }
+    auto const near = find_neighbors(candidates, {image.id}, quality_flagged);
+    if (auto const found = near.find(image.id); found != near.end()) {
+      info.neighbors = found->second;
+    }
+  }
+  return info;
+}
+
+auto wizard_shell::open_detail(image_info const &image) -> void {
+  close_detail();
+  detail_ = std::make_unique<detail_view>(
+      controller_, detail_info_for(image), master_loader_, videos_, services_.wake,
+      detail_view::callbacks{
+          [this] { close_detail(); },
+          [this](image_info const &neighbor) { open_detail(neighbor); }},
+      tree_.viewport());
+  detail_overlay_ = host_->show_dialog(detail_->build(), [this] {
+    // The overlay is gone, by Escape or because the owner dismissed it.
+    detail_overlay_.reset();
+    retired_detail_ = std::move(detail_);
+  });
+}
+
+auto wizard_shell::close_detail() -> void {
+  if (detail_overlay_) {
+    // The close handler above retires the view.
+    host_->dismiss(*detail_overlay_);
+  }
 }
 
 auto wizard_shell::show_crash_dialog(std::string message, std::function<void()> on_retry)

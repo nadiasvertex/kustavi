@@ -87,6 +87,9 @@ auto deletion_review_screen::build() -> std::unique_ptr<basalt::widget> {
     tile.set_badge(basalt::tile_corner::bottom_left, badges_of(controller_.reasons_for(image.id)));
   });
   grid_->set_on_activate([this](image_info const &image) { controller_.keep_image(image.id); });
+  if (open_detail_) {
+    grid_->set_on_open(open_detail_);
+  }
   auto &view = ui::fill(*screen, grid_->make_widget());
   view.set_scroll_offset(scroll_);
   return screen;

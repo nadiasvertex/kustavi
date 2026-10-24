@@ -44,6 +44,10 @@ public:
       -> void {
     decorator_ = std::move(d);
   }
+  // Puts a small button in the top right corner of each cell that opens the photo.
+  auto set_on_open(std::function<void(image_info const &)> handler) -> void {
+    on_open_ = std::move(handler);
+  }
   // Called with the photo that the user activates.
   auto set_on_activate(std::function<void(image_info const &)> handler) -> void {
     on_activate_ = std::move(handler);
@@ -76,6 +80,7 @@ private:
   std::function<std::unique_ptr<basalt::widget>(std::size_t)> header_factory_;
   std::function<void(basalt::image_tile &, image_info const &)> decorator_;
   std::function<void(image_info const &)> on_activate_;
+  std::function<void(image_info const &)> on_open_;
 };
 
 } // namespace kustavi::gui

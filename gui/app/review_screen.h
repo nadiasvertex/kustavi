@@ -36,6 +36,10 @@ public:
   flagged_review_screen(flagged_review_screen const &) = delete;
   auto operator=(flagged_review_screen const &) -> flagged_review_screen & = delete;
 
+  // What the button in the corner of a photo does.
+  auto set_open_detail(std::function<void(image_info const &)> open) -> void {
+    open_detail_ = std::move(open);
+  }
   [[nodiscard]] auto build(std::string header) -> std::unique_ptr<basalt::widget>;
   // Gives finished images to the cells. Call it every frame.
   auto update() -> void;
@@ -61,6 +65,7 @@ private:
   image_loader &loader_;
   decoded_image_cache &cache_;
   std::function<void()> rebuild_;
+  std::function<void(image_info const &)> open_detail_;
   std::unordered_map<std::string, std::vector<image_info>> neighbors_;
   std::unique_ptr<image_grid> keep_grid_;
   std::unique_ptr<image_grid> delete_grid_;
@@ -83,6 +88,9 @@ public:
   similar_review_screen(similar_review_screen const &) = delete;
   auto operator=(similar_review_screen const &) -> similar_review_screen & = delete;
 
+  auto set_open_detail(std::function<void(image_info const &)> open) -> void {
+    open_detail_ = std::move(open);
+  }
   [[nodiscard]] auto build() -> std::unique_ptr<basalt::widget>;
   auto update() -> void;
   auto remember_scroll() -> void;
@@ -91,6 +99,7 @@ private:
   wizard_controller &controller_;
   image_loader &loader_;
   decoded_image_cache &cache_;
+  std::function<void(image_info const &)> open_detail_;
   std::vector<similar_group_info> groups_;
   std::unique_ptr<image_grid> grid_;
   float &scroll_;

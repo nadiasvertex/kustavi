@@ -20,17 +20,35 @@ kustavi_opencv_includes(kustavi_gui_spike)
 add_library(kustavi_gui_app STATIC
   app/batch_menu_screen.cpp
   app/commit_screens.cpp
+  app/detail_view.cpp
   app/executable_path.cpp
   app/image_grid.cpp
   app/image_loader.cpp
   app/review_screen.cpp
   app/screens.cpp
   app/trips_screen.cpp
+  app/video_player.cpp
+  app/zoom_view.cpp
   app/wizard_shell.cpp)
 target_include_directories(kustavi_gui_app PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(kustavi_gui_app PUBLIC kustavi::gui_core basalt::basalt magma::magma
   PRIVATE kustavi_options opencv_core opencv_imgproc opencv_imgcodecs)
 kustavi_opencv_includes(kustavi_gui_app)
+
+# Video playback uses libmdk. Point KUSTAVI_MDK_DIR at an mdk-sdk to build it in. Without it the
+# detail view shows the still image of a video.
+set(KUSTAVI_MDK_DIR "" CACHE PATH "An mdk-sdk for video playback in the GUI")
+if(KUSTAVI_MDK_DIR AND EXISTS "${KUSTAVI_MDK_DIR}/lib/cmake/FindMDK.cmake")
+  list(APPEND CMAKE_MODULE_PATH "${KUSTAVI_MDK_DIR}/lib/cmake")
+  find_package(MDK REQUIRED)
+  target_link_libraries(kustavi_gui_app PUBLIC mdk)
+  if(APPLE)
+    # The framework is found at run time through the path of the SDK it was built from.
+    target_link_options(kustavi_gui_app PUBLIC
+      "-Wl,-rpath,${KUSTAVI_MDK_DIR}/lib/mdk.xcframework/macos-arm64_x86_64")
+  endif()
+  target_compile_definitions(kustavi_gui_app PRIVATE KUSTAVI_HAVE_MDK)
+endif()
 
 add_executable(kustavi_gui app/main.cpp)
 target_link_libraries(kustavi_gui PRIVATE kustavi_gui_app kustavi_options)
@@ -45,7 +63,14 @@ target_compile_definitions(kustavi_gui_preview PRIVATE
 kustavi_opencv_includes(kustavi_gui_preview)
 
 if(KUSTAVI_BUILD_TESTS)
-  add_executable(gui_app_tests tests/app_test.cpp)
+  add_executable(gui_app_tests tests/app_test.cpp tests/detail_test.cpp tests/zoom_test.cpp)
+  target_compile_definitions(gui_app_tests PRIVATE
+    KUSTAVI_PHOTO_DIR="${PROJECT_SOURCE_DIR}/test/photos")
+  if(KUSTAVI_MDK_DIR AND EXISTS "${KUSTAVI_MDK_DIR}/lib/cmake/FindMDK.cmake")
+    target_sources(gui_app_tests PRIVATE tests/mdk_player_test.cpp)
+    target_compile_definitions(gui_app_tests PRIVATE
+      KUSTAVI_VIDEO_DIR="${PROJECT_SOURCE_DIR}/test/videos")
+  endif()
   target_link_libraries(gui_app_tests PRIVATE kustavi_gui_app kustavi::gui_testing kustavi_options
     Catch2::Catch2WithMain)
   include(Catch)

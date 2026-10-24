@@ -3,6 +3,7 @@
 #include "app/image_grid.h"
 #include "app/image_loader.h"
 #include "app/commit_screens.h"
+#include "app/detail_view.h"
 #include "app/review_screen.h"
 #include "app/screens.h"
 #include "app/trips_screen.h"
@@ -13,6 +14,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 
 namespace kustavi::gui {
 
@@ -23,8 +25,10 @@ class wizard_shell {
 public:
   // `tree` gets the shell as its root. The controller, the model status and the loader outlive
   // the shell.
+  // `master_loader` decodes the full-size pictures of the detail view and `videos` makes its players.
   wizard_shell(basalt::widget_tree &tree, wizard_controller &controller, model_status &model,
-               image_loader &loader, shell_services services);
+               image_loader &loader, image_loader &master_loader, shell_services services,
+               video_player_factory videos = {});
   wizard_shell(wizard_shell const &) = delete;
   auto operator=(wizard_shell const &) -> wizard_shell & = delete;
   ~wizard_shell();
@@ -37,6 +41,11 @@ public:
   // Rebuilds the screens if something changed, gives finished images to the grid, and moves the
   // busy bar. Call it once per frame, before layout.
   auto update() -> void;
+
+  // Opens the detail view of a photo over the screen. Another one that is open is closed first.
+  auto open_detail(image_info const &image) -> void;
+  auto close_detail() -> void;
+  [[nodiscard]] auto detail() -> detail_view * { return detail_.get(); }
 
   // The back end died or could not start. The dialog offers a retry or leaving.
   auto show_crash_dialog(std::string message, std::function<void()> on_retry) -> void;
@@ -52,12 +61,15 @@ private:
   auto rebuild() -> void;
   auto build_body() -> std::unique_ptr<basalt::widget>;
   auto flagged_review(deletion_step step, std::string header) -> std::unique_ptr<basalt::widget>;
+  [[nodiscard]] auto detail_info_for(image_info const &image) const -> detail_info;
 
   basalt::widget_tree &tree_;
   wizard_controller &controller_;
   model_status &model_;
   image_loader &loader_;
+  image_loader &master_loader_;
   shell_services services_;
+  video_player_factory videos_;
   basalt::overlay_host *host_ = nullptr;
   basalt::box *frame_ = nullptr;
   basalt::progress_bar *busy_ = nullptr;
@@ -75,6 +87,9 @@ private:
   std::size_t built_phase_index_ = static_cast<std::size_t>(-1);
   std::uint64_t built_revision_ = 0;
   std::unique_ptr<image_grid> grid_;
+  std::unique_ptr<detail_view> detail_;
+  std::unique_ptr<detail_view> retired_detail_;
+  std::optional<basalt::widget_id> detail_overlay_;
   bool was_trips_review_ = false;
   bool dirty_ = true;
 };

@@ -21,6 +21,9 @@ public:
   deletion_review_screen(deletion_review_screen const &) = delete;
   auto operator=(deletion_review_screen const &) -> deletion_review_screen & = delete;
 
+  auto set_open_detail(std::function<void(image_info const &)> open) -> void {
+    open_detail_ = std::move(open);
+  }
   [[nodiscard]] auto build() -> std::unique_ptr<basalt::widget>;
   auto update() -> void;
   auto remember_scroll() -> void;
@@ -30,6 +33,7 @@ private:
   image_loader &loader_;
   decoded_image_cache &cache_;
   float &scroll_;
+  std::function<void(image_info const &)> open_detail_;
   std::vector<marked_group> groups_;
   std::unique_ptr<image_grid> grid_;
 };

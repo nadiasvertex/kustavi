@@ -22,7 +22,7 @@ The C++ GUI (`gui/`) builds with `-DKUSTAVI_BUILD_GUI=ON`, which also needs
 until releases are pinned. `gui/main.cpp` documents the spike's options.
 `gui/core` holds the GUI's logic without any window or widget (domain types, the deletion
 model, the trips plan, the gRPC client and the back-end launcher), and `common/process` holds the
-process launching that the GUI and the smoke client share. `just test-gui-core` runs their tests. `gui/app` holds the screens, the shell and `kustavi_gui`, the program; `kustavi_gui_preview --screen NAME (start, scanning, confirm, trips and the others in its header) --out FILE.png` draws a screen with a scripted back end. Set `KUSTAVI_BACKEND_PATH` to run `kustavi_gui` against a back end that is not beside it (the build's is `backend/server`). The `sanitize` test preset leaves out the `grpc` label: those
+process launching that the GUI and the smoke client share. `just test-gui-core` runs their tests. `gui/app` holds the screens, the shell and `kustavi_gui`, the program; `kustavi_gui_preview --screen NAME (start, scanning, confirm, trips and the others in its header) --out FILE.png` draws a screen with a scripted back end. Configure with `-DKUSTAVI_MDK_DIR=<mdk-sdk>` to build video playback into the detail view with libmdk; without it a video shows its still image. Set `KUSTAVI_BACKEND_PATH` to run `kustavi_gui` against a back end that is not beside it (the build's is `backend/server`). The `sanitize` test preset leaves out the `grpc` label: those
 tests run a gRPC server, and the unsanitized gRPC and the sanitized test share inline library code,
 which the sanitizers report at server shutdown.
 

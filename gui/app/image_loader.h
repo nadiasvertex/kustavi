@@ -30,8 +30,11 @@ struct loaded_image {
 class image_loader {
 public:
   // `edge` is the longest side of a decoded image, in pixels. `on_ready` is called on a worker
-  // after an image is finished, to wake the event loop.
-  image_loader(int edge, unsigned workers, std::function<void()> on_ready);
+  // after an image is finished, to wake the event loop. With `full_resolution` the file is decoded
+  // at its full size, which is slower and takes more memory; the default reads a quarter-size
+  // version of a large JPEG, which is enough for a thumbnail.
+  image_loader(int edge, unsigned workers, std::function<void()> on_ready,
+               bool full_resolution = false);
   image_loader(image_loader const &) = delete;
   auto operator=(image_loader const &) -> image_loader & = delete;
   ~image_loader();
@@ -46,6 +49,7 @@ private:
   auto work(std::stop_token stop) -> void;
 
   int edge_;
+  bool full_resolution_;
   std::function<void()> on_ready_;
   std::mutex mutex_;
   std::condition_variable_any wake_;

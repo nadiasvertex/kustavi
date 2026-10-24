@@ -112,6 +112,9 @@ auto flagged_review_screen::build_grid(std::vector<image_info> images, bool in_d
       controller_.mark_image(image.id);
     }
   });
+  if (open_detail_) {
+    grid->set_on_open(open_detail_);
+  }
   auto widget = grid->make_widget();
   return {std::move(grid), std::move(widget)};
 }
@@ -428,6 +431,9 @@ auto similar_review_screen::build() -> std::unique_ptr<basalt::widget> {
     tile.set_selected(image.id == keeper);
     tile.set_badge(basalt::tile_corner::top_left, make_badges(labels));
   });
+  if (open_detail_) {
+    grid_->set_on_open(open_detail_);
+  }
   grid_->set_on_activate([this, groups](image_info const &image) {
     if (auto const found = groups->find(image.id); found != groups->end()) {
       controller_.set_group_keeper(groups_[found->second].id, image.id);

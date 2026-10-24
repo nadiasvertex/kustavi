@@ -17,8 +17,12 @@ namespace {
 
 // Decodes at a quarter of the size when the file is much larger than `edge`, which is fast for
 // JPEG, and scales the rest of the way down so that the longer side is at most `edge`.
-auto decode(std::filesystem::path const &path, int edge) -> basalt::raster_image_ptr {
-  cv::Mat bgr = cv::imread(path.string(), cv::IMREAD_REDUCED_COLOR_4);
+auto decode(std::filesystem::path const &path, int edge, bool full_resolution)
+    -> basalt::raster_image_ptr {
+  cv::Mat bgr;
+  if (!full_resolution) {
+    bgr = cv::imread(path.string(), cv::IMREAD_REDUCED_COLOR_4);
+  }
   if (bgr.empty()) {
     bgr = cv::imread(path.string(), cv::IMREAD_COLOR);
   }
@@ -38,8 +42,9 @@ auto decode(std::filesystem::path const &path, int edge) -> basalt::raster_image
 
 } // namespace
 
-image_loader::image_loader(int edge, unsigned workers, std::function<void()> on_ready)
-    : edge_(edge), on_ready_(std::move(on_ready)) {
+image_loader::image_loader(int edge, unsigned workers, std::function<void()> on_ready,
+                           bool full_resolution)
+    : edge_(edge), full_resolution_(full_resolution), on_ready_(std::move(on_ready)) {
   for (unsigned i = 0; i < std::max(1U, workers); ++i) {
     workers_.emplace_back([this](std::stop_token stop) { work(stop); });
   }
@@ -85,7 +90,7 @@ auto image_loader::work(std::stop_token stop) -> void {
       next = std::move(queue_.back().request);
       queue_.pop_back();
     }
-    auto image = decode(next.path, edge_);
+    auto image = decode(next.path, edge_, full_resolution_);
     if (image == nullptr) {
       continue;
     }

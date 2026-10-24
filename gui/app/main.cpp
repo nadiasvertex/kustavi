@@ -133,7 +133,16 @@ auto run(int, char **argv, bool raster) -> int {
   services.cancel_download = [&model] { model.cancel_download(); };
   services.retry_download = [&model] { model.retry_download(); };
 
-  wizard_shell shell{tree, controller, model, loader, services};
+  image_loader master_loader{8192, 2,
+                             [&queue, &scheduler] {
+                               queue.post([&scheduler] { scheduler.request_frame(); });
+                             },
+                             true};
+  services.wake = [&queue, &scheduler] {
+    queue.post([&scheduler] { scheduler.request_frame(); });
+  };
+  wizard_shell shell{tree, controller, model, loader, master_loader, services,
+                     default_video_player_factory()};
   shell.services().show_backend_log = [&] { shell.show_log_dialog(backend.log_text()); };
 
   auto const dirty = [&] {

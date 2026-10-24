@@ -21,6 +21,8 @@ struct shell_services {
   std::function<void()> pick_folder;
   // Opens the folder chooser for a destination and calls the function with the choice.
   std::function<void(std::function<void(std::string)>)> choose_folder;
+  // Wakes the event loop from any thread, such as when a video frame is ready.
+  std::function<void()> wake;
   // Begins an orderly exit.
   std::function<void()> exit_app;
   // Shows the output of the back-end process.

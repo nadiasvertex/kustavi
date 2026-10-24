@@ -3,7 +3,7 @@
 //   kustavi_gui_preview --screen NAME --out FILE.png [--photos DIR] [--raster] [--scale S]
 //
 // NAME is one of start, downloading, scanning, restore, confirm, none, failed, crash, log, trips,
-// trips-running, menu, quality, similar, junk-prep, junk-running, review, summary, copying and done. A scripted fake back end puts the controller in the state of that screen.
+// trips-running, menu, quality, similar, junk-prep, junk-running, review, summary, copying, done and detail. A scripted fake back end puts the controller in the state of that screen.
 
 #include "app/wizard_shell.h"
 #include "testing/fake_kustavi_client.h"
@@ -115,7 +115,8 @@ auto main(int argc, char **argv) -> int {
   model_status model{queue};
   shell_services services;
   services.version = "0.0.0";
-  wizard_shell shell{tree, controller, model, loader, services};
+  image_loader master_loader{4096, 2, [] {}, true};
+  wizard_shell shell{tree, controller, model, loader, master_loader, services};
   controller.on_change([&shell] { shell.phase_changed(); });
   model.on_change([&shell](model_prep_state const &) { shell.mark_dirty(); });
 
@@ -309,6 +310,14 @@ auto main(int argc, char **argv) -> int {
         client->hold_streams = true;
       }
     }
+  } else if (screen == "detail") {
+    trips_events();
+    controller.select_folder("/Users/me/Pictures/Alps");
+    settle();
+    controller.continue_from_confirm();
+    settle();
+    shell.update();
+    shell.open_detail(*controller.image("IMG_0001.jpg"));
   } else if (screen == "trips-running") {
     trips_events();
     controller.select_folder("/Users/me/Pictures/Alps");

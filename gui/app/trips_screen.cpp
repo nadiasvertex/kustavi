@@ -141,6 +141,8 @@ auto trips_screen::build(wizard_trips_review const &review) -> std::unique_ptr<b
   grid_->set_on_activate([this](image_info const &image) {
     if (state_.selecting) {
       toggle_selection(image);
+    } else if (open_detail_) {
+      open_detail_(image);
     }
   });
   auto &view = ui::fill(*screen, grid_->make_widget());
