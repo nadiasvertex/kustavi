@@ -133,6 +133,26 @@ bump-version COMPONENT *ARGS:
   : "${PY:?no working python interpreter on PATH}"
   "$PY" tools/version.py bump {{ COMPONENT }} {{ ARGS }}
 
+# Bump the version and commit it first: `just bump-version patch`, then commit.
+# Tag HEAD as v<version> from VERSION.txt and push the tag, which starts the GitHub release build.
+release:
+  #!/usr/bin/env bash
+  set -euo pipefail
+  version=$(tr -d '[:space:]' < VERSION.txt)
+  tag="v$version"
+  if git rev-parse -q --verify "refs/tags/$tag" >/dev/null \
+     || git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
+    echo "Tag $tag already exists. Run 'just bump-version <major|minor|patch>' and commit the change first." >&2
+    exit 1
+  fi
+  if ! git diff --quiet HEAD -- VERSION.txt backend/include/version.h; then
+    echo "The version files have uncommitted changes. Commit the version bump before releasing." >&2
+    exit 1
+  fi
+  git tag -a "$tag" -m "Kustavi $tag"
+  git push origin "$tag"
+  echo "Pushed $tag"
+
 # Package, then launch the unpacked macOS app from dist/.
 run:
   #!/usr/bin/env sh
