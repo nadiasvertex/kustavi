@@ -15,8 +15,8 @@ build-release:
   cmake --preset release
   cmake --build --preset release
 
-# Builds the C++ GUI. Basalt and Magma are not pinned yet, so point
-# KUSTAVI_BASALT_SOURCE_DIR and KUSTAVI_MAGMA_SOURCE_DIR at checkouts of them.
+# Builds the C++ GUI against the pinned Basalt and Magma. To use checkouts instead, point
+# KUSTAVI_BASALT_SOURCE_DIR and KUSTAVI_MAGMA_SOURCE_DIR at them.
 build-gui:
   #!/usr/bin/env sh
   set -e
@@ -96,9 +96,9 @@ lint: compile-commands
 
 # Build a redistributable desktop package (zip) for the host OS. The build +
 # bundle logic lives in tools/package.py, which also covers Windows. Extra
-# args pass straight through, e.g. `just package --keep`. Basalt and Magma are
-# not pinned yet: set KUSTAVI_BASALT_SOURCE_DIR and KUSTAVI_MAGMA_SOURCE_DIR, or
-# pass --basalt-dir and --magma-dir.
+# args pass straight through, e.g. `just package --keep`. The build uses the
+# pinned Basalt and Magma; set KUSTAVI_BASALT_SOURCE_DIR and KUSTAVI_MAGMA_SOURCE_DIR, or pass
+# --basalt-dir and --magma-dir, to use checkouts.
 package *ARGS:
   #!/usr/bin/env sh
   set -e
@@ -133,8 +133,7 @@ bump-version COMPONENT *ARGS:
   : "${PY:?no working python interpreter on PATH}"
   "$PY" tools/version.py bump {{ COMPONENT }} {{ ARGS }}
 
-# Package, then launch the unpacked macOS app from dist/. Pass the Basalt and Magma checkouts
-# through KUSTAVI_BASALT_SOURCE_DIR and KUSTAVI_MAGMA_SOURCE_DIR.
+# Package, then launch the unpacked macOS app from dist/.
 run:
   #!/usr/bin/env sh
   set -e

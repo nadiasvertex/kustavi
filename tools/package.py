@@ -33,9 +33,9 @@ backend/include/paths.h), and the bundled fonts in `fonts` (see gui/app/fonts.h)
 linked statically into the GUI, and so are Basalt and Magma; only libmdk, which plays videos,
 ships as a separate library.
 
-Basalt and Magma are not pinned yet (cmake/dependency_pins.cmake), so the build
-needs checkouts of them: pass --basalt-dir and --magma-dir, or set
-KUSTAVI_BASALT_SOURCE_DIR and KUSTAVI_MAGMA_SOURCE_DIR.
+The build uses the Basalt and Magma pinned in cmake/dependency_pins.cmake. To use checkouts
+instead, pass --basalt-dir and --magma-dir, or set KUSTAVI_BASALT_SOURCE_DIR and
+KUSTAVI_MAGMA_SOURCE_DIR.
 
 Usage:
     python tools/package.py                 # package for the host OS

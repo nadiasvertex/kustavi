@@ -1,0 +1,80 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  package:
+    name: package (${{ matrix.platform.name }})
+    runs-on: ${{ matrix.platform.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - { name: macos-arm64, os: macos-26, args: "" }
+          - { name: windows-x64, os: windows-2022, args: "--installer" }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check the tag against VERSION.txt
+        run: |
+          version=$(tr -d '[:space:]' < VERSION.txt)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match VERSION.txt $version."
+            exit 1
+          fi
+
+      - name: Load the MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+        with:
+          arch: x64
+
+      - name: Install the WiX tool
+        if: runner.os == 'Windows'
+        run: dotnet tool install --global wix --version 5.*
+
+      # tools/package.py builds the release GUI, assembles the bundle and writes the archive or
+      # the MSI into dist/.
+      - name: Package
+        run: python3 tools/package.py ${{ matrix.platform.args }}
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: package-${{ matrix.platform.name }}
+          path: |
+            dist/*.zip
+            dist/*.msi
+          if-no-files-found: error
+
+  publish:
+    needs: package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: package-*
+          merge-multiple: true
+          path: dist
+
+      - name: Write checksums
+        working-directory: dist
+        run: sha256sum * > SHA256SUMS
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" dist/*
+          --repo "$GITHUB_REPOSITORY" --title "Kustavi ${GITHUB_REF_NAME#v}"
+          --generate-notes --verify-tag

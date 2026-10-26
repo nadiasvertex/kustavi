@@ -5,12 +5,13 @@ include(FetchContent)
 set(KUSTAVI_BASALT_SOURCE_DIR "" CACHE PATH "A Basalt checkout to build the GUI against")
 set(KUSTAVI_MAGMA_SOURCE_DIR "" CACHE PATH "A Magma checkout to build the GUI against")
 
-if(NOT KUSTAVI_BASALT_SOURCE_DIR OR NOT KUSTAVI_MAGMA_SOURCE_DIR)
-  if(NOT DEFINED KUSTAVI_BASALT_URL OR NOT DEFINED KUSTAVI_MAGMA_URL)
-    message(FATAL_ERROR
-      "The GUI needs Basalt and Magma, and cmake/dependency_pins.cmake does not pin them yet. "
-      "Set KUSTAVI_BASALT_SOURCE_DIR and KUSTAVI_MAGMA_SOURCE_DIR to checkouts.")
-  endif()
+if(NOT KUSTAVI_BASALT_SOURCE_DIR AND NOT DEFINED KUSTAVI_BASALT_URL)
+  message(FATAL_ERROR "cmake/dependency_pins.cmake does not pin Basalt. "
+    "Set KUSTAVI_BASALT_SOURCE_DIR to a checkout.")
+endif()
+if(NOT KUSTAVI_MAGMA_SOURCE_DIR AND NOT DEFINED KUSTAVI_MAGMA_URL)
+  message(FATAL_ERROR "cmake/dependency_pins.cmake does not pin Magma. "
+    "Set KUSTAVI_MAGMA_SOURCE_DIR to a checkout.")
 endif()
 
 set(BASALT_BUILD_TESTS OFF)

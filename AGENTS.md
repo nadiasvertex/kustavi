@@ -18,10 +18,15 @@ The repo builds with CMake (presets `debug`, `release`, `sanitize`; output in
 source still includes what it uses.
 
 The GUI (`gui/`) is C++ on Basalt widgets and Magma windows. It builds with
-`-DKUSTAVI_BUILD_GUI=ON`, which also needs `-DKUSTAVI_BASALT_SOURCE_DIR=<checkout>` and
-`-DKUSTAVI_MAGMA_SOURCE_DIR=<checkout>` until releases of the two are pinned (the `just`
-recipes and `tools/package.py` read the same two names from the environment). Its layout is
-in `spec/frontend.md` §14; the history of the rewrite is in `spec/plans/cpp-gui-rewrite.md`.
+`-DKUSTAVI_BUILD_GUI=ON`, which fetches the Basalt and Magma releases pinned in
+`cmake/dependency_pins.cmake`. Add `-DKUSTAVI_BASALT_SOURCE_DIR=<checkout>` and
+`-DKUSTAVI_MAGMA_SOURCE_DIR=<checkout>` to use local checkouts instead (the `just` recipes and
+`tools/package.py` read the same two names from the environment). Its layout is in
+`spec/frontend.md` §14; the history of the rewrite is in `spec/plans/cpp-gui-rewrite.md`.
+
+Pushing a tag `vX.Y.Z` that matches `VERSION.txt` runs `.github/workflows/release.yml`. It
+packages the macOS app bundle (zip) and the Windows MSI with `tools/package.py` and publishes
+them, with checksums, as a GitHub release.
 
 - The back end is the `kustavi_engine` library in `backend/`, and the GUI calls it in its own
   process. `engine_test` runs every call against a copy of `test/photos`.
