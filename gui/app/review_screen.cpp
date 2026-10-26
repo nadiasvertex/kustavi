@@ -296,25 +296,35 @@ auto flagged_review_screen::build_threshold_panel() -> std::unique_ptr<basalt::w
   if (state_.thresholds_open) {
     auto const &tunables = controller_.tunables();
     auto sliders = ui::row(24);
+    // Raising the blur threshold flags more images and raising an exposure threshold flags fewer,
+    // so each slider says under its track which end flags more.
     auto const add_slider = [&](std::string label, float minimum, float maximum, float step,
-                                double value, std::function<std::string(float)> format,
+                                double value, bool more_to_the_right,
+                                std::function<std::string(float)> format,
                                 std::function<void(double)> apply) {
-      auto &slider = sliders->add_child(std::make_unique<basalt::slider>(
+      auto group = ui::column(2);
+      auto &slider = group->add_child(std::make_unique<basalt::slider>(
           minimum, maximum, step, static_cast<float>(value)));
       slider.set_label(std::move(label));
       slider.set_value_formatter(std::move(format));
       slider.set_on_change([apply = std::move(apply)](float changed) {
         apply(static_cast<double>(changed));
       });
-      sliders->set_item(slider, basalt::box_item{.grow = 1});
+      auto ends = ui::row(8);
+      ui::fill(*ends, ui::text(more_to_the_right ? "‹ Fewer flagged" : "‹ More flagged",
+                               text_role::small, text_tone::subdued));
+      ui::rigid(*ends, ui::text(more_to_the_right ? "More flagged ›" : "Fewer flagged ›",
+                                text_role::small, text_tone::subdued));
+      group->add_child(std::move(ends));
+      ui::fill(*sliders, std::move(group));
     };
-    add_slider("Blur threshold", 10, 500, 10, tunables.blur_threshold,
+    add_slider("Blur threshold", 10, 500, 10, tunables.blur_threshold, true,
                [](float v) { return blur_text(v); },
                [this](double v) { controller_.set_blur_threshold(v); });
-    add_slider("Underexposed", 0, 0.8F, 0.05F, tunables.under_exposed_threshold,
+    add_slider("Underexposed", 0, 0.8F, 0.05F, tunables.under_exposed_threshold, false,
                [](float v) { return std::format("{:.2f}", v); },
                [this](double v) { controller_.set_under_exposed_threshold(v); });
-    add_slider("Overexposed", 0, 0.8F, 0.05F, tunables.over_exposed_threshold,
+    add_slider("Overexposed", 0, 0.8F, 0.05F, tunables.over_exposed_threshold, false,
                [](float v) { return std::format("{:.2f}", v); },
                [this](double v) { controller_.set_over_exposed_threshold(v); });
     panel->add_child(std::move(sliders));

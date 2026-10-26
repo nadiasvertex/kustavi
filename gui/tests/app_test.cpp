@@ -637,6 +637,9 @@ TEST_CASE("the thresholds open without the sliders being rebuilt by a change",
   auto sliders = h.find_all<basalt::slider>();
   REQUIRE(sliders.size() == 3);
   CHECK(sliders.front()->label() == "Blur threshold");
+  // Blur flags more to the right and the exposure sliders flag more to the left.
+  CHECK(h.has_text("More flagged ›"));
+  CHECK(h.has_text("‹ More flagged"));
   CHECK(h.has_text("1 flagged at the last run"));
   CHECK(h.button("Rerun pass") != nullptr);
   CHECK_FALSE(h.button("Rerun pass")->visible());
