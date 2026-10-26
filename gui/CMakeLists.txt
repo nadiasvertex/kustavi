@@ -30,6 +30,8 @@ target_include_directories(kustavi_gui_app PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(kustavi_gui_app PUBLIC kustavi::gui_core basalt::basalt magma::magma
   PRIVATE kustavi_options opencv_core opencv_imgproc opencv_imgcodecs)
 kustavi_opencv_includes(kustavi_gui_app)
+kustavi_precompile_headers(kustavi_gui_app <proto/service.pb.h> <opencv2/core.hpp>
+  [["basalt/basalt.h"]])
 # A build that runs from the tree reads the fonts from the source.
 target_compile_definitions(kustavi_gui_app PUBLIC
   KUSTAVI_FONT_DIR="${PROJECT_SOURCE_DIR}/resources/fonts")
@@ -79,6 +81,8 @@ if(KUSTAVI_BUILD_TESTS)
   endif()
   target_link_libraries(gui_app_tests PRIVATE kustavi_gui_app kustavi::gui_testing kustavi_options
     Catch2::Catch2WithMain)
+  kustavi_precompile_headers(gui_app_tests <proto/service.pb.h> <catch2/catch_test_macros.hpp>
+    [["basalt/basalt.h"]])
   include(Catch)
   catch_discover_tests(gui_app_tests PROPERTIES LABELS gui)
 endif()

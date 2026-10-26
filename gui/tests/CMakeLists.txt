@@ -18,6 +18,7 @@ add_executable(gui_core_tests
   wizard_controller_test.cpp)
 target_link_libraries(gui_core_tests PRIVATE kustavi::gui_core kustavi::gui_testing kustavi_options
   Catch2::Catch2WithMain)
+kustavi_precompile_headers(gui_core_tests <proto/service.pb.h> <catch2/catch_test_macros.hpp>)
 
 include(Catch)
 catch_discover_tests(gui_core_tests PROPERTIES LABELS gui)

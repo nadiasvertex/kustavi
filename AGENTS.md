@@ -13,7 +13,9 @@ The repo builds with CMake (presets `debug`, `release`, `sanitize`; output in
 `.build/<preset>`). Use the `just` recipes: `just build`, `just test-backend`,
 `just test-quality`, `just test-video`, `just build-gui`, `just run-gui`,
 `just test-gui` and `just package`. Dependency versions and checksums are in
-`cmake/dependency_pins.cmake`.
+`cmake/dependency_pins.cmake`. The larger targets use precompiled headers
+(`cmake/precompiled_headers.cmake`); configure with `-DKUSTAVI_PCH=OFF` to check that every
+source still includes what it uses.
 
 The GUI (`gui/`) is C++ on Basalt widgets and Magma windows. It builds with
 `-DKUSTAVI_BUILD_GUI=ON`, which also needs `-DKUSTAVI_BASALT_SOURCE_DIR=<checkout>` and

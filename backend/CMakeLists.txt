@@ -45,6 +45,8 @@ target_link_libraries(kustavi_engine
           stdexec_kustavi spdlog::spdlog)
 # The engine's headers use OpenCV types.
 kustavi_opencv_includes(kustavi_engine PUBLIC)
+kustavi_precompile_headers(kustavi_engine
+  <proto/service.pb.h> <spdlog/spdlog.h> <opencv2/core.hpp> <opencv2/imgproc.hpp>)
 add_library(kustavi::engine ALIAS kustavi_engine)
 
 # Data files that the engine looks up beside the executable (backend/include/paths.h).

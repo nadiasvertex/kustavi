@@ -25,3 +25,4 @@ target_include_directories(kustavi_gui_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/.
 target_link_libraries(kustavi_gui_core
   PUBLIC kustavi::engine kustavi::proto
   PRIVATE kustavi_options nlohmann_json::nlohmann_json)
+kustavi_precompile_headers(kustavi_gui_core <proto/service.pb.h>)

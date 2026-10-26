@@ -84,9 +84,14 @@ lint: compile-commands
     # clang-tidy resolves its own matching libc++ headers automatically; forcing
     # an extra -I for Homebrew LLVM's libc++ conflicts with the macOS SDK headers
     # (Apple clang vs. Homebrew clang) and corrupts parsing for every file.
+    # Homebrew clang-tidy cannot read Apple clang's precompiled headers, so it reads a copy of the
+    # compile commands without them; it still parses the same headers through -include.
+    mkdir -p .build/{{ PRESET }}/tidy
+    sed -E 's/ -Xclang -include-pch -Xclang [^ ]+//g' .build/{{ PRESET }}/compile_commands.json \
+      > .build/{{ PRESET }}/tidy/compile_commands.json
     SDK="$(xcrun --show-sdk-path)"; \
     find ./backend -type f \( -name "*.cpp" -o -name "*.hpp" -o -name "*.h" \) -print0 \
-      | xargs -0 -P1 {{ CLANG_TIDY }} -p=.build/{{ PRESET }} --fix --fix-errors \
+      | xargs -0 -P1 {{ CLANG_TIDY }} -p=.build/{{ PRESET }}/tidy --fix --fix-errors \
           --extra-arg=-isysroot --extra-arg="$SDK"
 
 # Build a redistributable desktop package (zip) for the host OS. The build +

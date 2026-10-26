@@ -25,8 +25,17 @@ option(KUSTAVI_BUILD_GUI "Build the C++ GUI, which needs Basalt and Magma" OFF)
 
 find_program(CCACHE_PROGRAM ccache)
 if(CCACHE_PROGRAM)
-  set(CMAKE_C_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
-  set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE_PROGRAM})
+  set(_kustavi_ccache ${CCACHE_PROGRAM})
+  # Without these, ccache cannot cache a source that uses a precompiled header
+  # (cmake/precompiled_headers.cmake). ccache reads settings on its command line from 4.8 on.
+  execute_process(COMMAND ${CCACHE_PROGRAM} --print-version
+                  OUTPUT_VARIABLE _kustavi_ccache_version OUTPUT_STRIP_TRAILING_WHITESPACE)
+  if(_kustavi_ccache_version VERSION_GREATER_EQUAL 4.8)
+    list(APPEND _kustavi_ccache
+         sloppiness=pch_defines,time_macros,include_file_mtime,include_file_ctime)
+  endif()
+  set(CMAKE_C_COMPILER_LAUNCHER ${_kustavi_ccache})
+  set(CMAKE_CXX_COMPILER_LAUNCHER ${_kustavi_ccache})
 endif()
 
 if(MSVC)
@@ -37,6 +46,7 @@ if(MSVC)
 endif()
 
 include(dependencies)
+include(precompiled_headers)
 
 # Warning and sanitizer flags apply only to Kustavi's own targets.
 add_library(kustavi_options INTERFACE)
