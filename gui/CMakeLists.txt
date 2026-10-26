@@ -11,6 +11,7 @@ endif()
 
 # The application: screens built from the core's state, and the program that runs them.
 add_library(kustavi_gui_app STATIC
+  app/batch_list_item.cpp
   app/batch_menu_screen.cpp
   app/commit_screens.cpp
   app/detail_view.cpp
@@ -23,7 +24,8 @@ add_library(kustavi_gui_app STATIC
   app/trips_screen.cpp
   app/video_player.cpp
   app/zoom_view.cpp
-  app/wizard_shell.cpp)
+  app/wizard_shell.cpp
+  app/wrapped_text.cpp)
 target_include_directories(kustavi_gui_app PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(kustavi_gui_app PUBLIC kustavi::gui_core basalt::basalt magma::magma
   PRIVATE kustavi_options opencv_core opencv_imgproc opencv_imgcodecs)

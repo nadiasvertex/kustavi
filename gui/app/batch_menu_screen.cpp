@@ -1,8 +1,11 @@
 #include "app/batch_menu_screen.h"
 
+#include "app/batch_list_item.h"
 #include "app/ui_kit.h"
+#include "app/wrapped_text.h"
 #include "core/format.h"
 
+#include <algorithm>
 #include <array>
 #include <format>
 
@@ -28,18 +31,37 @@ constexpr std::array passes{
     pass_info{wizard_step::video, "Video", "Short, corrupt, blurry or static clips"},
 };
 
-auto batch_row_label(batch_summary const &batch) -> std::string {
-  auto label = std::format("{}  ·  {} photos", batch.title, format_int(batch.photo_count));
+// "12 photos · 1 video · 2 of 3 passes done": what the batch holds and how far it has got.
+auto batch_row_details(batch_summary const &batch) -> std::string {
+  auto details = std::format("{} {}", format_int(batch.photo_count),
+                             batch.photo_count == 1 ? "photo" : "photos");
   if (batch.video_count > 0) {
-    label += std::format(" · {} videos", format_int(batch.video_count));
+    details += std::format(" · {} {}", format_int(batch.video_count),
+                           batch.video_count == 1 ? "video" : "videos");
   }
-  auto const done = std::ranges::count_if(batch.passes, [](auto const &entry) {
-    return entry.second.done;
+  // A batch with no videos has no video pass to count.
+  auto const applies = [&](auto const &entry) {
+    return entry.first != index_of(wizard_step::video) || batch.video_count > 0;
+  };
+  auto const total = std::ranges::count_if(batch.passes, applies);
+  auto const done = std::ranges::count_if(batch.passes, [&](auto const &entry) {
+    return applies(entry) && entry.second.done;
   });
-  if (done > 0) {
-    label += std::format("  ·  {} done", done);
+  if (done == 0) {
+    details += " · Not started";
+  } else if (done == total) {
+    details += " · All passes done";
+  } else {
+    details += std::format(" · {} of {} passes done", done, total);
   }
-  return label;
+  return details;
+}
+
+auto pass_tone(batch_pass_status const &status) -> text_tone {
+  if (status.done) {
+    return text_tone::success;
+  }
+  return status.flagged > 0 ? text_tone::warning : text_tone::subdued;
 }
 
 auto make_pass_card(pass_info const &info, batch_pass_status const &status,
@@ -50,8 +72,8 @@ auto make_pass_card(pass_info const &info, batch_pass_status const &status,
   auto text = ui::column(2);
   text->add_child(ui::text(info.label, text_role::body_strong));
   text->add_child(ui::text(info.hint, text_role::small, text_tone::subdued));
-  text->add_child(ui::text(pass_summary(info.step, status), text_role::body,
-                           status.done ? text_tone::interactive : text_tone::normal));
+  text->add_child(ui::text(pass_summary(info.step, status), text_role::small_strong,
+                           pass_tone(status)));
   ui::fill(*card, std::move(text));
   auto const step = info.step;
   if (status.done) {
@@ -102,13 +124,11 @@ auto build_batch_menu_screen(wizard_batch_menu const &menu, wizard_controller &c
   auto body = ui::row(16);
   body->set_cross_alignment(basalt::alignment::stretch);
 
-  auto list = ui::column(2);
+  auto list = ui::column(4);
   for (auto const &batch : menu.batches) {
-    auto const selected = batch.key == menu.selected_key;
-    auto &row = list->add_child(ui::make_button(
-        batch_row_label(batch), [&controller, key = batch.key] { controller.select_batch(key); },
-        selected ? button_variant::secondary : button_variant::tertiary));
-    row.set_label_alignment(basalt::alignment::start);
+    list->add_child(std::make_unique<batch_list_item>(
+        batch.title, batch_row_details(batch), batch.key == menu.selected_key,
+        [&controller, key = batch.key] { controller.select_batch(key); }));
   }
   auto list_scroll = std::make_unique<basalt::scroll_view>();
   list_scroll->set_content(std::move(list));
@@ -119,7 +139,7 @@ auto build_batch_menu_screen(wizard_batch_menu const &menu, wizard_controller &c
   if (selected == menu.batches.end()) {
     detail->add_child(ui::text("No photos to review"));
   } else {
-    detail->add_child(ui::text(selected->title, text_role::body_strong));
+    detail->add_child(std::make_unique<wrapped_label>(selected->title, text_role::body_strong));
     for (auto const &info : passes) {
       // A batch with no videos has nothing for the video pass to do.
       if (info.step == wizard_step::video && selected->video_count == 0) {

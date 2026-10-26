@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 
+#include "app/batch_list_item.h"
 #include "app/batch_menu_screen.h"
 #include "app/commit_screens.h"
 #include "app/trips_screen.h"
@@ -100,6 +101,15 @@ struct harness {
     for (auto *const button : find_all<basalt::button>()) {
       if (button->label() == label) {
         return button;
+      }
+    }
+    return nullptr;
+  }
+
+  auto batch(std::string const &title) -> batch_list_item * {
+    for (auto *const item : find_all<batch_list_item>()) {
+      if (item->title() == title) {
+        return item;
       }
     }
     return nullptr;
@@ -509,7 +519,8 @@ TEST_CASE("the batch menu lists the batches and the passes of the selected one",
   harness h;
   reach_menu_screen(h);
   CHECK(h.has_text("3 batches · 0 of 4 photos marked for deletion"));
-  CHECK(h.button("Paris  ·  1 photos") != nullptr);
+  REQUIRE(h.batch("Paris") != nullptr);
+  CHECK(h.batch("Paris")->details() == "1 photo · Not started");
   CHECK(h.has_text("Quality"));
   CHECK(h.has_text("Duplicates"));
   CHECK(h.has_text("Junk"));
@@ -519,9 +530,12 @@ TEST_CASE("the batch menu lists the batches and the passes of the selected one",
   CHECK(h.button("Edit trips") != nullptr);
   CHECK(h.button("Continue")->enabled());
 
-  h.button("Rome  ·  2 photos")->press();
+  REQUIRE(h.batch("Rome") != nullptr);
+  CHECK(h.batch("Rome")->details() == "2 photos · Not started");
+  CHECK_FALSE(h.batch("Rome")->selected());
+  h.batch("Rome")->press();
   h.refresh();
-  CHECK(h.has_text("Rome"));
+  CHECK(h.batch("Rome")->selected());
   CHECK(std::get<wizard_batch_menu>(h.controller.phase()).selected_key == "Rome");
 }
 
