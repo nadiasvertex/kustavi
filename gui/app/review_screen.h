@@ -69,8 +69,8 @@ private:
   std::unordered_map<std::string, std::vector<image_info>> neighbors_;
   std::unique_ptr<image_grid> keep_grid_;
   std::unique_ptr<image_grid> delete_grid_;
-  basalt::grid_view *keep_view_ = nullptr;
-  basalt::grid_view *delete_view_ = nullptr;
+  basalt::collection_view *keep_view_ = nullptr;
+  basalt::collection_view *delete_view_ = nullptr;
   // The parts of the threshold panel that change without a rebuild.
   basalt::label *summary_label_ = nullptr;
   basalt::label *preview_label_ = nullptr;

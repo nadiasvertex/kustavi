@@ -354,7 +354,7 @@ the trips pass with new settings discards the edits, on disk as well.
 
 ### 7.1 Image grid
 
-- Basalt's `grid_view`: virtualized, with a fixed 160 px cell, a gap, and
+- Basalt's `collection_view`: virtualized, with a fixed 160 px cell, a gap, and
   sections with a header row. It creates widgets only for the rows in view and a
   margin, and reuses the cells that scroll away. `image_grid`
   (`gui/app/image_grid.h`) fills it from groups of photos and keeps the decoded

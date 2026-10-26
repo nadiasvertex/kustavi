@@ -54,13 +54,13 @@ public:
   }
 
   // The widget to put in a screen. The grid keeps a pointer to it, so call this once.
-  [[nodiscard]] auto make_widget() -> std::unique_ptr<basalt::grid_view>;
+  [[nodiscard]] auto make_widget() -> std::unique_ptr<basalt::collection_view>;
   // Gives the loader's finished images to the cells. Call it on the UI thread every frame.
   auto apply_ready_images() -> void;
   // Builds the cells in view again, after the decorator's state changed.
   auto reload() -> void;
 
-  [[nodiscard]] auto view() const -> basalt::grid_view * { return view_; }
+  [[nodiscard]] auto view() const -> basalt::collection_view * { return view_; }
   [[nodiscard]] auto item_count() const -> std::size_t { return images_.size(); }
 
   static constexpr float cell_edge = 160;
@@ -76,7 +76,7 @@ private:
   std::vector<basalt::grid_section> sections_;
   image_loader &loader_;
   decoded_image_cache &decoded_;
-  basalt::grid_view *view_ = nullptr;
+  basalt::collection_view *view_ = nullptr;
   std::function<std::unique_ptr<basalt::widget>(std::size_t)> header_factory_;
   std::function<void(basalt::image_tile &, image_info const &)> decorator_;
   std::function<void(image_info const &)> on_activate_;

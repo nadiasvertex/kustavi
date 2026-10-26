@@ -200,7 +200,7 @@ auto flagged_review_screen::build(std::string header) -> std::unique_ptr<basalt:
     } else {
       auto [grid, widget] = build_grid(std::move(keep_images), false);
       keep_grid_ = std::move(grid);
-      keep_view_ = static_cast<basalt::grid_view *>(widget.get());
+      keep_view_ = static_cast<basalt::collection_view *>(widget.get());
       screen->add(std::move(widget), basalt::box_item{.grow = 3, .basis = basalt::fixed(0)});
       keep_view_->set_scroll_offset(state_.keep_scroll);
     }
@@ -218,7 +218,7 @@ auto flagged_review_screen::build(std::string header) -> std::unique_ptr<basalt:
       } else {
         auto [grid, widget] = build_grid(std::move(delete_images), true);
         delete_grid_ = std::move(grid);
-        delete_view_ = static_cast<basalt::grid_view *>(widget.get());
+        delete_view_ = static_cast<basalt::collection_view *>(widget.get());
         screen->add(std::move(widget), basalt::box_item{.grow = keep_empty ? 3.0F : 2.0F,
                                                       .basis = basalt::fixed(0)});
         delete_view_->set_scroll_offset(state_.delete_scroll);

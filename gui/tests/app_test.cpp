@@ -235,14 +235,14 @@ TEST_CASE("the confirm screen counts the images and offers back and continue", "
   h.refresh();
   REQUIRE(std::holds_alternative<wizard_confirm_folder>(h.controller.phase()));
   CHECK(h.has_text("2 images in /photos"));
-  CHECK(h.find_all<basalt::grid_view>().size() == 1);
+  CHECK(h.find_all<basalt::collection_view>().size() == 1);
   REQUIRE(h.button("Continue") != nullptr);
   CHECK(h.button("Continue")->enabled());
 
   h.button("Back")->press();
   h.refresh();
   CHECK(std::holds_alternative<wizard_start>(h.controller.phase()));
-  CHECK(h.find_all<basalt::grid_view>().empty());
+  CHECK(h.find_all<basalt::collection_view>().empty());
 }
 
 TEST_CASE("unreadable files are counted on the confirm screen", "[app]") {
@@ -345,7 +345,7 @@ TEST_CASE("continue on the confirm screen leads to the trips review", "[app][tri
   CHECK(h.has_text("Paris"));
   CHECK(h.has_text("Rome"));
   CHECK(h.has_text("Unassigned · 1 photos"));
-  CHECK(h.find_all<basalt::grid_view>().size() == 1);
+  CHECK(h.find_all<basalt::collection_view>().size() == 1);
   CHECK(h.button("Back") != nullptr);
   CHECK(h.button("Continue")->enabled());
 }
@@ -418,7 +418,7 @@ TEST_CASE("selected photos move to a trip from the menu", "[app][trips]") {
   h.refresh();
   CHECK(h.button("Cancel selection") != nullptr);
 
-  auto grids = h.find_all<basalt::grid_view>();
+  auto grids = h.find_all<basalt::collection_view>();
   REQUIRE(grids.size() == 1);
   // The photos are in the order of the sections: Paris (c), Rome (a, b), then the unassigned d.
   auto const last = grids.front()->item_count() - 1;
@@ -450,7 +450,7 @@ TEST_CASE("cancelling the selection clears it", "[app][trips]") {
   reach_trips(h);
   h.button("Select photos")->press();
   h.refresh();
-  auto grids = h.find_all<basalt::grid_view>();
+  auto grids = h.find_all<basalt::collection_view>();
   h.click(*grids.front()->cell(0));
   CHECK(h.has_text("1 selected"));
   h.button("Cancel selection")->press();
@@ -568,14 +568,14 @@ TEST_CASE("a click moves a photo between the keep and delete sections", "[app][b
   h.client->quality_events = {quality_flag("c.jpg")};
   h.controller.start_batch_pass(wizard_step::quality);
   h.refresh();
-  auto grids = h.find_all<basalt::grid_view>();
+  auto grids = h.find_all<basalt::collection_view>();
   REQUIRE(grids.size() == 1);
   h.click(*grids.front()->cell(0));
   CHECK(h.has_text("Keeping 1"));
   CHECK(h.controller.intent().explicit_kept.contains("c.jpg"));
   CHECK(h.button("▾ Deleting 0") != nullptr);
 
-  grids = h.find_all<basalt::grid_view>();
+  grids = h.find_all<basalt::collection_view>();
   REQUIRE(grids.size() == 1);
   h.click(*grids.front()->cell(0));
   CHECK(h.has_text("Keeping 0"));
@@ -658,7 +658,7 @@ TEST_CASE("a duplicate review marks the keeper and a click chooses another", "[a
   h.controller.start_batch_pass(wizard_step::duplicates);
   h.refresh();
   CHECK(h.has_text("1 groups · 2 images"));
-  auto grids = h.find_all<basalt::grid_view>();
+  auto grids = h.find_all<basalt::collection_view>();
   REQUIRE(grids.size() == 1);
   CHECK(h.has_text("Group 1 · 2 photos"));
   // The first cell is the suggested keeper and the second is marked.
@@ -768,12 +768,12 @@ TEST_CASE("the final review groups the marked photos and a click keeps one", "[a
   reach_final_review(h);
   CHECK(h.has_text("1 photos marked for deletion"));
   CHECK(h.has_text("Paris · 1"));
-  auto grids = h.find_all<basalt::grid_view>();
+  auto grids = h.find_all<basalt::collection_view>();
   REQUIRE(grids.size() == 1);
   h.click(*grids.front()->cell(0));
   CHECK(h.has_text("Nothing is marked for deletion"));
   CHECK(h.controller.intent().explicit_kept.contains("c.jpg"));
-  CHECK(h.find_all<basalt::grid_view>().empty());
+  CHECK(h.find_all<basalt::collection_view>().empty());
 }
 
 TEST_CASE("the final review goes back to the menu", "[app][commit]") {
@@ -917,7 +917,7 @@ TEST_CASE("a click on a photo of the confirm screen opens its detail", "[app][de
   h.client->scan_events = {scan_image("a.jpg"), scan_complete(1)};
   h.controller.select_folder("/photos");
   h.refresh();
-  auto grids = h.find_all<basalt::grid_view>();
+  auto grids = h.find_all<basalt::collection_view>();
   REQUIRE(grids.size() == 1);
   h.click(*grids.front()->cell(0));
   REQUIRE(h.shell->detail() != nullptr);

@@ -25,8 +25,8 @@ image_grid::image_grid(std::vector<image_info> images, image_loader &loader,
                        decoded_image_cache &cache)
     : image_grid(std::vector<image_group>{{std::move(images), false}}, loader, cache) {}
 
-auto image_grid::make_widget() -> std::unique_ptr<basalt::grid_view> {
-  auto view = std::make_unique<basalt::grid_view>("Photos");
+auto image_grid::make_widget() -> std::unique_ptr<basalt::collection_view> {
+  auto view = std::make_unique<basalt::collection_view>("Photos");
   view_ = view.get();
   view->set_cell_size(basalt::fixed(cell_edge), basalt::fixed(cell_edge));
   view->set_gap(basalt::fixed(8));
