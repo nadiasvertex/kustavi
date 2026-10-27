@@ -59,3 +59,15 @@ MlasHGemmSupported(CBLAS_TRANSPOSE, CBLAS_TRANSPOSE)
 ")
   file(WRITE ${file} "${content}")
 endif()
+
+# MLAS's x86_64 kernels are GNU assembler (.S) sources, which MSVC cannot build, and CMake's ASM
+# language does not accept the MSVC runtime-library setting. Under MSVC, skip MLAS the same way it
+# is skipped when no ASM compiler exists, so the DNN module uses its built-in SGEMM.
+set(file 3rdparty/mlas/CMakeLists.txt)
+file(READ ${file} content)
+if(NOT content MATCHES "kustavi: skip MLAS under MSVC")
+  string(REPLACE "include(CheckLanguage)\n"
+         "# kustavi: skip MLAS under MSVC\nif(MSVC)\n  set(OPENCV_DNN_MLAS_SKIP_REASON \"MSVC cannot build the GNU assembler kernels\"\n    CACHE INTERNAL \"\" FORCE)\n  return()\nendif()\n\ninclude(CheckLanguage)\n"
+         content "${content}")
+  file(WRITE ${file} "${content}")
+endif()
