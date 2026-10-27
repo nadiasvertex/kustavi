@@ -57,6 +57,9 @@ set(protobuf_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(protobuf_INSTALL OFF CACHE BOOL "" FORCE)
 set(protobuf_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
 set(protobuf_WITH_ZLIB OFF CACHE BOOL "" FORCE)
+# Protobuf defaults to the static MSVC runtime (/MT), which conflicts with abseil and the rest of
+# the build, all of which use the DLL runtime (/MD).
+set(protobuf_MSVC_STATIC_RUNTIME OFF CACHE BOOL "" FORCE)
 set(protobuf_LOCAL_DEPENDENCIES_ONLY ON CACHE BOOL "" FORCE)
 FetchContent_Declare(protobuf
   URL ${KUSTAVI_PROTOBUF_URL} URL_HASH SHA256=${KUSTAVI_PROTOBUF_SHA256}
