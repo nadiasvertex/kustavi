@@ -5,6 +5,6 @@
 namespace kustavi {
 
 /// Back end version, reported by `GetInfo` and printed by `--version`.
-inline constexpr std::string_view version = "2.0.3";
+inline constexpr std::string_view version = "2.0.4";
 
 } // namespace kustavi
