@@ -40,10 +40,10 @@ file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS src/*.cpp)
 add_library(kustavi_engine STATIC ${ENGINE_SOURCES})
 target_include_directories(kustavi_engine PUBLIC ${BACKEND_DIR}/include)
 target_link_libraries(kustavi_engine
-  PUBLIC kustavi::proto
-  PRIVATE kustavi_options CURL::libcurl ${OPENCV_LIBS} llama mtmd sqlite3_kustavi
-          stdexec_kustavi spdlog::spdlog)
-# The engine's headers use OpenCV types.
+  PUBLIC kustavi::proto sqlite3_kustavi stdexec_kustavi
+  PRIVATE kustavi_options CURL::libcurl ${OPENCV_LIBS} llama mtmd spdlog::spdlog)
+# The engine's headers use OpenCV types and sqlite3.h (through store/database.h) and stdexec. macOS
+# finds the system sqlite3.h anyway, which hid the missing include path there.
 kustavi_opencv_includes(kustavi_engine PUBLIC)
 kustavi_precompile_headers(kustavi_engine
   <proto/service.pb.h> <spdlog/spdlog.h> <opencv2/core.hpp> <opencv2/imgproc.hpp>)
