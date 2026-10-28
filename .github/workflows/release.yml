@@ -40,7 +40,9 @@ jobs:
 
       - name: Install the WiX tool
         if: runner.os == 'Windows'
-        run: dotnet tool install --global wix --version 5.*
+        run: |
+          dotnet tool install --global wix --version 5.*
+          wix extension add --global WixToolset.UI.wixext/5.0.2
 
       # tools/package.py builds the release GUI, assembles the bundle and writes the archive or
       # the MSI into dist/.

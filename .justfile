@@ -125,15 +125,18 @@ show-version:
 
 # Bump the global version and propagate it to the back end. The CMake project reads it
 # itself. COMPONENT is major|minor|patch.
-# Pass `--tag` through to also commit + tag, e.g. `just version-bump patch --tag`.
+# Commits the changed version files as "Release v<version>"; tagging is left to `just release`.
 bump-version COMPONENT *ARGS:
   #!/usr/bin/env sh
   set -e
   for c in python3 python py; do "$c" -c "import sys" >/dev/null 2>&1 && PY=$c && break; done
   : "${PY:?no working python interpreter on PATH}"
   "$PY" tools/version.py bump {{ COMPONENT }} {{ ARGS }}
+  version=$(tr -d '[:space:]' < VERSION.txt)
+  git add VERSION.txt backend/include/version.h
+  git commit -m "Release v$version" -- VERSION.txt backend/include/version.h
 
-# Bump the version and commit it first: `just bump-version patch`, then commit.
+# Bump the version with `just bump-version patch` (which commits it) first.
 # Tag HEAD as v<version> from VERSION.txt and push the tag, which starts the GitHub release build.
 release:
   #!/usr/bin/env bash
