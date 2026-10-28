@@ -17,6 +17,9 @@ The repo builds with CMake (presets `debug`, `release`, `sanitize`; output in
 (`cmake/precompiled_headers.cmake`); configure with `-DKUSTAVI_PCH=OFF` to check that every
 source still includes what it uses.
 
+On Windows, run `just` from Git Bash after `source tools/msvc-env.sh`, which loads the MSVC x64
+environment (cl, the Windows SDK) into the shell. Ninja and CMake must be on PATH.
+
 The GUI (`gui/`) is C++ on Basalt widgets and Magma windows. It builds with
 `-DKUSTAVI_BUILD_GUI=ON`, which fetches the Basalt and Magma releases pinned in
 `cmake/dependency_pins.cmake`. Add `-DKUSTAVI_BASALT_SOURCE_DIR=<checkout>` and
