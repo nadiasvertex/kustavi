@@ -260,8 +260,8 @@ auto build_action_bar(wizard_phase const &phase, wizard_controller &controller,
                                     ? deletion_step::junk
                                     : deletion_step::video;
           if (current.flagged_count > 0) {
-            add.add("Keep all", [&controller] { controller.keep_all_flagged(step); });
-            add.add("Mark all", [&controller] { controller.mark_all_flagged(step); });
+            add.add("Keep all", [&controller, step] { controller.keep_all_flagged(step); });
+            add.add("Mark all", [&controller, step] { controller.mark_all_flagged(step); });
           }
           add.add("Done", [&controller] { controller.close_batch_review(); },
                   button_variant::primary);
