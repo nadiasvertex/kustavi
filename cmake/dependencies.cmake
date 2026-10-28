@@ -137,37 +137,6 @@ if(NOT TARGET sqlite3_kustavi)
   target_link_libraries(sqlite3_kustavi PUBLIC Threads::Threads ${CMAKE_DL_LIBS})
 endif()
 
-# --- curl --------------------------------------------------------------------
-set(BUILD_CURL_EXE OFF CACHE BOOL "" FORCE)
-set(BUILD_SHARED_LIBS_SAVED ${BUILD_SHARED_LIBS})
-set(BUILD_SHARED_LIBS OFF)
-set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
-set(CURL_USE_LIBPSL OFF CACHE BOOL "" FORCE)
-set(CURL_USE_LIBSSH2 OFF CACHE BOOL "" FORCE)
-set(CURL_DISABLE_LDAP ON CACHE BOOL "" FORCE)
-set(CURL_DISABLE_INSTALL ON CACHE BOOL "" FORCE)
-set(USE_NGHTTP2 OFF CACHE BOOL "" FORCE)
-set(CURL_BROTLI OFF CACHE BOOL "" FORCE)
-set(CURL_ZSTD OFF CACHE BOOL "" FORCE)
-set(CURL_USE_LIBIDN2 OFF CACHE BOOL "" FORCE)
-# Internationalized host names come from the system, not from a library of the build machine.
-set(USE_LIBIDN2 OFF CACHE BOOL "" FORCE)
-if(APPLE)
-  set(USE_APPLE_IDN ON CACHE BOOL "" FORCE)
-endif()
-if(WIN32)
-  set(CURL_USE_SCHANNEL ON CACHE BOOL "" FORCE)
-  set(CURL_USE_OPENSSL OFF CACHE BOOL "" FORCE)
-else()
-  set(CURL_USE_OPENSSL ON CACHE BOOL "" FORCE)
-endif()
-FetchContent_Declare(curl
-  URL ${KUSTAVI_CURL_URL} URL_HASH SHA256=${KUSTAVI_CURL_SHA256}
-  DOWNLOAD_EXTRACT_TIMESTAMP ON SYSTEM
-  FIND_PACKAGE_ARGS NAMES CURL)
-FetchContent_MakeAvailable(curl)
-set(BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS_SAVED})
-
 # --- OpenCV ------------------------------------------------------------------
 # Only the modules the back end links. Codecs come from OpenCV's bundled
 # libraries so the result does not depend on what is installed.
@@ -196,6 +165,8 @@ if(NOT WIN32)
   set(BUILD_ZLIB OFF CACHE BOOL "" FORCE)
 endif()
 set(OPENCV_FORCE_3RDPARTY_BUILD ON CACHE BOOL "" FORCE)
+# OpenCV defaults to the static MSVC runtime; the rest of the build uses the DLL runtime.
+set(BUILD_WITH_STATIC_CRT OFF CACHE BOOL "" FORCE)
 set(BUILD_SHARED_LIBS OFF)
 find_package(Patch REQUIRED)
 FetchContent_Declare(opencv
@@ -205,6 +176,48 @@ FetchContent_Declare(opencv
   DOWNLOAD_EXTRACT_TIMESTAMP ON SYSTEM
   FIND_PACKAGE_ARGS NAMES OpenCV)
 FetchContent_MakeAvailable(opencv)
+set(BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS_SAVED})
+
+# --- curl --------------------------------------------------------------------
+set(BUILD_CURL_EXE OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS_SAVED ${BUILD_SHARED_LIBS})
+set(BUILD_SHARED_LIBS OFF)
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(CURL_USE_LIBPSL OFF CACHE BOOL "" FORCE)
+set(CURL_USE_LIBSSH2 OFF CACHE BOOL "" FORCE)
+set(CURL_DISABLE_LDAP ON CACHE BOOL "" FORCE)
+set(CURL_DISABLE_INSTALL ON CACHE BOOL "" FORCE)
+set(USE_NGHTTP2 OFF CACHE BOOL "" FORCE)
+set(CURL_BROTLI OFF CACHE BOOL "" FORCE)
+set(CURL_ZSTD OFF CACHE BOOL "" FORCE)
+set(CURL_USE_LIBIDN2 OFF CACHE BOOL "" FORCE)
+# Internationalized host names come from the system, not from a library of the build machine.
+set(USE_LIBIDN2 OFF CACHE BOOL "" FORCE)
+if(APPLE)
+  set(USE_APPLE_IDN ON CACHE BOOL "" FORCE)
+endif()
+if(WIN32)
+  set(CURL_USE_SCHANNEL ON CACHE BOOL "" FORCE)
+  set(CURL_USE_OPENSSL OFF CACHE BOOL "" FORCE)
+else()
+  set(CURL_USE_OPENSSL ON CACHE BOOL "" FORCE)
+endif()
+# curl decodes gzip with the zlib that OpenCV builds above. OpenCV leaves ZLIB_LIBRARY in the cache
+# as the target name, so give FindZLIB the target instead of a library file that does not exist yet.
+set(CURL_ZLIB ON CACHE STRING "" FORCE)
+# The export set would have to include zlib, and nothing installs curl.
+set(CURL_ENABLE_EXPORT_TARGET OFF CACHE BOOL "" FORCE)
+if(TARGET zlib AND NOT TARGET ZLIB::ZLIB)
+  add_library(kustavi_zlib INTERFACE)
+  target_include_directories(kustavi_zlib SYSTEM INTERFACE ${ZLIB_INCLUDE_DIR})
+  target_link_libraries(kustavi_zlib INTERFACE zlib)
+  add_library(ZLIB::ZLIB ALIAS kustavi_zlib)
+endif()
+FetchContent_Declare(curl
+  URL ${KUSTAVI_CURL_URL} URL_HASH SHA256=${KUSTAVI_CURL_SHA256}
+  DOWNLOAD_EXTRACT_TIMESTAMP ON SYSTEM
+  FIND_PACKAGE_ARGS NAMES CURL)
+FetchContent_MakeAvailable(curl)
 set(BUILD_SHARED_LIBS ${BUILD_SHARED_LIBS_SAVED})
 
 # --- llama.cpp ---------------------------------------------------------------
