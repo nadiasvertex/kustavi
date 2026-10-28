@@ -47,6 +47,8 @@ if(MSVC)
   # UTF-8 sources, a conforming __cplusplus, and the conforming preprocessor
   # (stdexec and {fmt} both require them).
   add_compile_options(/utf-8 /Zc:__cplusplus /Zc:preprocessor)
+  # <windows.h> otherwise defines min and max macros, which break std::min and std::max.
+  add_compile_definitions(NOMINMAX)
   set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 endif()
 
